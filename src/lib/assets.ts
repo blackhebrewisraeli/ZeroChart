@@ -1,20 +1,21 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
 
 export type Signal = 'Green' | 'Yellow' | 'Red';
-export type Asset = {
-  id: string; symbol: string; name: string | null; current_price: number | null;
+export interface AssetStatus {
+  ticker: string; name: string | null; current_price: number | null;
   stable_signal: string | null; radar_signal: string | null;
   stable_explanation: string | null; radar_explanation: string | null;
-  risk_pct: number | null; updated_at: string;
-};
+  risk_pct: number | null; updated_at?: string | null;
+}
+export type Asset = AssetStatus;
 
 export async function fetchAssets(): Promise<Asset[]> {
   const assets: Asset[] = [];
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from('assets_status').select('*').order('symbol').range(offset, offset + pageSize - 1).abortSignal(AbortSignal.timeout(15000));
+    const { data, error } = await supabase.from('assets_status').select('*').order('ticker').range(offset, offset + pageSize - 1).abortSignal(AbortSignal.timeout(15000));
     if (error) throw new Error(error.message);
-    assets.push(...data);
+    assets.push(...((data ?? []) as AssetStatus[]));
     if (data.length < pageSize) return assets;
   }
 }
@@ -38,8 +39,8 @@ export const sampleAssets: Asset[] = [
   ['SPY', 'S&P 500 ETF', 562.14, 'Green', 'Yellow', 1.5, 'Broad market diversification remains a solid foundation for patient investors.', 'Price near recent highs limits the immediate asymmetric opportunity.'],
   ['AVAX', 'Avalanche', 28.76, 'Yellow', 'Red', 12.3, 'Adoption is improving, but competitive pressure warrants a cautious stance.', 'Fading liquidity and weak relative strength favor staying on the sidelines.'],
   ['LINK', 'Chainlink', 14.32, 'Green', 'Green', 6.2, 'Expanding oracle adoption and tokenization partnerships strengthen fundamentals.', 'A tight consolidation and improving volume suggest a favorable swing setup.'],
-].map((row, index) => ({
-  id: `sample-${index}`, symbol: String(row[0]), name: String(row[1]), current_price: Number(row[2]),
+].map(row => ({
+  ticker: String(row[0]), name: String(row[1]), current_price: Number(row[2]),
   stable_signal: String(row[3]), radar_signal: String(row[4]), risk_pct: Number(row[5]),
   stable_explanation: String(row[6]), radar_explanation: String(row[7]), updated_at: '',
 }));

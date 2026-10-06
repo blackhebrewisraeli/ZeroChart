@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { response, range } = vi.hoisted(() => ({ response: vi.fn(), range: vi.fn() }));
-vi.mock('@/integrations/supabase/client', () => ({ supabase: { from: () => ({ select: () => ({ order: () => ({ range: (...args: number[]) => { range(...args); return { abortSignal: response }; } }) }) }) } }));
+vi.mock('@/lib/supabase', () => ({ supabase: { from: () => ({ select: () => ({ order: () => ({ range: (...args: number[]) => { range(...args); return { abortSignal: response }; } }) }) }) } }));
 import { fetchAssets, formatPrice, formatRisk } from '@/lib/assets';
 
 describe('asset data', () => {
   beforeEach(() => { vi.clearAllMocks(); });
   it('paginates until all rows have been fetched', async () => {
-    response.mockResolvedValueOnce({ data: Array.from({ length: 1000 }, (_, id) => ({ id })), error: null }).mockResolvedValueOnce({ data: [{ id: 1000 }], error: null });
+    response.mockResolvedValueOnce({ data: Array.from({ length: 1000 }, (_, i) => ({ ticker: `T${i}` })), error: null }).mockResolvedValueOnce({ data: [{ ticker: 'T1000' }], error: null });
     expect(await fetchAssets()).toHaveLength(1001);
     expect(range.mock.calls).toEqual([[0, 999], [1000, 1999]]);
   });

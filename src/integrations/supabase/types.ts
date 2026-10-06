@@ -14,7 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      assets_status: {
+        Row: {
+          current_price: number | null
+          id: string
+          name: string | null
+          radar_explanation: string | null
+          radar_signal: string | null
+          risk_pct: number | null
+          stable_explanation: string | null
+          stable_signal: string | null
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          current_price?: number | null
+          id?: string
+          name?: string | null
+          radar_explanation?: string | null
+          radar_signal?: string | null
+          risk_pct?: number | null
+          stable_explanation?: string | null
+          stable_signal?: string | null
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          current_price?: number | null
+          id?: string
+          name?: string | null
+          radar_explanation?: string | null
+          radar_signal?: string | null
+          risk_pct?: number | null
+          stable_explanation?: string | null
+          stable_signal?: string | null
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

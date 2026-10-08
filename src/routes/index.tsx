@@ -53,7 +53,7 @@ function Index() {
   const getSignal = (asset: Asset) => radar ? asset.radar_signal : asset.stable_signal;
   const counts = ['Green', 'Yellow', 'Red'].map(signal => assets.filter(asset => getSignal(asset) === signal).length);
   const filtered = assets.filter(asset => (filter === 'All signals' || getSignal(asset) === filter) && `${asset.ticker} ${asset.name || ''}`.toLowerCase().includes(search.toLowerCase()));
-  const sorted = [...filtered].sort(sorters[sort] ?? sorters.ticker);
+  const sorted = [...filtered].sort(sorters[sort] ?? sorters['ticker']);
   const newest = assets.reduce<string>((value, asset) => asset.updated_at && asset.updated_at > value ? asset.updated_at : value, '');
   const updated = newest && Number.isFinite(Date.parse(newest)) ? new Date(newest).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' }) + ' UTC' : '—';
 

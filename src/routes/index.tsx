@@ -33,7 +33,7 @@ function AssetCard({ asset, radar, list }: { asset: Asset; radar: boolean; list:
 }
 
 const sorters: Record<string, (a: Asset, b: Asset) => number> = {
-  ticker: (a, b) => a.ticker.localeCompare(b.ticker),
+  ticker: (a, b) => a['ticker'].localeCompare(b['ticker']),
   reward: (a, b) => (b.reward_pct ?? -Infinity) - (a.reward_pct ?? -Infinity),
   risk: (a, b) => (a.risk_pct ?? Infinity) - (b.risk_pct ?? Infinity),
   volume: (a, b) => (b.volume_spike ?? -Infinity) - (a.volume_spike ?? -Infinity),

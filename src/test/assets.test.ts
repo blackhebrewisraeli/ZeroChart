@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { response, range } = vi.hoisted(() => ({ response: vi.fn(), range: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: () => ({ select: () => ({ order: () => ({ range: (...args: number[]) => { range(...args); return { abortSignal: response }; } }) }) }) } }));
-import { fetchAssets, formatPrice, formatRisk } from '@/lib/assets';
+import { fetchAssets, formatPrice, formatReward, formatRisk, formatVolume } from '@/lib/assets';
 
 describe('asset data', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -23,5 +23,12 @@ describe('asset data', () => {
     expect(formatRisk(null)).toBe('—');
     expect(formatPrice(null)).toBe('—');
     expect(formatPrice(67432.8)).toBe('$67,432.80');
+  });
+  it('formats reward percentages and volume spikes', () => {
+    expect(formatReward(0.052)).toBe('5.2%');
+    expect(formatReward(0)).toBe('0.0%');
+    expect(formatReward(null)).toBe('—');
+    expect(formatVolume(1.8)).toBe('1.8x');
+    expect(formatVolume(null)).toBe('—');
   });
 });

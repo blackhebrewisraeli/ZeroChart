@@ -215,3 +215,39 @@
 @media (max-width:760px) { .page-width { padding-inline:20px; }.terminal-tag,.header-divider { display:none; }.terminal-header .font-mono { display:none; }.asset-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.signal-summary { grid-template-columns:repeat(2,1fr); row-gap:24px; }.summary-item:nth-child(3) { border-left:0; padding-left:0; }.summary-label { font-size:8px; }.toolbar { width:100%; }.search-control { flex:1; }.asset-list { grid-template-columns:1fr; }.asset-row { grid-template-columns:1fr 1fr; }.asset-row .asset-explanation { grid-column:1/-1; }.asset-row .asset-price { justify-content:flex-end; } }
 @media (max-width:500px) { .page-width { padding-inline:18px; } main.page-width { padding-top:30px; }.asset-grid { grid-template-columns:1fr; }.mode-tab { padding:10px; gap:8px; font-size:12px; }.mode-caption { font-size:9px; }.mode-tab > svg { width:16px; }.asset-explanation { min-height:0; }.asset-card { padding:20px; }.asset-bottom { font-size:9px; }.toolbar { gap:6px; }.select-control select { max-width:110px; }.search-control { width:130px; }.terminal-footer { margin-top:32px; }.asset-row { gap:15px; }.asset-row .asset-heading { gap:10px; }.asset-row .asset-price { flex-wrap:wrap; }.connection-status { font-size:10px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; }.asset-card:hover { transform:none; } }
+
+/* Paper Trading — top navigation */
+.top-nav { border-bottom:1px solid var(--border); background:color-mix(in oklch,var(--card) 55%,var(--background)); }
+.top-nav .page-width { height:52px; }
+.top-nav-tab { display:inline-flex; align-items:center; gap:8px; height:34px; padding:0 14px; border:1px solid transparent; border-radius:4px; color:var(--muted-foreground); font:11px 'JetBrains Mono',monospace; letter-spacing:0.04em; cursor:pointer; background:transparent; transition:color .2s,border-color .2s,background .2s; }
+.top-nav-tab:hover { color:var(--foreground); background:var(--secondary); }
+.top-nav-tab svg { width:15px; height:15px; }
+.top-nav-active { color:var(--foreground); background:var(--secondary); border-color:var(--border); }
+.top-nav-active svg { color:var(--primary); }
+
+/* Paper Trading — simulate buy */
+.simulate-buy { width:100%; height:34px; margin-top:14px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.05em; text-transform:uppercase; color:var(--signal-green); border:1px solid color-mix(in oklch,var(--signal-green) 45%,transparent); background:color-mix(in oklch,var(--signal-green) 8%,transparent); box-shadow:0 0 16px color-mix(in oklch,var(--signal-green) 18%,transparent); }
+.simulate-buy:hover { color:var(--signal-green); border-color:var(--signal-green); background:color-mix(in oklch,var(--signal-green) 15%,transparent); }
+.simulate-buy:disabled { opacity:0.45; box-shadow:none; cursor:not-allowed; }
+.asset-row .simulate-buy { grid-column:1/-1; margin-top:12px; }
+
+/* Paper Trading — portfolio */
+.portfolio-summary { padding:27px 0; margin-top:32px; border-block:1px solid var(--border); }
+.trade-list { display:flex; flex-direction:column; gap:14px; }
+.trade-row { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.2fr) auto; align-items:center; gap:22px; padding:21px; border:1px solid var(--border); border-radius:6px; background:var(--card); transition:border-color .2s,transform .2s; animation:appear .35s ease both; }
+.trade-row:hover { border-color:color-mix(in oklch,var(--foreground) 27%,var(--border)); }
+.trade-ticker { display:flex; align-items:center; gap:12px; min-width:0; }
+.trade-cell { display:flex; flex-direction:column; gap:9px; min-width:0; }
+.trade-label { font:9px 'JetBrains Mono',monospace; color:var(--muted-foreground); letter-spacing:0.06em; }
+.close-position { height:34px; padding:0 16px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.04em; text-transform:uppercase; }
+.trade-skeleton { height:86px; grid-template-columns:repeat(3,1fr); }
+
+@media (max-width:760px) {
+  .trade-row { grid-template-columns:1fr 1fr; row-gap:18px; }
+  .trade-row .trade-ticker, .trade-row .close-position { grid-column:1/-1; }
+  .trade-row .close-position { width:100%; }
+}
+@media (max-width:500px) {
+  .trade-row { grid-template-columns:1fr; }
+  .trade-row .trade-ticker, .trade-row .trade-cell, .trade-row .close-position { grid-column:1/-1; }
+}

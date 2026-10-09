@@ -17,39 +17,48 @@ export type Database = {
       assets_status: {
         Row: {
           current_price: number | null
-          id: string
-          name: string | null
           radar_explanation: string | null
           radar_signal: string | null
+          reward_pct: number | null
           risk_pct: number | null
+          rsi_14: number | null
+          sma_50: number | null
+          sma_200: number | null
           stable_explanation: string | null
           stable_signal: string | null
-          symbol: string
+          ticker: string
           updated_at: string
+          volume_spike: number | null
         }
         Insert: {
           current_price?: number | null
-          id?: string
-          name?: string | null
           radar_explanation?: string | null
           radar_signal?: string | null
+          reward_pct?: number | null
           risk_pct?: number | null
+          rsi_14?: number | null
+          sma_50?: number | null
+          sma_200?: number | null
           stable_explanation?: string | null
           stable_signal?: string | null
-          symbol: string
+          ticker: string
           updated_at?: string
+          volume_spike?: number | null
         }
         Update: {
           current_price?: number | null
-          id?: string
-          name?: string | null
           radar_explanation?: string | null
           radar_signal?: string | null
+          reward_pct?: number | null
           risk_pct?: number | null
+          rsi_14?: number | null
+          sma_50?: number | null
+          sma_200?: number | null
           stable_explanation?: string | null
           stable_signal?: string | null
-          symbol?: string
+          ticker?: string
           updated_at?: string
+          volume_spike?: number | null
         }
         Relationships: []
       }

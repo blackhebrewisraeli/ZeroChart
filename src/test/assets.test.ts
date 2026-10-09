@@ -19,7 +19,7 @@ describe('asset data', () => {
     await expect(fetchAssets()).rejects.toThrow('Permission denied');
   });
   it('formats percent points and handles missing values', () => {
-    expect(formatRisk(3.2)).toBe('3.2%');
+    expect(formatRisk(0.032)).toBe('3.2%');
     expect(formatRisk(null)).toBe('—');
     expect(formatPrice(null)).toBe('—');
     expect(formatPrice(67432.8)).toBe('$67,432.80');

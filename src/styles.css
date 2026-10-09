@@ -172,7 +172,7 @@
 .signal-green { color:var(--signal-green); }.signal-yellow { color:var(--signal-yellow); }.signal-red { color:var(--signal-red); }
 .signal-dot { width:5px; height:5px; border-radius:50%; background:currentColor; box-shadow:0 0 7px color-mix(in oklch,currentColor 40%,transparent); flex-shrink:0; }
 .count-badge { font-size:10px; padding:2px 6px; border:1px solid var(--border); border-radius:4px; color:var(--muted-foreground); }
-.toolbar { display:flex; align-items:center; gap:10px; }
+.toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .search-control { width:198px; height:34px; display:flex; align-items:center; padding:0 10px; gap:8px; border:1px solid var(--border); border-radius:4px; color:var(--muted-foreground); background:var(--card); }
 .search-control input { width:100%; min-width:0; outline:none; background:transparent; color:var(--foreground); font-size:11px; }
 .search-control:focus-within { border-color:var(--ring); }
@@ -192,9 +192,17 @@
 .asset-price { display:flex; gap:9px; align-items:baseline; margin-top:23px; }
 .asset-explanation { font-size:12px; line-height:1.8; color:var(--muted-foreground); margin-top:13px; min-height:65px; overflow-wrap:anywhere; }
 .asset-bottom { border-top:1px solid var(--border); padding-top:14px; margin-top:14px; display:flex; align-items:center; justify-content:space-between; color:var(--muted-foreground); font:8px 'JetBrains Mono',monospace; }
+.asset-technicals { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+.tech-badge { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border); border-radius:4px; padding:3px 8px; font:10px 'JetBrains Mono',monospace; color:var(--muted-foreground); background:var(--secondary); }
+.tech-oversold { color:var(--signal-green); border-color:color-mix(in oklch,var(--signal-green) 30%,transparent); background:color-mix(in oklch,var(--signal-green) 6%,transparent); }
+.tech-overbought { color:var(--signal-red); border-color:color-mix(in oklch,var(--signal-red) 30%,transparent); background:color-mix(in oklch,var(--signal-red) 6%,transparent); }
+.trend-up { color:var(--signal-green); }
+.trend-down { color:var(--signal-red); }
+.strong-toggle { height:34px; padding:0 13px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.02em; }
+.strong-active { box-shadow:0 0 14px color-mix(in oklch,var(--primary) 35%,transparent); }
 .asset-list { grid-template-columns:1fr; }
 .asset-row { display:grid; grid-template-columns:230px 180px 1fr 165px; align-items:center; gap:20px; }
-.asset-row .asset-heading { flex-wrap:wrap; }.asset-row .asset-price,.asset-row .asset-explanation,.asset-row .asset-bottom { margin:0; }.asset-row .asset-price span:first-child { font-size:20px; }.asset-row .asset-explanation { min-height:0; }.asset-row .asset-bottom { border:0; flex-wrap:wrap; gap:10px; padding:0; }
+.asset-row .asset-heading { flex-wrap:wrap; }.asset-row .asset-price,.asset-row .asset-explanation,.asset-row .asset-bottom { margin:0; }.asset-row .asset-technicals { margin:0; grid-column:1/-1; }.asset-row .asset-price span:first-child { font-size:20px; }.asset-row .asset-explanation { min-height:0; }.asset-row .asset-bottom { border:0; flex-wrap:wrap; gap:10px; padding:0; }
 .watchlist-footer { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; margin-top:20px; font-size:10px; color:var(--muted-foreground); }
 .watchlist-footer > span:first-child { font-size:9px; }
 .terminal-footer { border-top:1px solid var(--border); margin-top:44px; padding-top:22px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px; font-size:10px; color:var(--muted-foreground); }

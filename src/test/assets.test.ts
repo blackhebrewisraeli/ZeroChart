@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { response, range } = vi.hoisted(() => ({ response: vi.fn(), range: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: () => ({ select: () => ({ order: () => ({ range: (...args: number[]) => { range(...args); return { abortSignal: response }; } }) }) }) } }));
-import { fetchAssets, formatPrice, formatReward, formatRisk, formatVolume } from '@/lib/assets';
+import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatVolume } from '@/lib/assets';
 
 describe('asset data', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -30,5 +30,9 @@ describe('asset data', () => {
     expect(formatReward(null)).toBe('—');
     expect(formatVolume(1.8)).toBe('1.8x');
     expect(formatVolume(null)).toBe('—');
+  });
+  it('formats RSI readings and handles missing values', () => {
+    expect(formatRsi(60.5)).toBe('60.5');
+    expect(formatRsi(null)).toBe('—');
   });
 });

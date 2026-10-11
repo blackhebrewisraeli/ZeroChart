@@ -234,13 +234,15 @@
 /* Paper Trading — portfolio */
 .portfolio-summary { padding:27px 0; margin-top:32px; border-block:1px solid var(--border); }
 .trade-list { display:flex; flex-direction:column; gap:14px; }
-.trade-row { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.2fr) auto; align-items:center; gap:22px; padding:21px; border:1px solid var(--border); border-radius:6px; background:var(--card); transition:border-color .2s,transform .2s; animation:appear .35s ease both; }
+.trade-row { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1.2fr) auto; align-items:center; gap:22px; padding:21px; border:1px solid var(--border); border-radius:6px; background:var(--card); transition:border-color .2s,transform .2s; animation:appear .35s ease both; }
 .trade-row:hover { border-color:color-mix(in oklch,var(--foreground) 27%,var(--border)); }
 .trade-ticker { display:flex; align-items:center; gap:12px; min-width:0; }
 .trade-cell { display:flex; flex-direction:column; gap:9px; min-width:0; }
 .trade-label { font:9px 'JetBrains Mono',monospace; color:var(--muted-foreground); letter-spacing:0.06em; }
+.pnl-positive { color:var(--signal-green); }
+.pnl-negative { color:var(--signal-red); }
 .close-position { height:34px; padding:0 16px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.04em; text-transform:uppercase; }
-.trade-skeleton { height:86px; grid-template-columns:repeat(3,1fr); }
+.trade-skeleton { height:86px; grid-template-columns:repeat(4,1fr); }
 
 @media (max-width:760px) {
   .trade-row { grid-template-columns:1fr 1fr; row-gap:18px; }

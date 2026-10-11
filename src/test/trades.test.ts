@@ -43,7 +43,7 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-import { closeTrade, fetchOpenTrades, formatDate, openTrade } from '@/lib/trades';
+import { calcPnl, closeTrade, fetchOpenTrades, formatDate, formatPnlDollar, formatPnlPercent, openTrade } from '@/lib/trades';
 
 describe('paper trading', () => {
   beforeEach(() => {
@@ -81,5 +81,28 @@ describe('paper trading', () => {
     expect(formatDate(null)).toBe('—');
     expect(formatDate('not-a-date')).toBe('—');
     expect(formatDate('2026-01-05T10:30:00Z')).toContain('Jan');
+  });
+
+  it('calculates P&L dollar and percent from entry and current price', () => {
+    const up = calcPnl(100, 110);
+    expect(up.dollar).toBe(10);
+    expect(up.percent).toBeCloseTo(10, 5);
+
+    const down = calcPnl(100, 90);
+    expect(down.dollar).toBe(-10);
+    expect(down.percent).toBeCloseTo(-10, 5);
+
+    expect(calcPnl(null, 110)).toEqual({ dollar: null, percent: null });
+    expect(calcPnl(100, null)).toEqual({ dollar: null, percent: null });
+    expect(calcPnl(0, 110)).toEqual({ dollar: null, percent: null });
+  });
+
+  it('formats signed P&L values and handles missing values', () => {
+    expect(formatPnlDollar(674.32)).toBe('+$674.32');
+    expect(formatPnlDollar(-674.32)).toBe('-$674.32');
+    expect(formatPnlDollar(null)).toBe('—');
+    expect(formatPnlPercent(1.2345)).toBe('+1.23%');
+    expect(formatPnlPercent(-1.2345)).toBe('-1.23%');
+    expect(formatPnlPercent(null)).toBe('—');
   });
 });

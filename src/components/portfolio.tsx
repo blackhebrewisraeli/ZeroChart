@@ -1,17 +1,22 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Briefcase, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { formatPrice } from '@/lib/assets';
+import { fetchAssets, formatPrice } from '@/lib/assets';
 import {
+  calcPnl,
   closeTrade,
   fetchOpenTrades,
   formatDate,
+  formatPnlDollar,
+  formatPnlPercent,
   openTradesQueryKey,
   type VirtualTrade,
 } from '@/lib/trades';
+import { cn } from '@/lib/utils';
 
-function TradeRow({ trade }: { trade: VirtualTrade }) {
+function TradeRow({ trade, currentPrice }: { trade: VirtualTrade; currentPrice: number | null }) {
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => closeTrade(trade.id),
@@ -26,6 +31,9 @@ function TradeRow({ trade }: { trade: VirtualTrade }) {
     },
   });
 
+  const pnl = calcPnl(trade.entry_price, currentPrice);
+  const tone = pnl.dollar === null ? '' : pnl.dollar > 0 ? 'pnl-positive' : pnl.dollar < 0 ? 'pnl-negative' : '';
+
   return (
     <div className="trade-row">
       <div className="trade-ticker">
@@ -38,6 +46,11 @@ function TradeRow({ trade }: { trade: VirtualTrade }) {
       <div className="trade-cell">
         <span className="trade-label">ENTRY PRICE</span>
         <span className="font-mono text-[26px] font-medium">{formatPrice(trade.entry_price)}</span>
+      </div>
+      <div className="trade-cell">
+        <span className="trade-label">P&L</span>
+        <span className={cn('font-mono text-[26px] font-medium', tone)}>{formatPnlDollar(pnl.dollar)}</span>
+        <span className={cn('font-mono text-xs', tone)}>{formatPnlPercent(pnl.percent)}</span>
       </div>
       <div className="trade-cell">
         <span className="trade-label">ENTRY DATE</span>
@@ -58,6 +71,15 @@ function TradeRow({ trade }: { trade: VirtualTrade }) {
 
 export function Portfolio() {
   const query = useQuery({ queryKey: openTradesQueryKey, queryFn: fetchOpenTrades });
+  const assetsQuery = useQuery({ queryKey: ['assets-status'], queryFn: fetchAssets, refetchInterval: 60000 });
+
+  const priceByTicker = useMemo(() => {
+    const map = new Map<string, number | null>();
+    for (const asset of assetsQuery.data ?? []) {
+      map.set(asset.ticker, asset.current_price);
+    }
+    return map;
+  }, [assetsQuery.data]);
 
   return (
     <section aria-label="Paper trading portfolio">
@@ -110,12 +132,15 @@ export function Portfolio() {
             <div key={i} className="trade-row trade-skeleton" aria-hidden="true">
               <div className="skeleton h-9 w-32" />
               <div className="skeleton h-6 w-40" />
+              <div className="skeleton h-6 w-32" />
               <div className="skeleton h-6 w-28" />
               <span className="sr-only">Loading positions</span>
             </div>
           ))
         ) : query.data && query.data.length > 0 ? (
-          query.data.map((trade) => <TradeRow key={trade.id} trade={trade} />)
+          query.data.map((trade) => (
+            <TradeRow key={trade.id} trade={trade} currentPrice={priceByTicker.get(trade.ticker) ?? null} />
+          ))
         ) : (
           <div className="empty-state">
             <Briefcase size={25} className="mx-auto mb-4 text-muted-foreground" />

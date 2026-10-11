@@ -13,9 +13,9 @@ import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 export const Route = createFileRoute('/')({
   head: () => ({ meta: [
     { title: 'ZeroChart — Signal over noise' },
-    { name: 'description', content: 'A chartless trading terminal for long-term conviction and asymmetric opportunities. Track clear asset signals with ZeroChart.' },
+    { name: 'description', content: 'An algorithmic signal terminal with live charts for long-term conviction and asymmetric opportunities. Track clear asset signals with ZeroChart.' },
     { property: 'og:title', content: 'ZeroChart — Signal over noise' },
-    { property: 'og:description', content: 'Stable and radar asset signals in one focused, chartless trading dashboard.' },
+    { property: 'og:description', content: 'Stable and radar asset signals in one focused, algorithmic signal terminal with live charts.' },
     { property: 'og:type', content: 'website' },
     { name: 'twitter:card', content: 'summary_large_image' },
   ] }),

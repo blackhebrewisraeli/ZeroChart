@@ -201,8 +201,10 @@ body {
 .opportunities-title { font:600 26px 'DM Sans', sans-serif; letter-spacing:-0.02em; }
 .opportunities-count { font-size:12px; color:var(--muted-foreground); }
 .opportunity-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px; }
-.opportunity-card { display:flex; flex-direction:column; gap:16px; padding:22px; border-radius:20px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); box-shadow:0 12px 32px rgba(0,0,0,0.28); transition:transform .18s, border-color .18s, background .18s; }
+.opportunity-card { position:relative; overflow:hidden; display:flex; flex-direction:column; gap:16px; padding:22px; border-radius:20px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); box-shadow:0 12px 32px rgba(0,0,0,0.28); transition:transform .18s, border-color .18s, background .18s; }
 .opportunity-card:hover { transform:translateY(-3px); border-color:rgba(255,255,255,0.1); background:rgba(255,255,255,0.045); }
+.opportunity-card > div { position:relative; z-index:1; }
+.opportunity-rank { position:absolute; top:10px; left:18px; z-index:0; font:700 clamp(48px, 7vw, 80px) 'DM Sans', sans-serif; letter-spacing:-0.03em; line-height:1; color:rgba(255,255,255,0.08); pointer-events:none; user-select:none; }
 .opportunity-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .opportunity-ticker { font:700 18px 'DM Sans', sans-serif; letter-spacing:-0.01em; }
 .opportunity-score { min-width:40px; height:26px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; font:600 12px 'JetBrains Mono', monospace; border:1px solid currentColor; background:color-mix(in oklch, currentColor 8%, transparent); }

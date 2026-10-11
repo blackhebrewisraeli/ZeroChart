@@ -85,10 +85,11 @@ function Hero({ asset }: { asset: Asset }) {
   );
 }
 
-function OpportunityCard({ asset }: { asset: Asset }) {
+function OpportunityCard({ asset, rank }: { asset: Asset; rank: number }) {
   const score = calculateSignalScore(asset);
   return (
     <article className="opportunity-card">
+      <span className="opportunity-rank" aria-hidden="true">#{rank}</span>
       <div className="opportunity-top">
         <span className="opportunity-ticker">{asset.ticker}</span>
         <span className={cn('opportunity-score', scoreToneOf(score))}>{score}</span>
@@ -127,7 +128,7 @@ function Index() {
             <section className="opportunities" aria-label="More opportunities">
               <div className="opportunities-head"><h2 className="opportunities-title">More Opportunities</h2><span className="opportunities-count font-mono">{otherSignals.length} SIGNALS</span></div>
               <div className="opportunity-grid">
-                {otherSignals.map(asset => <OpportunityCard key={asset.ticker} asset={asset} />)}
+                {otherSignals.map((asset, index) => <OpportunityCard key={asset.ticker} asset={asset} rank={index + 2} />)}
               </div>
             </section>
           )}

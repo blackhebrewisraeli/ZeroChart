@@ -22,7 +22,7 @@ Navigation/Filters: Create a top toggle/tab system with two modes:
 🐢 Stable Mode (Long-term): Uses the stable_signal as the color indicator.
 💎 Radar Mode (Swing/Asymmetric): Uses the radar_signal as the color indicator for swing / asymmetric setups.
 
-Master-Detail Workspace: A scrollable sidebar list of filtered assets (ticker, price, RSI, trend) with a detail pane showing algorithmic insights (Risk %, Reward %, Volume Spike), a Simulate Buy action, and an embedded TradingView chart.
+Master-Detail Workspace: A scrollable sidebar list of filtered assets (ticker, price, RSI, trend, Signal Score) with a detail pane showing algorithmic insights (Risk %, Reward %, Volume Spike), a broker routing action (Trade on Binance / OANDA / eToro), and an embedded TradingView chart.
 
 Deliverable: Generate the complete, production-ready frontend code. Ensure the UI handles loading states gracefully. Supabase is connected automatically (no URL or key needs to be pasted).
 

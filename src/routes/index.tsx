@@ -1,12 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ArrowDown, ArrowUpRight, Briefcase, CandlestickChart, Check, ChevronDown, Diamond, Plus, Radio, RefreshCw, Search, Turtle, X, Zap } from 'lucide-react';
-import { toast } from 'sonner';
+import { ArrowDown, ArrowUpRight, CandlestickChart, Check, ChevronDown, Diamond, ExternalLink, Radio, RefreshCw, Search, Turtle, X, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Portfolio } from '@/components/portfolio';
-import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatTradingViewSymbol, formatVolume, sampleAssets, type Asset } from '@/lib/assets';
-import { openTrade, openTradesQueryKey } from '@/lib/trades';
+import { calculateSignalScore, fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatTradingViewSymbol, formatVolume, getBrokerRoute, sampleAssets, type Asset } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
@@ -39,32 +36,18 @@ function trendInfo(asset: Asset) {
     : { className: 'trend-down', icon: '📉', label: 'Below SMA 50', short: 'Down' };
 }
 
-function SimulateBuyButton({ ticker, price }: { ticker: string; price: number | null }) {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: () => {
-      if (price === null) throw new Error('No live price available for this asset.');
-      return openTrade(ticker, price);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: openTradesQueryKey });
-      toast.success('Position opened', { description: `${ticker} · ${formatPrice(price)} paper buy` });
-    },
-    onError: (error) => {
-      toast.error('Trade failed', { description: error instanceof Error ? error.message : 'Unable to open position' });
-    },
-  });
+function TradeButton({ ticker }: { ticker: string }) {
+  const route = getBrokerRoute(ticker);
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="simulate-buy"
-      aria-label={`Simulate buy ${ticker}`}
-      disabled={price === null || mutation.isPending}
-      onClick={() => mutation.mutate()}
+    <a
+      className="trade-button"
+      href={route.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${route.label} for ${ticker}`}
     >
-      {mutation.isPending ? 'Opening…' : (<><Plus size={12} /> Simulate Buy</>)}
-    </Button>
+      <ExternalLink size={12} /> {route.label}
+    </a>
   );
 }
 
@@ -73,6 +56,8 @@ function RadarListItem({ asset, selected, onSelect }: { asset: Asset; selected: 
   const rsi = rsiTone(asset.rsi_14);
   const trend = trendInfo(asset);
   const tone = signal === 'Green' ? 'signal-green' : signal === 'Yellow' ? 'signal-yellow' : signal === 'Red' ? 'signal-red' : 'signal-muted';
+  const score = calculateSignalScore(asset);
+  const scoreTone = score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
   return (
     <button
       type="button"
@@ -82,9 +67,10 @@ function RadarListItem({ asset, selected, onSelect }: { asset: Asset; selected: 
     >
       <div className="radar-list-item-head">
         <span className="radar-list-ticker"><span className={cn('signal-dot', tone)} />{asset.ticker}</span>
-        <span className="radar-list-price">{formatPrice(asset.current_price)}</span>
+        <span className={cn('radar-list-score', scoreTone)}>{score}</span>
       </div>
       <div className="radar-list-item-meta">
+        <span className="radar-list-price">{formatPrice(asset.current_price)}</span>
         <span className={cn('tech-badge', rsi.tone)}>RSI {formatRsi(asset.rsi_14)}</span>
         <span className={cn('tech-badge', trend.className)}>{trend.icon} {trend.short}</span>
       </div>
@@ -109,7 +95,7 @@ function RadarDetail({ asset }: { asset: Asset }) {
           <div className="radar-insight"><span className="radar-insight-label">Reward</span><span className="radar-insight-value radar-insight-reward">{formatReward(asset.reward_pct)}</span></div>
           <div className="radar-insight"><span className="radar-insight-label">Vol Spike</span><span className="radar-insight-value">{formatVolume(asset.volume_spike)}</span></div>
         </div>
-        <div className="radar-detail-action"><SimulateBuyButton ticker={asset.ticker} price={asset.current_price} /></div>
+        <div className="radar-detail-action"><TradeButton ticker={asset.ticker} /></div>
       </div>
       <div className="radar-chart">
         <AdvancedRealTimeChart key={asset.ticker} symbol={formatTradingViewSymbol(asset.ticker)} theme="dark" autosize={true} />
@@ -129,6 +115,7 @@ function RadarEmptyState() {
 }
 
 const sorters: Record<string, (a: Asset, b: Asset) => number> = {
+  score: (a, b) => calculateSignalScore(b) - calculateSignalScore(a),
   ticker: (a, b) => a['ticker'].localeCompare(b['ticker']),
   reward: (a, b) => (b.reward_pct ?? -Infinity) - (a.reward_pct ?? -Infinity),
   risk: (a, b) => (a.risk_pct ?? Infinity) - (b.risk_pct ?? Infinity),
@@ -139,10 +126,9 @@ function Index() {
   const [mode, setMode] = useState<'stable' | 'radar'>('stable');
   const [filter, setFilter] = useState('All signals');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('ticker');
+  const [sort, setSort] = useState('score');
   const [strongOnly, setStrongOnly] = useState(false);
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
-  const [workspace, setWorkspace] = useState<'radar' | 'portfolio'>('radar');
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const query = useQuery({ queryKey: ['assets-status'], queryFn: fetchAssets, refetchInterval: 60000, retry: 1 });
   const preview = source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
@@ -166,8 +152,6 @@ function Index() {
 
   return <div className="min-h-screen bg-background text-foreground">
     <header className="terminal-header"><div className="page-width flex h-full items-center justify-between gap-4"><a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home"><span className="brand-mark"><Zap size={19} fill="currentColor" /></span><span className="text-xl font-semibold">zerochart<span className="text-primary">.</span></span><span className="terminal-tag">TERMINAL</span></a><div className="flex items-center gap-5"><span className="connection-status"><span className={cn('status-dot', query.isError && !preview && 'status-error')} />{preview ? 'Sample data' : query.isPending ? 'Connecting' : query.isError ? 'Connection interrupted' : 'Connected'}</span><span className="header-divider" /><span className="font-mono text-xs text-muted-foreground">V 1.0</span></div></div></header>
-    <nav className="top-nav" aria-label="Primary navigation"><div className="page-width flex items-center gap-2"><button type="button" className={cn('top-nav-tab', workspace === 'radar' && 'top-nav-active')} aria-current={workspace === 'radar' ? 'page' : undefined} onClick={() => setWorkspace('radar')}><Radio size={15} />Radar</button><button type="button" className={cn('top-nav-tab', workspace === 'portfolio' && 'top-nav-active')} aria-current={workspace === 'portfolio' ? 'page' : undefined} onClick={() => setWorkspace('portfolio')}><Briefcase size={15} />Portfolio</button></div></nav>
-    {workspace === 'radar' ? (
     <main className="page-width pb-12 pt-11">
       <div className="flex flex-wrap items-end justify-between gap-5"><div><div className="mb-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.15em] text-primary"><span className="h-1.5 w-1.5 bg-primary" />THE SIGNAL TERMINAL</div><h1 className="text-[34px] font-semibold leading-tight">Signal over noise<span className="text-primary">.</span></h1><p className="mt-2.5 text-sm text-muted-foreground">Less watching. More conviction.</p></div><div className="flex items-center gap-3"><span className="font-mono text-[11px] text-muted-foreground">{preview ? 'PREVIEW SNAPSHOT' : `UPDATED ${updated}`}</span><Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button></div></div>
       <div className="mode-selector" role="tablist" aria-label="Trading mode"><Button role="tab" aria-selected={!radar} variant="ghost" className={cn('mode-tab', !radar && 'mode-active')} onClick={() => setMode('stable')}><Turtle size={19} /><span>Stable mode<span className="mode-caption">Long-term conviction</span></span>{!radar && <Check size={15} className="ml-auto text-primary" />}</Button><Button role="tab" aria-selected={radar} variant="ghost" className={cn('mode-tab', radar && 'mode-active')} onClick={() => setMode('radar')}><Diamond size={18} /><span>Radar mode<span className="mode-caption">Swing / asymmetric</span></span>{radar && <Check size={15} className="ml-auto text-primary" />}</Button></div>
@@ -180,7 +164,7 @@ function Index() {
             <div className="radar-sidebar-head">
               <div className="flex items-center gap-3"><h2 className="text-base font-medium">{radar ? 'Radar watchlist' : 'Stable watchlist'}</h2><span className="count-badge font-mono">{filtered.length}</span></div>
               <div className="search-control"><Search size={14} /><input aria-label="Search assets" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)} />{search && <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Clear search" onClick={() => setSearch('')}><X size={12} /></Button>}</div>
-              <div className="flex gap-2"><div className="select-control flex-1"><select aria-label="Filter signals" value={filter} onChange={e => setFilter(e.target.value)}><option>All signals</option><option>Green</option><option>Yellow</option><option>Red</option></select><ChevronDown size={12} /></div><div className="select-control flex-1"><select aria-label="Sort assets" value={sort} onChange={e => setSort(e.target.value)}><option value="ticker">Sort: Ticker (A–Z)</option><option value="reward">Sort: Highest Reward %</option><option value="risk">Sort: Lowest Risk %</option><option value="volume">Sort: Highest Volume Spike</option></select><ChevronDown size={12} /></div></div>
+              <div className="flex gap-2"><div className="select-control flex-1"><select aria-label="Filter signals" value={filter} onChange={e => setFilter(e.target.value)}><option>All signals</option><option>Green</option><option>Yellow</option><option>Red</option></select><ChevronDown size={12} /></div><div className="select-control flex-1"><select aria-label="Sort assets" value={sort} onChange={e => setSort(e.target.value)}><option value="score">Sort: Signal Score</option><option value="ticker">Sort: Ticker (A–Z)</option><option value="reward">Sort: Highest Reward %</option><option value="risk">Sort: Lowest Risk %</option><option value="volume">Sort: Highest Volume Spike</option></select><ChevronDown size={12} /></div></div>
               <Button variant={strongOnly ? 'default' : 'outline'} size="sm" aria-pressed={strongOnly} className={cn('strong-toggle', strongOnly && 'strong-active')} onClick={() => setStrongOnly(v => !v)}>🚀 Strong Signals Only</Button>
             </div>
             <div className="radar-sidebar-scroll" aria-busy={query.isPending && !preview}>
@@ -196,10 +180,5 @@ function Index() {
       </section>
       <footer className="terminal-footer"><div className="flex items-center gap-2"><Zap size={13} /><span>Algorithmic signals. Live charts. Zero noise.</span></div><span>AI analysis is informational. Not financial advice.</span><span className="font-mono text-[10px]">ZEROCHART / {radar ? 'RADAR' : 'STABLE'}<ArrowDown size={10} className="ml-1 inline" /></span></footer>
     </main>
-    ) : (
-    <main className="page-width pb-12 pt-11">
-      <Portfolio />
-    </main>
-    )}
   </div>;
 }

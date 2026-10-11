@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { response, range } = vi.hoisted(() => ({ response: vi.fn(), range: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: () => ({ select: () => ({ order: () => ({ range: (...args: number[]) => { range(...args); return { abortSignal: response }; } }) }) }) } }));
-import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatTradingViewSymbol, formatVolume } from '@/lib/assets';
+import { calculateSignalScore, fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatTradingViewSymbol, formatVolume, getBrokerRoute, type Asset } from '@/lib/assets';
 
 describe('asset data', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -40,5 +40,26 @@ describe('asset data', () => {
     expect(formatTradingViewSymbol('BTC-USD')).toBe('CRYPTO:BTCUSD');
     expect(formatTradingViewSymbol('AAPL')).toBe('AAPL');
     expect(formatTradingViewSymbol('MSFT')).toBe('MSFT');
+  });
+  it('scores assets from reward-to-risk ratio and signal bonuses', () => {
+    const base: Asset = {
+      ticker: 'TEST', name: null, current_price: 100, sma_50: 90, sma_200: null,
+      stable_signal: null, radar_signal: null, stable_explanation: null, radar_explanation: null,
+      risk_pct: 0.05, reward_pct: 0.1, volume_spike: null, rsi_14: null, updated_at: null,
+    };
+    // ratio = 2 -> base 60, no volume spike, trend positive -> +10 = 70
+    expect(calculateSignalScore(base)).toBe(70);
+    // ratio = 3 -> base 80, volume spike +15, trend positive +10 -> capped at 100
+    expect(calculateSignalScore({ ...base, reward_pct: 0.15, volume_spike: 1.8 })).toBe(100);
+    // ratio = 1 -> base 40, no bonuses
+    expect(calculateSignalScore({ ...base, risk_pct: 0.1, reward_pct: 0.1, sma_50: null })).toBe(40);
+    // missing data -> minimal base 20
+    expect(calculateSignalScore({ ...base, risk_pct: null, reward_pct: null, sma_50: null })).toBe(20);
+  });
+  it('routes tickers to external brokers', () => {
+    expect(getBrokerRoute('BTC-USD')).toEqual({ label: 'Trade on Binance', url: 'https://www.binance.com/en/markets' });
+    expect(getBrokerRoute('EURUSD=X')).toEqual({ label: 'Trade on OANDA', url: 'https://www.oanda.com/' });
+    expect(getBrokerRoute('AAPL')).toEqual({ label: 'Trade on eToro', url: 'https://www.etoro.com/markets/aapl' });
+    expect(getBrokerRoute('BRK.B')).toEqual({ label: 'Trade on eToro', url: 'https://www.etoro.com/markets/brkb' });
   });
 });

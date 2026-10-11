@@ -53,6 +53,46 @@ export function formatTradingViewSymbol(ticker: string) {
   return symbol;
 }
 
+export function calculateSignalScore(asset: Asset): number {
+  const ratio =
+    asset.reward_pct !== null &&
+    asset.risk_pct !== null &&
+    asset.risk_pct > 0 &&
+    Number.isFinite(asset.reward_pct) &&
+    Number.isFinite(asset.risk_pct)
+      ? asset.reward_pct / asset.risk_pct
+      : 0;
+  let score = 20 * ratio + 20;
+  if (asset.volume_spike !== null && asset.volume_spike > 1) score += 15;
+  if (
+    asset.current_price !== null &&
+    asset.sma_50 !== null &&
+    Number.isFinite(asset.current_price) &&
+    Number.isFinite(asset.sma_50) &&
+    asset.current_price > asset.sma_50
+  ) {
+    score += 10;
+  }
+  return Math.min(100, Math.max(0, Math.round(score)));
+}
+
+export interface BrokerRoute {
+  label: string;
+  url: string;
+}
+
+export function getBrokerRoute(ticker: string): BrokerRoute {
+  const symbol = ticker.trim();
+  if (symbol.toUpperCase().includes('-USD')) {
+    return { label: 'Trade on Binance', url: 'https://www.binance.com/en/markets' };
+  }
+  if (symbol.toUpperCase().endsWith('=X')) {
+    return { label: 'Trade on OANDA', url: 'https://www.oanda.com/' };
+  }
+  const clean = symbol.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return { label: 'Trade on eToro', url: `https://www.etoro.com/markets/${clean}` };
+}
+
 export const sampleAssets: Asset[] = [
   ['BTC', 'Bitcoin', 67432.80, 'Green', 'Green', 0.032, 0.052, 1.8, 58.3, 65300, 59800, 'Institutional accumulation and limited supply support a strong long-term outlook.', 'Consolidation near support offers an asymmetric entry with defined downside.'],
   ['ETH', 'Ethereum', 3521.45, 'Green', 'Yellow', 0.058, 0.038, 1.2, 46.9, 3580, 3300, 'Growing network utility and staking demand reinforce the long-term thesis.', 'Wait for a confirmed breakout as near-term momentum remains mixed.'],

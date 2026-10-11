@@ -216,43 +216,9 @@
 @media (max-width:500px) { .page-width { padding-inline:18px; } main.page-width { padding-top:30px; }.asset-grid { grid-template-columns:1fr; }.mode-tab { padding:10px; gap:8px; font-size:12px; }.mode-caption { font-size:9px; }.mode-tab > svg { width:16px; }.asset-explanation { min-height:0; }.asset-card { padding:20px; }.asset-bottom { font-size:9px; }.toolbar { gap:6px; }.select-control select { max-width:110px; }.search-control { width:130px; }.terminal-footer { margin-top:32px; }.asset-row { gap:15px; }.asset-row .asset-heading { gap:10px; }.asset-row .asset-price { flex-wrap:wrap; }.connection-status { font-size:10px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; }.asset-card:hover { transform:none; } }
 
-/* Paper Trading — top navigation */
-.top-nav { border-bottom:1px solid var(--border); background:color-mix(in oklch,var(--card) 55%,var(--background)); }
-.top-nav .page-width { height:52px; }
-.top-nav-tab { display:inline-flex; align-items:center; gap:8px; height:34px; padding:0 14px; border:1px solid transparent; border-radius:4px; color:var(--muted-foreground); font:11px 'JetBrains Mono',monospace; letter-spacing:0.04em; cursor:pointer; background:transparent; transition:color .2s,border-color .2s,background .2s; }
-.top-nav-tab:hover { color:var(--foreground); background:var(--secondary); }
-.top-nav-tab svg { width:15px; height:15px; }
-.top-nav-active { color:var(--foreground); background:var(--secondary); border-color:var(--border); }
-.top-nav-active svg { color:var(--primary); }
-
-/* Paper Trading — simulate buy */
-.simulate-buy { width:100%; height:34px; margin-top:14px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.05em; text-transform:uppercase; color:var(--signal-green); border:1px solid color-mix(in oklch,var(--signal-green) 45%,transparent); background:color-mix(in oklch,var(--signal-green) 8%,transparent); box-shadow:0 0 16px color-mix(in oklch,var(--signal-green) 18%,transparent); }
-.simulate-buy:hover { color:var(--signal-green); border-color:var(--signal-green); background:color-mix(in oklch,var(--signal-green) 15%,transparent); }
-.simulate-buy:disabled { opacity:0.45; box-shadow:none; cursor:not-allowed; }
-.asset-row .simulate-buy { grid-column:1/-1; margin-top:12px; }
-
-/* Paper Trading — portfolio */
-.portfolio-summary { padding:27px 0; margin-top:32px; border-block:1px solid var(--border); }
-.trade-list { display:flex; flex-direction:column; gap:14px; }
-.trade-row { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1.1fr) minmax(0,1.2fr) auto; align-items:center; gap:22px; padding:21px; border:1px solid var(--border); border-radius:6px; background:var(--card); transition:border-color .2s,transform .2s; animation:appear .35s ease both; }
-.trade-row:hover { border-color:color-mix(in oklch,var(--foreground) 27%,var(--border)); }
-.trade-ticker { display:flex; align-items:center; gap:12px; min-width:0; }
-.trade-cell { display:flex; flex-direction:column; gap:9px; min-width:0; }
-.trade-label { font:9px 'JetBrains Mono',monospace; color:var(--muted-foreground); letter-spacing:0.06em; }
-.pnl-positive { color:var(--signal-green); }
-.pnl-negative { color:var(--signal-red); }
-.close-position { height:34px; padding:0 16px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.04em; text-transform:uppercase; }
-.trade-skeleton { height:86px; grid-template-columns:repeat(4,1fr); }
-
-@media (max-width:760px) {
-  .trade-row { grid-template-columns:1fr 1fr; row-gap:18px; }
-  .trade-row .trade-ticker, .trade-row .close-position { grid-column:1/-1; }
-  .trade-row .close-position { width:100%; }
-}
-@media (max-width:500px) {
-  .trade-row { grid-template-columns:1fr; }
-  .trade-row .trade-ticker, .trade-row .trade-cell, .trade-row .close-position { grid-column:1/-1; }
-}
+/* Detail view — external broker routing */
+.trade-button { display:inline-flex; align-items:center; gap:8px; height:34px; padding:0 18px; border-radius:4px; font:10px 'JetBrains Mono',monospace; letter-spacing:0.05em; text-transform:uppercase; color:var(--signal-green); border:1px solid color-mix(in oklch,var(--signal-green) 45%,transparent); background:color-mix(in oklch,var(--signal-green) 8%,transparent); box-shadow:0 0 16px color-mix(in oklch,var(--signal-green) 18%,transparent); transition:color .2s,border-color .2s,background .2s; text-decoration:none; }
+.trade-button:hover { color:var(--signal-green); border-color:var(--signal-green); background:color-mix(in oklch,var(--signal-green) 15%,transparent); }
 
 /* Radar — TradingView master/detail */
 .master-detail { display:flex; gap:14px; margin-top:24px; height:min(74vh,820px); min-height:500px; }
@@ -272,6 +238,10 @@
 .radar-list-price { font:13px 'JetBrains Mono',monospace; color:var(--muted-foreground); }
 .radar-list-item-meta { display:flex; flex-wrap:wrap; gap:6px; }
 .radar-list-item-meta .tech-badge { padding:2px 7px; font-size:9px; }
+.radar-list-score { min-width:34px; height:24px; padding:0 8px; display:inline-flex; align-items:center; justify-content:center; border-radius:4px; font:600 13px 'JetBrains Mono',monospace; border:1px solid color-mix(in oklch,currentColor 40%,transparent); background:color-mix(in oklch,currentColor 8%,transparent); }
+.score-high { color:var(--signal-green); }
+.score-mid { color:var(--signal-yellow); }
+.score-low { color:var(--signal-red); }
 .radar-list-skeleton { gap:10px; pointer-events:none; }
 .radar-list-empty { display:flex; flex-direction:column; align-items:center; gap:10px; padding:30px 14px; text-align:center; color:var(--muted-foreground); font-size:12px; }
 .signal-muted { color:var(--muted-foreground); }
@@ -284,7 +254,6 @@
 .radar-insight-label { font:8px 'JetBrains Mono',monospace; color:var(--muted-foreground); letter-spacing:0.08em; text-transform:uppercase; }
 .radar-insight-value { font:15px 'JetBrains Mono',monospace; color:var(--foreground); }
 .radar-insight-reward { color:var(--signal-green); }
-.radar-detail-action .simulate-buy { width:auto; margin-top:0; padding:0 18px; }
 .radar-chart { flex:1 1 auto; min-height:0; position:relative; background:var(--background); }
 .radar-empty { flex:1 1 auto; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:40px; text-align:center; color:var(--muted-foreground); }
 .radar-empty h3 { margin-top:10px; font-size:16px; font-weight:500; color:var(--foreground); }

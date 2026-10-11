@@ -1,6 +1,6 @@
-# Terminal Trade Feed
+# ZeroChart
 
-Role: You are an expert frontend engineer designing "ZeroChart", a minimalist, chartless trading dashboard.
+Role: You are an expert frontend engineer designing "ZeroChart", a minimalist algorithmic signal terminal with live charts.
 Stack: React, Tailwind CSS, Supabase client.
 UI/UX Design ("Terminal Chic"):
 
@@ -9,7 +9,7 @@ Pure Dark Mode background (almost black).
 
 Monospace fonts for all numbers and tickers.
 
-Absolutely NO charts. Just clean grids or lists.
+Live TradingView charts in a focused master-detail layout.
 
 High contrast "Traffic Light" colors for signals: Neon Green for 'Green', Yellow for 'Yellow', Bright Red for 'Red'.
 
@@ -19,12 +19,12 @@ Core Features:
 Supabase Connection: Fetch all rows from the assets_status table.
 
 Navigation/Filters: Create a top toggle/tab system with two modes:
-🐢 Stable Mode (Long-term): Displays the stable_signal (color indicator) and stable_explanation.
-💎 Radar Mode (Swing/Asymmetric): Displays the radar_signal (color indicator), risk_pct (formatted as %), and radar_explanation.
+🐢 Stable Mode (Long-term): Uses the stable_signal as the color indicator.
+💎 Radar Mode (Swing/Asymmetric): Uses the radar_signal as the color indicator for swing / asymmetric setups.
 
-Asset Cards/Rows: For each ticker, show the Symbol, Current Price, the colored Signal indicator (a glowing dot or minimalist badge based on the string 'Green'/'Yellow'/'Red'), and the 1-sentence AI explanation depending on the active filter.
+Master-Detail Workspace: A scrollable sidebar list of filtered assets (ticker, price, RSI, trend) with a detail pane showing algorithmic insights (Risk %, Reward %, Volume Spike), a Simulate Buy action, and an embedded TradingView chart.
 
-Deliverable: Generate the complete, production-ready frontend code. Ensure the UI handles loading states gracefully. Provide instructions on where to paste my Supabase URL and Anon Key.
+Deliverable: Generate the complete, production-ready frontend code. Ensure the UI handles loading states gracefully. Supabase is connected automatically (no URL or key needs to be pasted).
 
 This project was built with [Lovable](https://lovable.dev).
 

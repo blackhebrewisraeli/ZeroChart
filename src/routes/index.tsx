@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUpRight, Briefcase, CandlestickChart, Check, ChevronDow
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Portfolio } from '@/components/portfolio';
-import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatVolume, sampleAssets, type Asset } from '@/lib/assets';
+import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatTradingViewSymbol, formatVolume, sampleAssets, type Asset } from '@/lib/assets';
 import { openTrade, openTradesQueryKey } from '@/lib/trades';
 import { cn } from '@/lib/utils';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
@@ -112,7 +112,7 @@ function RadarDetail({ asset }: { asset: Asset }) {
         <div className="radar-detail-action"><SimulateBuyButton ticker={asset.ticker} price={asset.current_price} /></div>
       </div>
       <div className="radar-chart">
-        <AdvancedRealTimeChart key={asset.ticker} symbol={asset.ticker} theme="dark" autosize={true} />
+        <AdvancedRealTimeChart key={asset.ticker} symbol={formatTradingViewSymbol(asset.ticker)} theme="dark" autosize={true} />
       </div>
     </>
   );
@@ -169,7 +169,7 @@ function Index() {
     <nav className="top-nav" aria-label="Primary navigation"><div className="page-width flex items-center gap-2"><button type="button" className={cn('top-nav-tab', workspace === 'radar' && 'top-nav-active')} aria-current={workspace === 'radar' ? 'page' : undefined} onClick={() => setWorkspace('radar')}><Radio size={15} />Radar</button><button type="button" className={cn('top-nav-tab', workspace === 'portfolio' && 'top-nav-active')} aria-current={workspace === 'portfolio' ? 'page' : undefined} onClick={() => setWorkspace('portfolio')}><Briefcase size={15} />Portfolio</button></div></nav>
     {workspace === 'radar' ? (
     <main className="page-width pb-12 pt-11">
-      <div className="flex flex-wrap items-end justify-between gap-5"><div><div className="mb-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.15em] text-primary"><span className="h-1.5 w-1.5 bg-primary" />THE CHARTLESS TERMINAL</div><h1 className="text-[34px] font-semibold leading-tight">Signal over noise<span className="text-primary">.</span></h1><p className="mt-2.5 text-sm text-muted-foreground">Less watching. More conviction.</p></div><div className="flex items-center gap-3"><span className="font-mono text-[11px] text-muted-foreground">{preview ? 'PREVIEW SNAPSHOT' : `UPDATED ${updated}`}</span><Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button></div></div>
+      <div className="flex flex-wrap items-end justify-between gap-5"><div><div className="mb-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.15em] text-primary"><span className="h-1.5 w-1.5 bg-primary" />THE SIGNAL TERMINAL</div><h1 className="text-[34px] font-semibold leading-tight">Signal over noise<span className="text-primary">.</span></h1><p className="mt-2.5 text-sm text-muted-foreground">Less watching. More conviction.</p></div><div className="flex items-center gap-3"><span className="font-mono text-[11px] text-muted-foreground">{preview ? 'PREVIEW SNAPSHOT' : `UPDATED ${updated}`}</span><Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button></div></div>
       <div className="mode-selector" role="tablist" aria-label="Trading mode"><Button role="tab" aria-selected={!radar} variant="ghost" className={cn('mode-tab', !radar && 'mode-active')} onClick={() => setMode('stable')}><Turtle size={19} /><span>Stable mode<span className="mode-caption">Long-term conviction</span></span>{!radar && <Check size={15} className="ml-auto text-primary" />}</Button><Button role="tab" aria-selected={radar} variant="ghost" className={cn('mode-tab', radar && 'mode-active')} onClick={() => setMode('radar')}><Diamond size={18} /><span>Radar mode<span className="mode-caption">Swing / asymmetric</span></span>{radar && <Check size={15} className="ml-auto text-primary" />}</Button></div>
       <section className="signal-summary" aria-label="Signal overview"><div className="summary-total"><span className="summary-label">ASSETS ON THE RADAR</span><div className="mt-3 flex items-baseline gap-2"><span className="font-mono text-[30px]">{query.isPending && !preview ? '—' : String(assets.length).padStart(2, '0')}</span><span className="text-xs text-muted-foreground">tracked assets</span></div></div>{['Green', 'Yellow', 'Red'].map((signal, i) => <div className="summary-item" key={signal}><span className={cn('summary-label flex items-center gap-2', `signal-${signal.toLowerCase()}`)}><span className="signal-dot" />{signal === 'Green' ? 'GREEN LIGHT' : signal === 'Yellow' ? 'PROCEED WITH CAUTION' : 'STAND ASIDE'}</span><div className="mt-3 flex items-baseline gap-2"><span className="font-mono text-[30px]">{String(counts[i]).padStart(2, '0')}</span><span className="text-xs text-muted-foreground">{signal === 'Green' ? 'favorable' : signal === 'Yellow' ? 'neutral' : 'unfavorable'}</span></div></div>)}</section>
       <section className="mt-9" aria-label="Asset signals">
@@ -194,7 +194,7 @@ function Index() {
           </div>
         </div>
       </section>
-      <footer className="terminal-footer"><div className="flex items-center gap-2"><Zap size={13} /><span>Zero charts. Clear signals.</span></div><span>AI analysis is informational. Not financial advice.</span><span className="font-mono text-[10px]">ZEROCHART / {radar ? 'RADAR' : 'STABLE'}<ArrowDown size={10} className="ml-1 inline" /></span></footer>
+      <footer className="terminal-footer"><div className="flex items-center gap-2"><Zap size={13} /><span>Algorithmic signals. Live charts. Zero noise.</span></div><span>AI analysis is informational. Not financial advice.</span><span className="font-mono text-[10px]">ZEROCHART / {radar ? 'RADAR' : 'STABLE'}<ArrowDown size={10} className="ml-1 inline" /></span></footer>
     </main>
     ) : (
     <main className="page-width pb-12 pt-11">

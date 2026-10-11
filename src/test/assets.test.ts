@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { response, range } = vi.hoisted(() => ({ response: vi.fn(), range: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: () => ({ select: () => ({ order: () => ({ range: (...args: number[]) => { range(...args); return { abortSignal: response }; } }) }) }) } }));
-import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatVolume } from '@/lib/assets';
+import { fetchAssets, formatPrice, formatReward, formatRisk, formatRsi, formatTradingViewSymbol, formatVolume } from '@/lib/assets';
 
 describe('asset data', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -34,5 +34,11 @@ describe('asset data', () => {
   it('formats RSI readings and handles missing values', () => {
     expect(formatRsi(60.5)).toBe('60.5');
     expect(formatRsi(null)).toBe('—');
+  });
+  it('maps tickers to TradingView symbols', () => {
+    expect(formatTradingViewSymbol('EURUSD=X')).toBe('FX:EURUSD');
+    expect(formatTradingViewSymbol('BTC-USD')).toBe('CRYPTO:BTCUSD');
+    expect(formatTradingViewSymbol('AAPL')).toBe('AAPL');
+    expect(formatTradingViewSymbol('MSFT')).toBe('MSFT');
   });
 });

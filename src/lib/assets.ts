@@ -42,6 +42,17 @@ export function formatRsi(value: number | null) {
   return value === null || !Number.isFinite(value) ? '—' : value.toFixed(1);
 }
 
+export function formatTradingViewSymbol(ticker: string) {
+  const symbol = ticker.trim();
+  if (symbol.toUpperCase().endsWith('=X')) {
+    return `FX:${symbol.slice(0, -2).toUpperCase()}`;
+  }
+  if (symbol.toUpperCase().includes('-USD')) {
+    return `CRYPTO:${symbol.toUpperCase().replace('-USD', 'USD')}`;
+  }
+  return symbol;
+}
+
 export const sampleAssets: Asset[] = [
   ['BTC', 'Bitcoin', 67432.80, 'Green', 'Green', 0.032, 0.052, 1.8, 58.3, 65300, 59800, 'Institutional accumulation and limited supply support a strong long-term outlook.', 'Consolidation near support offers an asymmetric entry with defined downside.'],
   ['ETH', 'Ethereum', 3521.45, 'Green', 'Yellow', 0.058, 0.038, 1.2, 46.9, 3580, 3300, 'Growing network utility and staking demand reinforce the long-term thesis.', 'Wait for a confirmed breakout as near-term momentum remains mixed.'],

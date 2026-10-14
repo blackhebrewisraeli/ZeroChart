@@ -1,11 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ArrowDown,
   ArrowUpRight,
   Briefcase,
   CandlestickChart,
+  Flame,
   Radio,
   RefreshCw,
   TrendingDown,
@@ -85,7 +86,9 @@ function Hero({ asset }: { asset: Asset }) {
     <section className="hero" aria-label="Top signal">
       <div className="hero-glow" aria-hidden="true" />
       <div className="hero-content">
-        <span className="hero-badge">🔥 TOP SIGNAL RIGHT NOW</span>
+        <span className="hero-badge">
+          <Flame size={14} /> TOP SIGNAL RIGHT NOW
+        </span>
         <div className="hero-headline">
           <div>
             <h2 className="hero-ticker">{asset.ticker}</h2>
@@ -129,10 +132,31 @@ function Hero({ asset }: { asset: Asset }) {
 type MarketView = 'signals' | 'gainers' | 'losers';
 type AssetClassFilter = 'All' | AssetClass;
 
-const MARKET_VIEWS: { id: MarketView; label: string }[] = [
-  { id: 'signals', label: '🔥 Top Signals' },
-  { id: 'gainers', label: '📈 Top Gainers' },
-  { id: 'losers', label: '📉 Top Losers' },
+const MARKET_VIEWS: { id: MarketView; label: ReactNode }[] = [
+  {
+    id: 'signals',
+    label: (
+      <>
+        <Flame size={14} /> Top Signals
+      </>
+    ),
+  },
+  {
+    id: 'gainers',
+    label: (
+      <>
+        <TrendingUp size={14} /> Top Gainers
+      </>
+    ),
+  },
+  {
+    id: 'losers',
+    label: (
+      <>
+        <TrendingDown size={14} /> Top Losers
+      </>
+    ),
+  },
 ];
 
 const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['All', 'Stocks', 'Crypto', 'Forex'];

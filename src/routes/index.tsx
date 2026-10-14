@@ -19,6 +19,7 @@ import { AssetDetailsModal } from '@/components/AssetDetailsModal';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
+import { OnboardingTour } from '@/components/OnboardingTour';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { SetAlertButton } from '@/components/SetAlertModal';
@@ -86,7 +87,7 @@ function Hero({ asset }: { asset: Asset }) {
   const score = calculateSignalScore(asset);
   const surging = asset.volume_spike !== null && asset.volume_spike > 1;
   return (
-    <section className="hero" aria-label="Top signal">
+    <section className="hero" data-tour="hero" aria-label="Top signal">
       <div className="hero-glow" aria-hidden="true" />
       <div className="hero-content">
         <span className="hero-badge">
@@ -323,6 +324,7 @@ function Index() {
               <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
             </Button>
             <ThemeToggle />
+            <OnboardingTour ready={!!topPick} />
           </div>
         </div>
       </header>
@@ -420,7 +422,7 @@ function Index() {
               {rows.length === 0 ? (
                 <div className="markets-empty">No assets match this filter.</div>
               ) : (
-                <div className="markets-table">
+                <div className="markets-table" data-tour="markets">
                   <div className="markets-row markets-row-head" aria-hidden="true">
                     <span className="markets-head-cell markets-rank-head">#</span>
                     <span className="markets-head-cell">Asset</span>

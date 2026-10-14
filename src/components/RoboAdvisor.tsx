@@ -8,6 +8,7 @@ import {
   type Allocation,
   type RiskProfile,
 } from '@/lib/portfolioBuilder';
+import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,8 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   const [result, setResult] = useState<Allocation[] | null>(null);
   const [total, setTotal] = useState(0);
   const [rejectedTickers, setRejectedTickers] = useState<Set<string>>(new Set());
+  const [monthlyDeposit, setMonthlyDeposit] = useState('250');
+  const [monthly, setMonthly] = useState(250);
   const [error, setError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -131,8 +134,15 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
       setError('Enter an investment amount greater than $0.');
       return;
     }
+    const monthlyRaw = monthlyDeposit.replace(/[^0-9.]/g, '');
+    const monthlyValue = monthlyRaw === '' ? 0 : Number(monthlyRaw);
+    if (!Number.isFinite(monthlyValue) || monthlyValue < 0) {
+      setError('Enter a valid monthly deposit.');
+      return;
+    }
     setError(null);
     setTotal(value);
+    setMonthly(monthlyValue);
     setRejectedTickers(new Set());
     setResult(generatePortfolio({ totalCapital: value, riskProfile }, assets));
     setPhase('results');
@@ -191,6 +201,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
         ref={triggerRef}
         type="button"
         className="robo-trigger"
+        data-tour="robo"
         onClick={openModal}
         aria-haspopup="dialog"
       >
@@ -267,6 +278,29 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                     </div>
 
                     <div className="robo-field">
+                      <label htmlFor="robo-monthly" className="robo-label">
+                        Monthly deposit (optional)
+                      </label>
+                      <div className="robo-amount-field">
+                        <span className="robo-currency">$</span>
+                        <input
+                          id="robo-monthly"
+                          className="robo-input"
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={monthlyDeposit}
+                          onChange={(e) => setMonthlyDeposit(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSubmit();
+                          }}
+                          placeholder="250"
+                        />
+                      </div>
+                      <p className="robo-hint">Recurring contributions that compound over time</p>
+                    </div>
+
+                    <div className="robo-field">
                       <span className="robo-label" id="robo-risk-label">
                         Risk profile
                       </span>
@@ -327,6 +361,56 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                             </span>
                           </div>
                         </div>
+
+                        <div className="robo-projection">
+                          <div className="robo-projection-head">
+                            <span className="robo-projection-title">Wealth Projection</span>
+                            <span className="robo-projection-rate">
+                              {(ANNUAL_RETURN_BY_RISK[riskProfile] * 100).toFixed(0)}% assumed
+                              return
+                            </span>
+                          </div>
+                          <div className="robo-projection-grid">
+                            <div className="robo-projection-cell">
+                              <span className="robo-projection-label">5 years</span>
+                              <span className="robo-projection-value">
+                                {formatPrice(
+                                  projectWealth({
+                                    principal: total,
+                                    monthlyDeposit: monthly,
+                                    annualReturn: ANNUAL_RETURN_BY_RISK[riskProfile],
+                                    years: 5,
+                                  }).futureValue,
+                                )}
+                              </span>
+                            </div>
+                            <div className="robo-projection-cell">
+                              <span className="robo-projection-label">10 years</span>
+                              <span className="robo-projection-value">
+                                {formatPrice(
+                                  projectWealth({
+                                    principal: total,
+                                    monthlyDeposit: monthly,
+                                    annualReturn: ANNUAL_RETURN_BY_RISK[riskProfile],
+                                    years: 10,
+                                  }).futureValue,
+                                )}
+                              </span>
+                            </div>
+                            <div className="robo-projection-cell">
+                              <span className="robo-projection-label">You invest</span>
+                              <span className="robo-projection-value robo-projection-muted">
+                                {formatPrice(total + monthly * 12 * 10)}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="robo-projection-note">
+                            {monthly > 0
+                              ? `With ${formatPrice(monthly)} deposited monthly, compounding at the profile's assumed rate.`
+                              : 'Add a monthly deposit to see your long-term compounding potential.'}
+                          </p>
+                        </div>
+
                         <p className="robo-results-note">
                           Equal-weight allocation · signal score ≥ 70 · Swap any holding to replace
                           it

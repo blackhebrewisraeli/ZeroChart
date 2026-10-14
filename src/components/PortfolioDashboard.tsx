@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import {
   Briefcase,
   CheckCircle2,
@@ -24,6 +25,8 @@ import { cn } from '@/lib/utils';
 type PortfolioMode = 'simulation' | 'live';
 
 const AVAILABLE_CASH = 2500;
+
+const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
 
 function formatPnl(value: number) {
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
@@ -68,12 +71,16 @@ function HealthRing({ score }: { score: number }) {
   );
 }
 
-function SuggestionCard({ suggestion, index }: { suggestion: Suggestion; index: number }) {
+function SuggestionCard({ suggestion }: { suggestion: Suggestion }) {
   const isSell = suggestion.type === 'SELL';
   return (
-    <div
+    <motion.div
+      layout
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0, scale: 0.95 }}
+      transition={SPRING}
       className={cn('suggestion-card', isSell ? 'suggestion-sell' : 'suggestion-buy')}
-      style={{ animationDelay: `${index * 55}ms` }}
     >
       <span className="suggestion-icon">
         {isSell ? <TrendingDown size={18} /> : <TrendingUp size={18} />}
@@ -88,20 +95,18 @@ function SuggestionCard({ suggestion, index }: { suggestion: Suggestion; index: 
         <p className="suggestion-reason">{suggestion.reason}</p>
       </div>
       <span className="suggestion-score">{suggestion.score}</span>
-    </div>
+    </motion.div>
   );
 }
 
 function HoldingRow({
   position,
   assets,
-  index,
   onClose,
   onUpdate,
 }: {
   position: Position;
   assets: Asset[];
-  index: number;
   onClose: (id: string) => void;
   onUpdate: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
 }) {
@@ -138,7 +143,14 @@ function HoldingRow({
   }
 
   return (
-    <div className="holding" style={{ animationDelay: `${index * 45}ms` }}>
+    <motion.div
+      layout
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0, scale: 0.95 }}
+      transition={SPRING}
+      className="holding"
+    >
       <button
         type="button"
         className="holding-summary"
@@ -246,7 +258,7 @@ function HoldingRow({
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -308,13 +320,14 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
         </div>
         {suggestions.length > 0 ? (
           <div className="suggestion-list">
-            {suggestions.map((suggestion, i) => (
-              <SuggestionCard
-                key={`${suggestion.type}-${suggestion.ticker}`}
-                suggestion={suggestion}
-                index={i}
-              />
-            ))}
+            <AnimatePresence>
+              {suggestions.map((suggestion) => (
+                <SuggestionCard
+                  key={`${suggestion.type}-${suggestion.ticker}`}
+                  suggestion={suggestion}
+                />
+              ))}
+            </AnimatePresence>
           </div>
         ) : (
           <div className="suggestion-empty">
@@ -341,16 +354,17 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
         </div>
         {visible.length > 0 ? (
           <div className="holdings-list">
-            {visible.map((position, i) => (
-              <HoldingRow
-                key={position.id}
-                position={position}
-                assets={assets}
-                index={i}
-                onClose={removePosition}
-                onUpdate={updatePosition}
-              />
-            ))}
+            <AnimatePresence>
+              {visible.map((position) => (
+                <HoldingRow
+                  key={position.id}
+                  position={position}
+                  assets={assets}
+                  onClose={removePosition}
+                  onUpdate={updatePosition}
+                />
+              ))}
+            </AnimatePresence>
           </div>
         ) : (
           <div className="holdings-empty">

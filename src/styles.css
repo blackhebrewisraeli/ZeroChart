@@ -1566,35 +1566,52 @@ body {
   color: var(--muted-foreground);
 }
 
-.portfolio-overview {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 22px;
-  align-items: center;
-  padding: 28px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-}
-.portfolio-overview-glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    640px 320px at 12% 0%,
-    color-mix(in oklch, var(--signal-green) 12%, transparent),
-    transparent 70%
-  );
-}
-.overview-stat {
+.kpi-card {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.kpi-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kpi-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: var(--signal-green);
+  background: color-mix(in oklch, var(--signal-green) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--signal-green) 22%, transparent);
+}
+.kpi-card .overview-value {
+  font-size: clamp(22px, 2vw, 28px);
+  white-space: nowrap;
+}
+.kpi-card-health {
+  align-items: center;
+}
+.kpi-card-health .overview-label {
+  align-self: stretch;
+  text-align: left;
+}
+.kpi-card-health .health-ring {
+  width: 104px;
+  height: 104px;
+}
+.kpi-card-health .health-ring-value {
+  font-size: 30px;
 }
 .overview-label {
   font:
@@ -2089,10 +2106,6 @@ body {
 }
 
 @media (max-width: 760px) {
-  .portfolio-overview {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
   .health-ring {
     margin-inline: auto;
   }

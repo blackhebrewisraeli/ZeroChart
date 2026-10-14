@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import {
   Briefcase,
@@ -36,6 +36,31 @@ function formatPnl(value: number) {
 
 function formatSignedPercent(value: number) {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function KpiCard({
+  label,
+  value,
+  sub,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  icon?: ReactNode;
+  tone?: 'pnl-up' | 'pnl-down' | undefined;
+}) {
+  return (
+    <div className="kpi-card">
+      <div className="kpi-card-head">
+        <span className="overview-label">{label}</span>
+        {icon && <span className="kpi-card-icon">{icon}</span>}
+      </div>
+      <span className={cn('overview-value', tone)}>{value}</span>
+      {sub && <span className={cn('overview-sub', tone)}>{sub}</span>}
+    </div>
+  );
 }
 
 function healthTone(score: number) {
@@ -280,6 +305,23 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
   const stats = calculatePortfolioStats(visible, assets);
   const suggestions = generateSuggestions(visible, assets, AVAILABLE_CASH);
 
+  let dayChange = 0;
+  let hasDayChange = false;
+  for (const position of visible) {
+    const asset = assets.find((candidate) => candidate.ticker === position.ticker);
+    const change = asset?.change_24h;
+    if (change == null || !Number.isFinite(change)) continue;
+    const price = asset?.current_price ?? position.buyPrice;
+    dayChange += price * position.shares * change;
+    hasDayChange = true;
+  }
+  const dayChangePct = stats.totalValue > 0 ? (dayChange / stats.totalValue) * 100 : 0;
+  const dayTone: 'pnl-up' | 'pnl-down' | undefined = hasDayChange
+    ? dayChange >= 0
+      ? 'pnl-up'
+      : 'pnl-down'
+    : undefined;
+
   return (
     <section className="portfolio" aria-label="Portfolio dashboard">
       <header className="portfolio-head">
@@ -300,23 +342,39 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
         />
       </header>
 
-      <div className="portfolio-overview">
-        <div className="portfolio-overview-glow" aria-hidden="true" />
-        <div className="overview-stat">
-          <span className="overview-label">Portfolio Value</span>
-          <span className="overview-value">{formatPrice(stats.totalValue)}</span>
-          <span className="overview-sub">Invested {formatPrice(stats.totalInvested)}</span>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Total Value"
+          value={formatPrice(stats.totalValue)}
+          sub={`Invested ${formatPrice(stats.totalInvested)}`}
+          icon={<Wallet size={18} />}
+        />
+        <KpiCard
+          label="24h Change"
+          value={hasDayChange ? formatPnl(dayChange) : '—'}
+          sub={hasDayChange ? formatSignedPercent(dayChangePct) : '—'}
+          icon={
+            dayTone ? (
+              dayTone === 'pnl-up' ? (
+                <TrendingUp size={18} />
+              ) : (
+                <TrendingDown size={18} />
+              )
+            ) : undefined
+          }
+          tone={dayTone}
+        />
+        <KpiCard
+          label="Unrealized P&L"
+          value={formatPnl(stats.unrealizedPnL)}
+          sub={formatSignedPercent(stats.pnlPercent)}
+          icon={<Briefcase size={18} />}
+          tone={stats.unrealizedPnL >= 0 ? 'pnl-up' : 'pnl-down'}
+        />
+        <div className="kpi-card kpi-card-health">
+          <span className="overview-label">Signal Health</span>
+          <HealthRing score={stats.healthScore} />
         </div>
-        <div className="overview-stat">
-          <span className="overview-label">Unrealized P&L</span>
-          <span className={cn('overview-value', stats.unrealizedPnL >= 0 ? 'pnl-up' : 'pnl-down')}>
-            {formatPnl(stats.unrealizedPnL)}
-          </span>
-          <span className={cn('overview-sub', stats.unrealizedPnL >= 0 ? 'pnl-up' : 'pnl-down')}>
-            {formatSignedPercent(stats.pnlPercent)}
-          </span>
-        </div>
-        <HealthRing score={stats.healthScore} />
       </div>
 
       <section className="portfolio-section" aria-label="Smart suggestions">

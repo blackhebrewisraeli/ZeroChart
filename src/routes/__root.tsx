@@ -14,6 +14,7 @@ import appCss from '../styles.css?url';
 import { reportLovableError } from '../lib/lovable-error-reporting';
 import { Toaster } from '../components/ui/sonner';
 import { PortfolioProvider } from '../lib/portfolioStore';
+import { ThemeProvider } from 'next-themes';
 
 function NotFoundComponent() {
   return (
@@ -106,9 +107,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('theme');var d=t==='light'?'light':'dark';var r=document.documentElement;r.classList.add(d);r.style.colorScheme=d;}catch(e){}})();",
+          }}
+        />
       </head>
       <body>
         {children}
@@ -122,12 +129,14 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PortfolioProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-      </PortfolioProvider>
-      <Toaster />
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <QueryClientProvider client={queryClient}>
+        <PortfolioProvider>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </PortfolioProvider>
+        <Toaster />
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

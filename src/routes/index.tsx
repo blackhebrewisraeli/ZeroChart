@@ -18,6 +18,7 @@ import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   calculateSignalScore,
   fetchAssets,
@@ -201,7 +202,15 @@ function Index() {
         <div className="page-width flex h-full items-center justify-between gap-3 sm:gap-4">
           <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="ZeroChart home">
             <span className="brand-mark">
-              <Zap size={19} fill="currentColor" />
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+                <path
+                  d="M4 6.5h16L4 17.5h16"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </span>
             <span className="brand-wordmark font-semibold">
               zerochart<span className="text-primary">.</span>
@@ -253,6 +262,7 @@ function Index() {
             >
               <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
             </Button>
+            <ThemeToggle />
           </div>
         </div>
       </header>

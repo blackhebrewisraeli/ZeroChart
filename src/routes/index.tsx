@@ -192,12 +192,12 @@ function Index() {
   return (
     <div className="min-h-screen text-foreground">
       <header className="terminal-header">
-        <div className="page-width flex h-full items-center justify-between gap-4">
-          <a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home">
+        <div className="page-width flex h-full items-center justify-between gap-3 sm:gap-4">
+          <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="ZeroChart home">
             <span className="brand-mark">
               <Zap size={19} fill="currentColor" />
             </span>
-            <span className="text-xl font-semibold">
+            <span className="brand-wordmark font-semibold">
               zerochart<span className="text-primary">.</span>
             </span>
             <span className="terminal-tag">SIGNALS</span>
@@ -225,7 +225,7 @@ function Index() {
               },
             ]}
           />
-          <div className="flex items-center gap-4">
+          <div className="flex shrink-0 items-center gap-4">
             <span className="connection-status">
               <span className={cn('status-dot', query.isError && !preview && 'status-error')} />
               {preview
@@ -239,6 +239,7 @@ function Index() {
             <Button
               variant="outline"
               size="icon"
+              className="h-9 w-9 flex-shrink-0"
               aria-label="Refresh signals"
               title="Refresh signals"
               disabled={query.isFetching}

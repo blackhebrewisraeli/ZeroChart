@@ -1,9 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ArrowDown, ArrowUpRight, CandlestickChart, ExternalLink, Radio, RefreshCw, TrendingDown, TrendingUp, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUpRight, Briefcase, CandlestickChart, ExternalLink, Radio, RefreshCw, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
+import { PortfolioDashboard } from '@/components/PortfolioDashboard';
+import { Segmented } from '@/components/Segmented';
 import { calculateSignalScore, fetchAssets, formatChange, formatPrice, formatReward, formatRisk, formatTradingViewSymbol, getAssetClass, getBrokerRoute, sampleAssets, type Asset, type AssetClass } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
@@ -134,6 +136,7 @@ function Index() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
+  const [view, setView] = useState<'scanner' | 'portfolio'>('scanner');
   const query = useQuery({ queryKey: ['assets-status'], queryFn: fetchAssets, refetchInterval: 60000, retry: 1 });
   const preview = source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const assets = preview ? sampleAssets : query.data || [];
@@ -142,11 +145,30 @@ function Index() {
   const rows = sortMarkets(filtered, marketView);
 
   return <div className="min-h-screen text-foreground">
-    <header className="terminal-header"><div className="page-width flex h-full items-center justify-between gap-4"><a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home"><span className="brand-mark"><Zap size={19} fill="currentColor" /></span><span className="text-xl font-semibold">zerochart<span className="text-primary">.</span></span><span className="terminal-tag">SIGNALS</span></a><div className="flex items-center gap-4"><span className="connection-status"><span className={cn('status-dot', query.isError && !preview && 'status-error')} />{preview ? 'Sample data' : query.isPending ? 'Connecting' : query.isError ? 'Offline' : 'Live'}</span><Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button></div></div></header>
+    <header className="terminal-header">
+      <div className="page-width flex h-full items-center justify-between gap-4">
+        <a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home"><span className="brand-mark"><Zap size={19} fill="currentColor" /></span><span className="text-xl font-semibold">zerochart<span className="text-primary">.</span></span><span className="terminal-tag">SIGNALS</span></a>
+        <Segmented
+          value={view}
+          ariaLabel="Workspace"
+          onChange={setView}
+          options={[
+            { value: 'scanner', label: <><CandlestickChart size={14} /> Scanner</> },
+            { value: 'portfolio', label: <><Briefcase size={14} /> Portfolio</> },
+          ]}
+        />
+        <div className="flex items-center gap-4">
+          <span className="connection-status"><span className={cn('status-dot', query.isError && !preview && 'status-error')} />{preview ? 'Sample data' : query.isPending ? 'Connecting' : query.isError ? 'Offline' : 'Live'}</span>
+          <Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button>
+        </div>
+      </div>
+    </header>
     <main className="page-width pb-16 pt-8">
       {preview && <div className="preview-note"><span className="flex items-center gap-2"><Radio size={13} />Sample data · Illustrative prices and signals, not live market data.</span><Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setSource('live')}>View live data <ArrowUpRight size={12} /></Button></div>}
       {query.isError && !preview && <div role="alert" className="error-banner"><span>{query.data ? 'Refresh failed. Showing the last available snapshot.' : 'Unable to load signals. Check your connection.'}</span><Button variant="outline" size="sm" onClick={() => query.refetch()}>Retry</Button></div>}
-      {query.isPending && !preview ? (
+      {view === 'portfolio' ? (
+        <PortfolioDashboard assets={assets} />
+      ) : query.isPending && !preview ? (
         <div aria-busy="true">
           <div className="hero skeleton-hero"><div className="skeleton h-7 w-56" /><div className="skeleton mt-5 h-14 w-44" /><div className="skeleton mt-6 h-9 w-64" /><div className="skeleton mt-6 h-4 w-full max-w-md" /></div>
           <div className="markets-table mt-14">

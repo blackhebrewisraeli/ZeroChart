@@ -1,24 +1,58 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ArrowDown, ArrowUpRight, Briefcase, CandlestickChart, ExternalLink, Radio, RefreshCw, TrendingDown, TrendingUp, Zap } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUpRight,
+  Briefcase,
+  CandlestickChart,
+  ExternalLink,
+  Radio,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  Zap,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { Segmented } from '@/components/Segmented';
-import { calculateSignalScore, fetchAssets, formatChange, formatPrice, formatReward, formatRisk, formatTradingViewSymbol, getAssetClass, getBrokerRoute, sampleAssets, type Asset, type AssetClass } from '@/lib/assets';
+import {
+  calculateSignalScore,
+  fetchAssets,
+  formatChange,
+  formatPrice,
+  formatReward,
+  formatRisk,
+  formatTradingViewSymbol,
+  getAssetClass,
+  getBrokerRoute,
+  sampleAssets,
+  type Asset,
+  type AssetClass,
+} from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
 export const Route = createFileRoute('/')({
-  head: () => ({ meta: [
-    { title: 'ZeroChart — Signal over noise' },
-    { name: 'description', content: 'An algorithmic signal terminal with live charts for long-term conviction and asymmetric opportunities. Track clear asset signals with ZeroChart.' },
-    { property: 'og:title', content: 'ZeroChart — Signal over noise' },
-    { property: 'og:description', content: 'Stable and radar asset signals in one focused, algorithmic signal terminal with live charts.' },
-    { property: 'og:type', content: 'website' },
-    { name: 'twitter:card', content: 'summary_large_image' },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: 'ZeroChart — Signal over noise' },
+      {
+        name: 'description',
+        content:
+          'An algorithmic signal terminal with live charts for long-term conviction and asymmetric opportunities. Track clear asset signals with ZeroChart.',
+      },
+      { property: 'og:title', content: 'ZeroChart — Signal over noise' },
+      {
+        property: 'og:description',
+        content:
+          'Stable and radar asset signals in one focused, algorithmic signal terminal with live charts.',
+      },
+      { property: 'og:type', content: 'website' },
+      { name: 'twitter:card', content: 'summary_large_image' },
+    ],
+  }),
   component: Index,
 });
 
@@ -28,7 +62,11 @@ function scoreToneOf(score: number) {
 
 function ScoreRing({ score }: { score: number }) {
   return (
-    <div className={cn('score-ring', scoreToneOf(score))} role="img" aria-label={`Signal score ${score} out of 100`}>
+    <div
+      className={cn('score-ring', scoreToneOf(score))}
+      role="img"
+      aria-label={`Signal score ${score} out of 100`}
+    >
       <span className="score-ring-value">{score}</span>
       <span className="score-ring-label">SIGNAL</span>
     </div>
@@ -76,13 +114,22 @@ function Hero({ asset }: { asset: Asset }) {
             <span className="hero-stat-value hero-stat-risk">{formatRisk(asset.risk_pct)}</span>
           </div>
           {surging && (
-            <span className="volume-badge"><TrendingUp size={15} /> Volume is surging</span>
+            <span className="volume-badge">
+              <TrendingUp size={15} /> Volume is surging
+            </span>
           )}
         </div>
-        <div className="hero-action"><TradeButton ticker={asset.ticker} large /></div>
+        <div className="hero-action">
+          <TradeButton ticker={asset.ticker} large />
+        </div>
       </div>
       <div className="hero-chart">
-        <AdvancedRealTimeChart key={asset.ticker} symbol={formatTradingViewSymbol(asset.ticker)} theme="dark" autosize={true} />
+        <AdvancedRealTimeChart
+          key={asset.ticker}
+          symbol={formatTradingViewSymbol(asset.ticker)}
+          theme="dark"
+          autosize={true}
+        />
       </div>
     </section>
   );
@@ -101,8 +148,10 @@ const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['All', 'Stocks', 'Crypto', 'For
 
 function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
   const list = [...assets];
-  if (view === 'signals') return list.sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a));
-  if (view === 'gainers') return list.sort((a, b) => (b.change_24h ?? -Infinity) - (a.change_24h ?? -Infinity));
+  if (view === 'signals')
+    return list.sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a));
+  if (view === 'gainers')
+    return list.sort((a, b) => (b.change_24h ?? -Infinity) - (a.change_24h ?? -Infinity));
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
 }
 
@@ -113,9 +162,17 @@ function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
   return (
     <div className="markets-row">
       <span className="markets-rank">#{rank}</span>
-      <span className="markets-ticker" title={asset.name || asset.ticker}>{asset.ticker}</span>
+      <span className="markets-ticker" title={asset.name || asset.ticker}>
+        {asset.ticker}
+      </span>
       <span className="markets-price">{formatPrice(asset.current_price)}</span>
-      <span className={cn('markets-change', change != null && change > 0 && 'markets-change-up', change != null && change < 0 && 'markets-change-down')}>
+      <span
+        className={cn(
+          'markets-change',
+          change != null && change > 0 && 'markets-change-up',
+          change != null && change < 0 && 'markets-change-down',
+        )}
+      >
         {change != null && change > 0 && <TrendingUp size={13} />}
         {change != null && change < 0 && <TrendingDown size={13} />}
         {formatChange(change)}
@@ -124,7 +181,14 @@ function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
         <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
       </span>
       <span className="markets-trade">
-        <a className="markets-trade-link" href={route.url} target="_blank" rel="noopener noreferrer" aria-label={`${route.label} for ${asset.ticker}`} title={route.label}>
+        <a
+          className="markets-trade-link"
+          href={route.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${route.label} for ${asset.ticker}`}
+          title={route.label}
+        >
           <ExternalLink size={15} />
         </a>
       </span>
@@ -137,92 +201,214 @@ function Index() {
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
   const [view, setView] = useState<'scanner' | 'portfolio'>('scanner');
-  const query = useQuery({ queryKey: ['assets-status'], queryFn: fetchAssets, refetchInterval: 60000, retry: 1 });
-  const preview = source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
+  const query = useQuery({
+    queryKey: ['assets-status'],
+    queryFn: fetchAssets,
+    refetchInterval: 60000,
+    retry: 1,
+  });
+  const preview =
+    source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const assets = preview ? sampleAssets : query.data || [];
   const topPick = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
-  const filtered = assetClass === 'All' ? assets : assets.filter((a) => getAssetClass(a.ticker) === assetClass);
+  const filtered =
+    assetClass === 'All' ? assets : assets.filter((a) => getAssetClass(a.ticker) === assetClass);
   const rows = sortMarkets(filtered, marketView);
 
-  return <div className="min-h-screen text-foreground">
-    <header className="terminal-header">
-      <div className="page-width flex h-full items-center justify-between gap-4">
-        <a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home"><span className="brand-mark"><Zap size={19} fill="currentColor" /></span><span className="text-xl font-semibold">zerochart<span className="text-primary">.</span></span><span className="terminal-tag">SIGNALS</span></a>
-        <Segmented
-          value={view}
-          ariaLabel="Workspace"
-          onChange={setView}
-          options={[
-            { value: 'scanner', label: <><CandlestickChart size={14} /> Scanner</> },
-            { value: 'portfolio', label: <><Briefcase size={14} /> Portfolio</> },
-          ]}
-        />
-        <div className="flex items-center gap-4">
-          <span className="connection-status"><span className={cn('status-dot', query.isError && !preview && 'status-error')} />{preview ? 'Sample data' : query.isPending ? 'Connecting' : query.isError ? 'Offline' : 'Live'}</span>
-          <Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button>
-        </div>
-      </div>
-    </header>
-    <main className="page-width pb-16 pt-8">
-      {preview && <div className="preview-note"><span className="flex items-center gap-2"><Radio size={13} />Sample data · Illustrative prices and signals, not live market data.</span><Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setSource('live')}>View live data <ArrowUpRight size={12} /></Button></div>}
-      {query.isError && !preview && <div role="alert" className="error-banner"><span>{query.data ? 'Refresh failed. Showing the last available snapshot.' : 'Unable to load signals. Check your connection.'}</span><Button variant="outline" size="sm" onClick={() => query.refetch()}>Retry</Button></div>}
-      {view === 'portfolio' ? (
-        <PortfolioDashboard assets={assets} />
-      ) : query.isPending && !preview ? (
-        <div aria-busy="true">
-          <div className="hero skeleton-hero"><div className="skeleton h-7 w-56" /><div className="skeleton mt-5 h-14 w-44" /><div className="skeleton mt-6 h-9 w-64" /><div className="skeleton mt-6 h-4 w-full max-w-md" /></div>
-          <div className="markets-table mt-14">
-            {Array.from({ length: 6 }, (_, i) => <div key={i} className="markets-row markets-row-skeleton"><div className="skeleton markets-skeleton" /></div>)}
+  return (
+    <div className="min-h-screen text-foreground">
+      <header className="terminal-header">
+        <div className="page-width flex h-full items-center justify-between gap-4">
+          <a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home">
+            <span className="brand-mark">
+              <Zap size={19} fill="currentColor" />
+            </span>
+            <span className="text-xl font-semibold">
+              zerochart<span className="text-primary">.</span>
+            </span>
+            <span className="terminal-tag">SIGNALS</span>
+          </a>
+          <Segmented
+            value={view}
+            ariaLabel="Workspace"
+            onChange={setView}
+            options={[
+              {
+                value: 'scanner',
+                label: (
+                  <>
+                    <CandlestickChart size={14} /> Scanner
+                  </>
+                ),
+              },
+              {
+                value: 'portfolio',
+                label: (
+                  <>
+                    <Briefcase size={14} /> Portfolio
+                  </>
+                ),
+              },
+            ]}
+          />
+          <div className="flex items-center gap-4">
+            <span className="connection-status">
+              <span className={cn('status-dot', query.isError && !preview && 'status-error')} />
+              {preview
+                ? 'Sample data'
+                : query.isPending
+                  ? 'Connecting'
+                  : query.isError
+                    ? 'Offline'
+                    : 'Live'}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Refresh signals"
+              title="Refresh signals"
+              disabled={query.isFetching}
+              onClick={() => query.refetch()}
+            >
+              <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
+            </Button>
           </div>
         </div>
-      ) : topPick ? (
-        <>
-          <Hero asset={topPick} />
-          <section className="markets" aria-label="Markets">
-            <div className="markets-head">
-              <h2 className="markets-title">Markets</h2>
-              <div className="markets-head-actions">
-                <span className="markets-count font-mono">{rows.length} ASSET{rows.length === 1 ? '' : 'S'}</span>
-                <RoboAdvisor assets={assets} />
-              </div>
+      </header>
+      <main className="page-width pb-16 pt-8">
+        {preview && (
+          <div className="preview-note">
+            <span className="flex items-center gap-2">
+              <Radio size={13} />
+              Sample data · Illustrative prices and signals, not live market data.
+            </span>
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => setSource('live')}
+            >
+              View live data <ArrowUpRight size={12} />
+            </Button>
+          </div>
+        )}
+        {query.isError && !preview && (
+          <div role="alert" className="error-banner">
+            <span>
+              {query.data
+                ? 'Refresh failed. Showing the last available snapshot.'
+                : 'Unable to load signals. Check your connection.'}
+            </span>
+            <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+              Retry
+            </Button>
+          </div>
+        )}
+        {view === 'portfolio' ? (
+          <PortfolioDashboard assets={assets} />
+        ) : query.isPending && !preview ? (
+          <div aria-busy="true">
+            <div className="hero skeleton-hero">
+              <div className="skeleton h-7 w-56" />
+              <div className="skeleton mt-5 h-14 w-44" />
+              <div className="skeleton mt-6 h-9 w-64" />
+              <div className="skeleton mt-6 h-4 w-full max-w-md" />
             </div>
-            <div className="markets-controls">
-              <div className="markets-pills" role="group" aria-label="Market view">
-                {MARKET_VIEWS.map((view) => (
-                  <button key={view.id} type="button" className={cn('markets-pill', marketView === view.id && 'markets-pill-active')} aria-pressed={marketView === view.id} onClick={() => setMarketView(view.id)}>
-                    {view.label}
-                  </button>
-                ))}
-              </div>
-              <div className="markets-pills" role="group" aria-label="Asset class">
-                {ASSET_CLASS_FILTERS.map((filter) => (
-                  <button key={filter} type="button" className={cn('markets-pill', assetClass === filter && 'markets-pill-active')} aria-pressed={assetClass === filter} onClick={() => setAssetClass(filter)}>
-                    {filter}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {rows.length === 0 ? (
-              <div className="markets-empty">No assets match this filter.</div>
-            ) : (
-              <div className="markets-table">
-                <div className="markets-row markets-row-head" aria-hidden="true">
-                  <span className="markets-head-cell markets-rank-head">#</span>
-                  <span className="markets-head-cell">Asset</span>
-                  <span className="markets-head-cell">Price</span>
-                  <span className="markets-head-cell">24h %</span>
-                  <span className="markets-head-cell">Signal</span>
-                  <span />
+            <div className="markets-table mt-14">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="markets-row markets-row-skeleton">
+                  <div className="skeleton markets-skeleton" />
                 </div>
-                {rows.map((asset, index) => <MarketRow key={asset.ticker} asset={asset} rank={index + 1} />)}
+              ))}
+            </div>
+          </div>
+        ) : topPick ? (
+          <>
+            <Hero asset={topPick} />
+            <section className="markets" aria-label="Markets">
+              <div className="markets-head">
+                <h2 className="markets-title">Markets</h2>
+                <div className="markets-head-actions">
+                  <span className="markets-count font-mono">
+                    {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
+                  </span>
+                  <RoboAdvisor assets={assets} />
+                </div>
               </div>
-            )}
-          </section>
-        </>
-      ) : !query.isError ? (
-        <div className="empty-state"><CandlestickChart size={32} className="mx-auto mb-4 text-muted-foreground" /><h3>No signals yet</h3><p className="mt-2 text-sm text-muted-foreground">Your watchlist is empty. Check back soon, or preview sample data.</p><Button variant="outline" className="mt-5" onClick={() => setSource('sample')}>View sample data</Button></div>
-      ) : null}
-    </main>
-    <footer className="terminal-footer page-width"><div className="flex items-center gap-2"><Zap size={13} /><span>Algorithmic signals. Live charts. Zero noise.</span></div><span>AI analysis is informational. Not financial advice.</span><span className="font-mono text-[10px]">ZEROCHART<ArrowDown size={10} className="ml-1 inline" /></span></footer>
-  </div>;
+              <div className="markets-controls">
+                <div className="markets-pills" role="group" aria-label="Market view">
+                  {MARKET_VIEWS.map((view) => (
+                    <button
+                      key={view.id}
+                      type="button"
+                      className={cn(
+                        'markets-pill',
+                        marketView === view.id && 'markets-pill-active',
+                      )}
+                      aria-pressed={marketView === view.id}
+                      onClick={() => setMarketView(view.id)}
+                    >
+                      {view.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="markets-pills" role="group" aria-label="Asset class">
+                  {ASSET_CLASS_FILTERS.map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      className={cn('markets-pill', assetClass === filter && 'markets-pill-active')}
+                      aria-pressed={assetClass === filter}
+                      onClick={() => setAssetClass(filter)}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {rows.length === 0 ? (
+                <div className="markets-empty">No assets match this filter.</div>
+              ) : (
+                <div className="markets-table">
+                  <div className="markets-row markets-row-head" aria-hidden="true">
+                    <span className="markets-head-cell markets-rank-head">#</span>
+                    <span className="markets-head-cell">Asset</span>
+                    <span className="markets-head-cell">Price</span>
+                    <span className="markets-head-cell">24h %</span>
+                    <span className="markets-head-cell">Signal</span>
+                    <span />
+                  </div>
+                  {rows.map((asset, index) => (
+                    <MarketRow key={asset.ticker} asset={asset} rank={index + 1} />
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        ) : !query.isError ? (
+          <div className="empty-state">
+            <CandlestickChart size={32} className="mx-auto mb-4 text-muted-foreground" />
+            <h3>No signals yet</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your watchlist is empty. Check back soon, or preview sample data.
+            </p>
+            <Button variant="outline" className="mt-5" onClick={() => setSource('sample')}>
+              View sample data
+            </Button>
+          </div>
+        ) : null}
+      </main>
+      <footer className="terminal-footer page-width">
+        <div className="flex items-center gap-2">
+          <Zap size={13} />
+          <span>Algorithmic signals. Live charts. Zero noise.</span>
+        </div>
+        <span>AI analysis is informational. Not financial advice.</span>
+        <span className="font-mono text-[10px]">
+          ZEROCHART
+          <ArrowDown size={10} className="ml-1 inline" />
+        </span>
+      </footer>
+    </div>
+  );
 }

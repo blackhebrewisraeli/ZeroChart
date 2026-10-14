@@ -53,7 +53,10 @@ describe('portfolio builder', () => {
 
   it('spreads across more assets for conservative profiles', () => {
     const assets = Array.from({ length: 10 }, (_, i) => makeAsset(`T${i}`, 0.2, 0.05)); // all score 100
-    const conservative = generatePortfolio({ totalCapital: 80000, riskProfile: 'conservative' }, assets);
+    const conservative = generatePortfolio(
+      { totalCapital: 80000, riskProfile: 'conservative' },
+      assets,
+    );
     expect(conservative).toHaveLength(8);
 
     const moderate = generatePortfolio({ totalCapital: 80000, riskProfile: 'moderate' }, assets);
@@ -62,6 +65,8 @@ describe('portfolio builder', () => {
 
   it('returns an empty allocation when no asset clears the threshold', () => {
     const assets = [makeAsset('WEAK', 0.05, 0.05)]; // 50
-    expect(generatePortfolio({ totalCapital: 1000, riskProfile: 'aggressive' }, assets)).toEqual([]);
+    expect(generatePortfolio({ totalCapital: 1000, riskProfile: 'aggressive' }, assets)).toEqual(
+      [],
+    );
   });
 });

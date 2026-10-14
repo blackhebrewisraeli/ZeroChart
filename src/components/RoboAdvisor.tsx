@@ -12,9 +12,27 @@ const RISK_OPTIONS: {
   holdings: number;
   Icon: typeof Shield;
 }[] = [
-  { id: 'conservative', label: 'Conservative', description: 'Broad, defensive spread', holdings: 8, Icon: Shield },
-  { id: 'moderate', label: 'Moderate', description: 'Balanced risk & growth', holdings: 5, Icon: Gauge },
-  { id: 'aggressive', label: 'Aggressive', description: 'Concentrated upside', holdings: 3, Icon: Rocket },
+  {
+    id: 'conservative',
+    label: 'Conservative',
+    description: 'Broad, defensive spread',
+    holdings: 8,
+    Icon: Shield,
+  },
+  {
+    id: 'moderate',
+    label: 'Moderate',
+    description: 'Balanced risk & growth',
+    holdings: 5,
+    Icon: Gauge,
+  },
+  {
+    id: 'aggressive',
+    label: 'Aggressive',
+    description: 'Concentrated upside',
+    holdings: 3,
+    Icon: Rocket,
+  },
 ];
 
 const CLOSE_MS = 300;
@@ -113,7 +131,13 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
 
   return (
     <>
-      <button ref={triggerRef} type="button" className="robo-trigger" onClick={openModal} aria-haspopup="dialog">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="robo-trigger"
+        onClick={openModal}
+        aria-haspopup="dialog"
+      >
         <Bot size={16} />
         <span>Build Portfolio</span>
       </button>
@@ -140,7 +164,12 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
                     <p className="robo-subtitle">Automated portfolio builder</p>
                   </div>
                 </div>
-                <button type="button" className="robo-close" onClick={closeModal} aria-label="Close">
+                <button
+                  type="button"
+                  className="robo-close"
+                  onClick={closeModal}
+                  aria-label="Close"
+                >
                   <X size={18} />
                 </button>
               </header>
@@ -185,7 +214,11 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
                       <span className="robo-label" id="robo-risk-label">
                         Risk profile
                       </span>
-                      <div className="robo-risk-grid" role="radiogroup" aria-labelledby="robo-risk-label">
+                      <div
+                        className="robo-risk-grid"
+                        role="radiogroup"
+                        aria-labelledby="robo-risk-label"
+                      >
                         {RISK_OPTIONS.map((option) => {
                           const selected = riskProfile === option.id;
                           return (
@@ -233,10 +266,14 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
                           </div>
                           <div className="robo-summary-item">
                             <span className="robo-summary-label">Risk</span>
-                            <span className="robo-summary-value robo-summary-risk">{activeRisk?.label}</span>
+                            <span className="robo-summary-value robo-summary-risk">
+                              {activeRisk?.label}
+                            </span>
                           </div>
                         </div>
-                        <p className="robo-results-note">Equal-weight allocation · signal score ≥ 70</p>
+                        <p className="robo-results-note">
+                          Equal-weight allocation · signal score ≥ 70
+                        </p>
                         <ul className="robo-allocation-list">
                           {result.map((allocation, index) => {
                             const asset = assetByTicker.get(allocation.ticker);
@@ -251,18 +288,27 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
                                 <div className="robo-asset">
                                   <div className="robo-asset-row">
                                     <span className="robo-ticker">{allocation.ticker}</span>
-                                    <span className={cn('robo-score', scoreTone(score))}>{score ?? '—'}</span>
+                                    <span className={cn('robo-score', scoreTone(score))}>
+                                      {score ?? '—'}
+                                    </span>
                                   </div>
                                   <span className="robo-name">{asset?.name ?? 'Asset'}</span>
                                 </div>
                                 <div className="robo-metrics">
-                                  <span className="robo-weight">{formatWeight(allocation.weight)}</span>
-                                  <span className="robo-alloc-amount">{formatPrice(allocation.allocatedAmount)}</span>
+                                  <span className="robo-weight">
+                                    {formatWeight(allocation.weight)}
+                                  </span>
+                                  <span className="robo-alloc-amount">
+                                    {formatPrice(allocation.allocatedAmount)}
+                                  </span>
                                 </div>
                                 <div className="robo-bar-track" aria-hidden="true">
                                   <div
                                     className="robo-bar"
-                                    style={{ width: `${allocation.weight * 100}%`, animationDelay: `${index * 55 + 150}ms` }}
+                                    style={{
+                                      width: `${allocation.weight * 100}%`,
+                                      animationDelay: `${index * 55 + 150}ms`,
+                                    }}
                                   />
                                 </div>
                               </li>
@@ -275,8 +321,8 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
                         <Shield size={28} />
                         <h3>No qualifying assets</h3>
                         <p>
-                          No assets in your watchlist currently clear the 70-point signal threshold. Adjust your
-                          inputs or check back later.
+                          No assets in your watchlist currently clear the 70-point signal threshold.
+                          Adjust your inputs or check back later.
                         </p>
                       </div>
                     )}

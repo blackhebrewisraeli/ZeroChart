@@ -47,10 +47,7 @@ describe('calculatePortfolioStats', () => {
       makePosition({ id: 'win', ticker: 'WIN', buyPrice: 100, shares: 10 }),
       makePosition({ id: 'lose', ticker: 'LOSE', buyPrice: 50, shares: 20 }),
     ];
-    const assets = [
-      makeAsset('WIN', 0.1, 0.1, 150),
-      makeAsset('LOSE', 0.1, 0.1, 40),
-    ];
+    const assets = [makeAsset('WIN', 0.1, 0.1, 150), makeAsset('LOSE', 0.1, 0.1, 40)];
 
     const stats = calculatePortfolioStats(positions, assets);
 
@@ -197,4 +194,3 @@ describe('generateSuggestions', () => {
     expect(suggestions[0]).toMatchObject({ type: 'SELL', ticker: 'DUP', score: 40 });
   });
 });
-

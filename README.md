@@ -23,14 +23,14 @@
 
 ## ✨ What investors get
 
-| Experience | What it does | 
-| ----- | ----- | 
-| 👑 **The Hero Pick** | The absolute highest-rated asset of the day dominates the screen. Data is humanized ("Upside Potential", "Volume Surging") for instant comprehension. | 
-| 📊 **High-Density Markets Table** | A Binance-style scannable grid for "More Opportunities". Sort by Top Signals, Top Gainers, or Top Losers across Crypto, Stocks, and Forex. | 
-| 🎯 **Proprietary Signal Score** | Every asset receives a `0-100` rating mathematically derived from its Risk/Reward ratio, SMA trend lines, and volume spikes. | 
-| 📈 **Advanced Live Charts** | Integrated TradingView Advanced Charts wrap seamlessly into the dark glassmorphism UI, adjusting tickers automatically by asset class. | 
-| 🤖 **Robo-Advisor (Backend)** | An algorithmic engine that builds diversified, equal-weight portfolios based on user capital and Risk Profiles (Conservative, Moderate, Aggressive). | 
-| 🚀 **Frictionless Execution** | One-click "Trade" buttons dynamically route the user to the correct broker based on the ticker (`-USD` -> Binance, `=X` -> OANDA, else -> eToro). | 
+| Experience                        | What it does                                                                                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 👑 **The Hero Pick**              | The absolute highest-rated asset of the day dominates the screen. Data is humanized ("Upside Potential", "Volume Surging") for instant comprehension. |
+| 📊 **High-Density Markets Table** | A Binance-style scannable grid for "More Opportunities". Sort by Top Signals, Top Gainers, or Top Losers across Crypto, Stocks, and Forex.            |
+| 🎯 **Proprietary Signal Score**   | Every asset receives a `0-100` rating mathematically derived from its Risk/Reward ratio, SMA trend lines, and volume spikes.                          |
+| 📈 **Advanced Live Charts**       | Integrated TradingView Advanced Charts wrap seamlessly into the dark glassmorphism UI, adjusting tickers automatically by asset class.                |
+| 🤖 **Robo-Advisor (Backend)**     | An algorithmic engine that builds diversified, equal-weight portfolios based on user capital and Risk Profiles (Conservative, Moderate, Aggressive).  |
+| 🚀 **Frictionless Execution**     | One-click "Trade" buttons dynamically route the user to the correct broker based on the ticker (`-USD` -> Binance, `=X` -> OANDA, else -> eToro).     |
 
 ## 🦸 Two things that make it unusual
 
@@ -41,7 +41,7 @@ The application computes a `0-100` integer on the fly, eliminating emotional tra
 
 ```javascript
 // 1. Calculate Base on Risk/Reward
-const ratio = reward_pct / risk_pct; 
+const ratio = reward_pct / risk_pct;
 let score = 20 * ratio + 20; // e.g., ratio of 2 = 60 pts
 
 // 2. Apply Technical Modifiers
@@ -51,6 +51,7 @@ if (current_price > sma_50) score += 10;
 // 3. Clamp
 return Math.min(Math.round(score), 100);
 ```
+
 </details>
 
 <details open>
@@ -59,10 +60,12 @@ return Math.min(Math.round(score), 100);
 Rather than just displaying signals, ZeroChart includes a backend infrastructure for automated portfolio generation based on risk tolerance.
 
 The `generatePortfolio` engine:
+
 1. Receives `totalCapital` and `riskProfile` ('conservative', 'moderate', 'aggressive').
 2. Filters out any asset with a Signal Score below **70**.
 3. Selects a targeted number of holdings based on risk (e.g., Aggressive focuses on the top 3 assets; Conservative spreads across 8).
 4. Calculates equal-weight allocations to the exact cent, ensuring capital is distributed safely among high-probability setups.
+
 </details>
 
 ## 🧭 System at a glance
@@ -101,12 +104,12 @@ cd ZeroChart
 bun install
 ```
 
-| Command | Purpose | 
-| ----- | ----- | 
-| `bun run dev` | Start the Vite local development server | 
-| `bun run build` | Build the production bundle | 
-| `bun run test` | Run the test suite (Signal Score, Routing, Robo-Advisor) | 
-| `bun run lint` | Run ESLint | 
+| Command         | Purpose                                                  |
+| --------------- | -------------------------------------------------------- |
+| `bun run dev`   | Start the Vite local development server                  |
+| `bun run build` | Build the production bundle                              |
+| `bun run test`  | Run the test suite (Signal Score, Routing, Robo-Advisor) |
+| `bun run lint`  | Run ESLint                                               |
 
 ## 🤝 Contributing
 

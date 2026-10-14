@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# MCP config (contains secrets)
+.mcp.json
+cline_mcp_settings.json

@@ -1,128 +1,105 @@
 <div align="center">
 
-<sup>ZEROCHART · BUILT FOR RETAIL INVESTORS</sup>
+# ZeroChart
 
-# ZeroChart — Algorithmic signals, consumer focus
+**A premium Cyber Finance / High-Frequency Trading (HFT) terminal.**
 
-**A premium fintech web application that transforms raw market data into a seamless "See → Understand → Invest" flow, blending a proprietary Signal Score, high-density market tables, and an automated Robo-Advisor.**
+ZeroChart turns raw market data into a single, high-signal trading workspace — deterministic Signal Scores, live TradingView charts, portfolio analytics, and a one-tap order ticket, wrapped in an Electric Cyan terminal UI with full Light/Dark mode.
 
-[![React 18](https://img.shields.io/badge/React-18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-Fast_Builds-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev/)
+[![TanStack Start](https://img.shields.io/badge/TanStack_Start-1.168-FFC831?style=for-the-badge)](https://tanstack.com/start)
+[![React 19](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
-[![Vercel](https://img.shields.io/badge/Vercel-Deployed-000000?style=for-the-badge&logo=vercel)](https://vercel.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-F5C518?style=for-the-badge)](./LICENSE)
+[![Vercel](https://img.shields.io/badge/Vercel-Deployed-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com/)
 
-[Try the app](#) ·
-[Run it locally](#-quick-start) ·
-[See the architecture](#-system-at-a-glance)
+[Quick start](#quick-start) · [System at a glance](#system-at-a-glance) · [Documentation](./docs/AGENTS.md)
 
 </div>
 
-> [!NOTE]
-> **This is an actionable signal terminal, not a paper-trading game.** We do not simulate virtual portfolios. Instead, ZeroChart ranks live assets and provides deep-links directly to external brokers (Binance, eToro, OANDA) so users can execute real trades instantly.
+## Highlights
 
-## ✨ What investors get
+| Capability | Description |
+| --- | --- |
+| **Deterministic Signal Score** | A 0–100 rating computed on the fly from Risk/Reward, trend lines, and volume spikes. |
+| **High-Density Markets Table** | A scannable terminal grid sorted by Top Signals, Top Gainers, or Top Losers across Crypto, Stocks, and Forex. |
+| **Electric Cyan terminal UI** | A `#00E5FF` brand primary, Light/Dark mode via `next-themes`, and deterministic green/red signal colors. |
+| **Live Price Flashes** | Prices flash neon green/red on every tick, powered by a lightweight HFT-style price simulator. |
+| **Portfolio Allocation Donut** | A Recharts donut chart that breaks down holdings by percentage of total value. |
+| **Quick Trade Order Ticket** | A slide-over ticket with a Buy/Sell toggle, large amount input, live fee/total summary, and mock execution. |
 
-| Experience                        | What it does                                                                                                                                          |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 👑 **The Hero Pick**              | The absolute highest-rated asset of the day dominates the screen. Data is humanized ("Upside Potential", "Volume Surging") for instant comprehension. |
-| 📊 **High-Density Markets Table** | A Binance-style scannable grid for "More Opportunities". Sort by Top Signals, Top Gainers, or Top Losers across Crypto, Stocks, and Forex.            |
-| 🎯 **Proprietary Signal Score**   | Every asset receives a `0-100` rating mathematically derived from its Risk/Reward ratio, SMA trend lines, and volume spikes.                          |
-| 📈 **Advanced Live Charts**       | Integrated TradingView Advanced Charts wrap seamlessly into the dark glassmorphism UI, adjusting tickers automatically by asset class.                |
-| 🤖 **Robo-Advisor (Backend)**     | An algorithmic engine that builds diversified, equal-weight portfolios based on user capital and Risk Profiles (Conservative, Moderate, Aggressive).  |
-| 🚀 **Frictionless Execution**     | One-click "Trade" buttons dynamically route the user to the correct broker based on the ticker (`-USD` -> Binance, `=X` -> OANDA, else -> eToro).     |
+## What's inside
 
-## 🦸 Two things that make it unusual
+- **Hero Pick** — the top-rated asset of the day with an embedded TradingView Advanced Chart.
+- **Markets scanner** — filter and sort the full asset universe across asset classes.
+- **Robo-Advisor** — builds equal-weight portfolios from user capital and a risk profile.
+- **Portfolio dashboard** — KPI cards, per-holding sparklines, and an allocation donut.
+- **Broker routing** — deep-links to Binance, eToro, or OANDA by asset class.
 
-<details open>
-<summary><strong>🎯 ZeroChart replaces subjective analysis with a deterministic Signal Score</strong></summary>
-
-The application computes a `0-100` integer on the fly, eliminating emotional trading:
-
-```javascript
-// 1. Calculate Base on Risk/Reward
-const ratio = reward_pct / risk_pct;
-let score = 20 * ratio + 20; // e.g., ratio of 2 = 60 pts
-
-// 2. Apply Technical Modifiers
-if (volume_spike > 1) score += 15;
-if (current_price > sma_50) score += 10;
-
-// 3. Clamp
-return Math.min(Math.round(score), 100);
-```
-
-</details>
-
-<details open>
-<summary><strong>🤖 Automated Portfolio Generation (Robo-Advisor)</strong></summary>
-
-Rather than just displaying signals, ZeroChart includes a backend infrastructure for automated portfolio generation based on risk tolerance.
-
-The `generatePortfolio` engine:
-
-1. Receives `totalCapital` and `riskProfile` ('conservative', 'moderate', 'aggressive').
-2. Filters out any asset with a Signal Score below **70**.
-3. Selects a targeted number of holdings based on risk (e.g., Aggressive focuses on the top 3 assets; Conservative spreads across 8).
-4. Calculates equal-weight allocations to the exact cent, ensuring capital is distributed safely among high-probability setups.
-
-</details>
-
-## 🧭 System at a glance
+## System at a glance
 
 ```mermaid
 flowchart LR
-    subgraph Client["ZeroChart Web App (React + Vite)"]
-        UI["Glassmorphism UI\nHero View & Markets Table"]
-        State["State Management\nFiltering & Sorting"]
-        UI <--> State
+    subgraph App["ZeroChart (TanStack Start + React)"]
+        UI["Terminal UI<br/>Hero · Markets · Portfolio"]
+        Ticket["Quick Trade Ticket"]
+        UI <--> Ticket
     end
 
-    subgraph DataSources["External Data & APIs"]
-        TV["TradingView Widgets\n(Live Charts)"]
-        Supa[("Supabase\n(Asset Data & Signal Stats)")]
+    subgraph Data["Data & Visualization"]
+        Supa[("Supabase<br/>assets_status (RLS)")]
+        TV["TradingView Widgets"]
+        Charts["Recharts<br/>Sparklines + Donut"]
     end
 
-    subgraph Execution["External Brokers"]
+    subgraph Execution["Brokers"]
         Binance["Binance (Crypto)"]
         eToro["eToro (Stocks)"]
         OANDA["OANDA (Forex)"]
     end
 
-    UI -.->|"Live Chart Data"| TV
-    UI <-->|"Fetch Assets & Stats"| Supa
-    UI -->|"Deep Link Routing"| Execution
+    UI -->|"Fetch via React Query"| Supa
+    UI -->|"Live charts"| TV
+    UI -->|"Analytics"| Charts
+    UI -->|"Deep links"| Execution
 ```
 
-## ⚡ Quick start
+## Tech stack
 
-**Prerequisites:** [Bun](https://bun.sh/) is recommended for the fastest dependency installation and test execution.
+TanStack Start (React 19 + Vite) · TanStack Query · Supabase (Postgres + RLS) · Recharts · Framer Motion · lucide-react · next-themes · Tailwind CSS v4 · sonner
+
+## Quick start
+
+**Prerequisites:** [Bun](https://bun.sh/) (recommended) or npm.
 
 ```bash
 git clone https://github.com/blackhebrewisraeli/ZeroChart.git
 cd ZeroChart
 bun install
+bun run dev
 ```
 
-| Command         | Purpose                                                  |
-| --------------- | -------------------------------------------------------- |
-| `bun run dev`   | Start the Vite local development server                  |
-| `bun run build` | Build the production bundle                              |
-| `bun run test`  | Run the test suite (Signal Score, Routing, Robo-Advisor) |
-| `bun run lint`  | Run ESLint                                               |
+| Command | Purpose |
+| --- | --- |
+| `bun run dev` | Start the local development server |
+| `bun run build` | Build the production bundle |
+| `bun run test` | Run the test suite |
+| `bun run lint` | Run ESLint |
 
-## 🤝 Contributing
+See [docs/CONNECTION.md](./docs/CONNECTION.md) to wire up Supabase.
 
-Bug reports, UI/UX improvements, and logic refinements are welcome. Please read `AGENTS.md` first — it is the single source of truth for this project's engineering conventions, design tokens (neon green/red), and product boundaries.
+## Documentation
 
-## 📄 License
+- [Architecture & conventions](./docs/AGENTS.md) — engineering conventions, design tokens, and product boundaries.
+- [Supabase connection setup](./docs/CONNECTION.md) — required table, RLS, and local `.env.local` setup.
+- [Roadmap](./docs/roadmap.md) — shipped and planned milestones.
 
-Released under the [MIT License](./LICENSE).
+## License
+
+Released under the MIT License.
 
 <div align="center">
 
-**ZeroChart — Data that drives action.**
+**ZeroChart — signal over noise.**
 
-[Back to top](#zerochart--algorithmic-signals-consumer-focus)
+[Back to top](#zerochart)
 
 </div>

@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Briefcase,
   CandlestickChart,
-  ExternalLink,
   Radio,
   RefreshCw,
   TrendingDown,
@@ -15,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
+import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { Segmented } from '@/components/Segmented';
 import {
@@ -26,7 +26,6 @@ import {
   formatRisk,
   formatTradingViewSymbol,
   getAssetClass,
-  getBrokerRoute,
   sampleAssets,
   type Asset,
   type AssetClass,
@@ -73,21 +72,6 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function TradeButton({ ticker, large = false }: { ticker: string; large?: boolean }) {
-  const route = getBrokerRoute(ticker);
-  return (
-    <a
-      className={cn('trade-button', large && 'trade-button-lg')}
-      href={route.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`${route.label} for ${ticker}`}
-    >
-      <ExternalLink size={large ? 16 : 13} /> {route.label}
-    </a>
-  );
-}
-
 function Hero({ asset }: { asset: Asset }) {
   const score = calculateSignalScore(asset);
   const surging = asset.volume_spike !== null && asset.volume_spike > 1;
@@ -120,7 +104,7 @@ function Hero({ asset }: { asset: Asset }) {
           )}
         </div>
         <div className="hero-action">
-          <TradeButton ticker={asset.ticker} large />
+          <BrokerModal asset={asset} variant="hero" />
         </div>
       </div>
       <div className="hero-chart">
@@ -158,7 +142,6 @@ function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
 function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
   const score = calculateSignalScore(asset);
   const change = asset.change_24h ?? null;
-  const route = getBrokerRoute(asset.ticker);
   return (
     <div className="markets-row">
       <span className="markets-rank">#{rank}</span>
@@ -181,16 +164,7 @@ function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
         <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
       </span>
       <span className="markets-trade">
-        <a
-          className="markets-trade-link"
-          href={route.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${route.label} for ${asset.ticker}`}
-          title={route.label}
-        >
-          <ExternalLink size={15} />
-        </a>
+        <BrokerModal asset={asset} />
       </span>
     </div>
   );

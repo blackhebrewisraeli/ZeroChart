@@ -17,6 +17,7 @@ import {
   type Suggestion,
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { AddPositionModal } from '@/components/AddPositionModal';
 import { Segmented } from '@/components/Segmented';
 import { cn } from '@/lib/utils';
 
@@ -331,9 +332,12 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
       <section className="portfolio-section" aria-label="Holdings">
         <div className="portfolio-section-head">
           <h3 className="portfolio-section-title">Holdings</h3>
-          <span className="portfolio-count">
-            {visible.length} POSITION{visible.length === 1 ? '' : 'S'}
-          </span>
+          <div className="portfolio-section-actions">
+            <span className="portfolio-count">
+              {visible.length} POSITION{visible.length === 1 ? '' : 'S'}
+            </span>
+            {mode === 'live' && <AddPositionModal />}
+          </div>
         </div>
         {visible.length > 0 ? (
           <div className="holdings-list">

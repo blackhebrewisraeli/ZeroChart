@@ -17,6 +17,7 @@ import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { Segmented } from '@/components/Segmented';
+import { Sparkline } from '@/components/Sparkline';
 import {
   calculateSignalScore,
   fetchAssets,
@@ -25,6 +26,7 @@ import {
   formatReward,
   formatRisk,
   formatTradingViewSymbol,
+  generateTrendData,
   getAssetClass,
   sampleAssets,
   type Asset,
@@ -149,6 +151,10 @@ function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
         {asset.ticker}
       </span>
       <span className="markets-price">{formatPrice(asset.current_price)}</span>
+      <Sparkline
+        data={generateTrendData(asset.current_price, asset.change_24h ?? null)}
+        change={asset.change_24h ?? null}
+      />
       <span
         className={cn(
           'markets-change',
@@ -349,6 +355,7 @@ function Index() {
                     <span className="markets-head-cell markets-rank-head">#</span>
                     <span className="markets-head-cell">Asset</span>
                     <span className="markets-head-cell">Price</span>
+                    <span />
                     <span className="markets-head-cell">24h %</span>
                     <span className="markets-head-cell">Signal</span>
                     <span />

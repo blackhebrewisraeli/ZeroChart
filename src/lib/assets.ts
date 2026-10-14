@@ -90,6 +90,45 @@ export function getAssetClass(ticker: string): AssetClass {
   return 'Stocks';
 }
 
+/**
+ * Builds a small series of mock price points for a sparkline. The series ends
+ * exactly at `currentPrice`, and its first point is derived from the 24h change
+ * so the overall direction matches the change (start < end for gains, start > end
+ * for losses). Intermediate points add randomized volatility.
+ */
+export function generateTrendData(
+  currentPrice: number | null,
+  change24h: number | null,
+  points = 20,
+): number[] {
+  const end = currentPrice;
+  if (end === null || !Number.isFinite(end) || end <= 0) {
+    return Array.from({ length: points }, () => 0);
+  }
+  const change = change24h !== null && Number.isFinite(change24h) ? change24h : 0;
+  const denominator = 1 + change;
+  if (!Number.isFinite(denominator) || denominator <= 0) {
+    return Array.from({ length: points }, () => end);
+  }
+  if (points <= 1) return [end];
+
+  const start = end / denominator;
+  const series: number[] = new Array(points);
+  for (let i = 0; i < points; i++) {
+    if (i === 0) {
+      series[i] = start;
+    } else if (i === points - 1) {
+      series[i] = end;
+    } else {
+      const t = i / (points - 1);
+      const base = start + (end - start) * t;
+      const jitter = (Math.random() - 0.5) * 0.02 * base;
+      series[i] = base + jitter;
+    }
+  }
+  return series;
+}
+
 export function calculateSignalScore(asset: Asset): number {
   const ratio =
     asset.reward_pct !== null &&

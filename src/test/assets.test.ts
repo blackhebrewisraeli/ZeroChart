@@ -24,6 +24,7 @@ import {
   formatRsi,
   formatTradingViewSymbol,
   formatVolume,
+  generateTrendData,
   getAssetClass,
   getBrokerRoute,
   type Asset,
@@ -136,5 +137,30 @@ describe('asset data', () => {
       label: 'Trade on eToro',
       url: 'https://www.etoro.com/markets/brkb',
     });
+  });
+
+  it('generates a 20-point trend series matching the 24h change', () => {
+    const up = generateTrendData(100, 0.1);
+    expect(up).toHaveLength(20);
+    expect(up[19]).toBe(100);
+    expect(up[0]).toBeCloseTo(100 / 1.1);
+    expect(up[0]).toBeLessThan(up[19]!);
+
+    const down = generateTrendData(100, -0.1);
+    expect(down).toHaveLength(20);
+    expect(down[19]).toBe(100);
+    expect(down[0]).toBeCloseTo(100 / 0.9);
+    expect(down[0]).toBeGreaterThan(down[19]!);
+  });
+
+  it('falls back to a flat series for missing price or change', () => {
+    expect(generateTrendData(null, 0.1)).toEqual(Array(20).fill(0));
+    expect(generateTrendData(0, 0.1)).toEqual(Array(20).fill(0));
+
+    const flat = generateTrendData(100, null);
+    expect(flat).toHaveLength(20);
+    expect(flat[0]).toBe(100);
+    expect(flat[19]).toBe(100);
+    expect(flat.every((value) => Math.abs(value - 100) <= 1)).toBe(true);
   });
 });

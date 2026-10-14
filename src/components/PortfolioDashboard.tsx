@@ -10,7 +10,7 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react';
-import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
+import { calculateSignalScore, formatPrice, generateTrendData, type Asset } from '@/lib/assets';
 import {
   calculatePortfolioStats,
   generateSuggestions,
@@ -20,6 +20,7 @@ import {
 import { usePortfolio } from '@/lib/portfolioStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { Segmented } from '@/components/Segmented';
+import { Sparkline } from '@/components/Sparkline';
 import { cn } from '@/lib/utils';
 
 type PortfolioMode = 'simulation' | 'live';
@@ -169,6 +170,13 @@ function HoldingRow({
           <span className="holding-cell-value">{formatPrice(marketValue)}</span>
           <span className="holding-cell-label">Value</span>
         </div>
+        <Sparkline
+          data={generateTrendData(
+            asset?.current_price ?? position.buyPrice,
+            asset?.change_24h ?? null,
+          )}
+          change={asset?.change_24h ?? null}
+        />
         <div className="holding-cell">
           <span className={cn('holding-cell-value', tone)}>{formatPnl(pnl)}</span>
           <span className={cn('holding-cell-label', tone)}>{formatSignedPercent(pnlPct)}</span>

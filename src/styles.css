@@ -516,7 +516,7 @@ body {
 }
 .markets-row {
   display: grid;
-  grid-template-columns: 44px minmax(120px, 1.3fr) minmax(110px, 1fr) minmax(88px, 1fr) 56px 34px;
+  grid-template-columns: 44px minmax(120px, 1.3fr) minmax(110px, 1fr) 88px minmax(88px, 1fr) 56px 34px;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
@@ -590,6 +590,18 @@ body {
 }
 .markets-change-down {
   color: var(--signal-red);
+}
+.sparkline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+@media (max-width: 760px) {
+  .markets-row .sparkline,
+  .holding-summary .sparkline {
+    display: none;
+  }
 }
 .markets-score-cell {
   display: flex;
@@ -1851,7 +1863,7 @@ body {
 }
 .holding-summary {
   display: grid;
-  grid-template-columns: minmax(120px, 1.4fr) repeat(3, minmax(72px, 1fr)) 28px;
+  grid-template-columns: minmax(120px, 1.4fr) minmax(72px, 1fr) minmax(72px, 1fr) 88px minmax(72px, 1fr) 28px;
   align-items: center;
   gap: 12px;
   width: 100%;

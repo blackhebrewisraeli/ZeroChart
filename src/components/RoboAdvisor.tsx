@@ -1,0 +1,308 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, ArrowRight, Bot, Gauge, Rocket, Shield, X } from 'lucide-react';
+import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
+import { generatePortfolio, type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
+import { cn } from '@/lib/utils';
+
+const RISK_OPTIONS: {
+  id: RiskProfile;
+  label: string;
+  description: string;
+  holdings: number;
+  Icon: typeof Shield;
+}[] = [
+  { id: 'conservative', label: 'Conservative', description: 'Broad, defensive spread', holdings: 8, Icon: Shield },
+  { id: 'moderate', label: 'Moderate', description: 'Balanced risk & growth', holdings: 5, Icon: Gauge },
+  { id: 'aggressive', label: 'Aggressive', description: 'Concentrated upside', holdings: 3, Icon: Rocket },
+];
+
+const CLOSE_MS = 300;
+
+function formatWeight(weight: number) {
+  return `${(weight * 100).toFixed(1)}%`;
+}
+
+function scoreTone(score: number | null) {
+  if (score === null) return '';
+  return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
+}
+
+export function RoboAdvisor({ assets }: { assets: Asset[] }) {
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [phase, setPhase] = useState<'config' | 'results'>('config');
+  const [amount, setAmount] = useState('10000');
+  const [riskProfile, setRiskProfile] = useState<RiskProfile>('moderate');
+  const [result, setResult] = useState<Allocation[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closingRef = useRef(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+
+  const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
+
+  function openModal() {
+    closingRef.current = false;
+    setClosing(false);
+    setPhase('config');
+    setResult(null);
+    setError(null);
+    setOpen(true);
+  }
+
+  const closeModal = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    closeTimer.current = window.setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+      closingRef.current = false;
+      triggerRef.current?.focus();
+    }, CLOSE_MS);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') closeModal();
+    }
+    window.addEventListener('keydown', onKey);
+    const focusTimer = window.setTimeout(() => {
+      if (phase === 'config') inputRef.current?.focus();
+    }, 140);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.clearTimeout(focusTimer);
+    };
+  }, [open, phase, closeModal]);
+
+  function handleSubmit() {
+    const value = Number(amount.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(value) || value <= 0) {
+      setError('Enter an investment amount greater than $0.');
+      return;
+    }
+    setError(null);
+    setTotal(value);
+    setResult(generatePortfolio({ totalCapital: value, riskProfile }, assets));
+    setPhase('results');
+  }
+
+  const activeRisk = RISK_OPTIONS.find((r) => r.id === riskProfile);
+
+  return (
+    <>
+      <button ref={triggerRef} type="button" className="robo-trigger" onClick={openModal} aria-haspopup="dialog">
+        <Bot size={16} />
+        <span>Build Portfolio</span>
+      </button>
+
+      {open &&
+        createPortal(
+          <div className={cn('robo-overlay', closing && 'is-closing')} onClick={closeModal}>
+            <div
+              className={cn('robo-panel', closing && 'is-closing')}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="robo-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <header className="robo-header">
+                <div className="robo-brand">
+                  <span className="robo-brand-icon">
+                    <Bot size={18} />
+                  </span>
+                  <div>
+                    <h2 id="robo-title" className="robo-title">
+                      Robo-Advisor
+                    </h2>
+                    <p className="robo-subtitle">Automated portfolio builder</p>
+                  </div>
+                </div>
+                <button type="button" className="robo-close" onClick={closeModal} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </header>
+
+              {phase === 'config' ? (
+                <>
+                  <div className="robo-body">
+                    <div className="robo-field">
+                      <label htmlFor="robo-amount" className="robo-label">
+                        Investment amount
+                      </label>
+                      <div className={cn('robo-amount-field', error && 'robo-amount-invalid')}>
+                        <span className="robo-currency">$</span>
+                        <input
+                          id="robo-amount"
+                          ref={inputRef}
+                          className="robo-input"
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={amount}
+                          onChange={(e) => setAmount(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSubmit();
+                          }}
+                          placeholder="10,000"
+                          aria-invalid={!!error}
+                          aria-describedby="robo-amount-hint"
+                        />
+                      </div>
+                      <p id="robo-amount-hint" className="robo-hint">
+                        Equal-weighted across your strongest signals
+                      </p>
+                      {error && (
+                        <p className="robo-error" role="alert">
+                          {error}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="robo-field">
+                      <span className="robo-label" id="robo-risk-label">
+                        Risk profile
+                      </span>
+                      <div className="robo-risk-grid" role="radiogroup" aria-labelledby="robo-risk-label">
+                        {RISK_OPTIONS.map((option) => {
+                          const selected = riskProfile === option.id;
+                          return (
+                            <button
+                              key={option.id}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              className={cn('robo-risk-card', selected && 'is-selected')}
+                              onClick={() => {
+                                setRiskProfile(option.id);
+                                setError(null);
+                              }}
+                            >
+                              <option.Icon size={20} className="robo-risk-icon" />
+                              <span className="robo-risk-name">{option.label}</span>
+                              <span className="robo-risk-desc">{option.description}</span>
+                              <span className="robo-risk-holdings">{option.holdings} assets</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <footer className="robo-footer">
+                    <button type="button" className="robo-submit" onClick={handleSubmit}>
+                      Build Portfolio <ArrowRight size={16} />
+                    </button>
+                  </footer>
+                </>
+              ) : (
+                <>
+                  <div className="robo-body">
+                    {result && result.length > 0 ? (
+                      <>
+                        <div className="robo-summary">
+                          <div className="robo-summary-item">
+                            <span className="robo-summary-label">Total invested</span>
+                            <span className="robo-summary-value">{formatPrice(total)}</span>
+                          </div>
+                          <div className="robo-summary-item">
+                            <span className="robo-summary-label">Holdings</span>
+                            <span className="robo-summary-value">{result.length}</span>
+                          </div>
+                          <div className="robo-summary-item">
+                            <span className="robo-summary-label">Risk</span>
+                            <span className="robo-summary-value robo-summary-risk">{activeRisk?.label}</span>
+                          </div>
+                        </div>
+                        <p className="robo-results-note">Equal-weight allocation · signal score ≥ 70</p>
+                        <ul className="robo-allocation-list">
+                          {result.map((allocation, index) => {
+                            const asset = assetByTicker.get(allocation.ticker);
+                            const score = asset ? calculateSignalScore(asset) : null;
+                            return (
+                              <li
+                                key={allocation.ticker}
+                                className="robo-allocation"
+                                style={{ animationDelay: `${index * 55}ms` }}
+                              >
+                                <span className="robo-rank">{index + 1}</span>
+                                <div className="robo-asset">
+                                  <div className="robo-asset-row">
+                                    <span className="robo-ticker">{allocation.ticker}</span>
+                                    <span className={cn('robo-score', scoreTone(score))}>{score ?? '—'}</span>
+                                  </div>
+                                  <span className="robo-name">{asset?.name ?? 'Asset'}</span>
+                                </div>
+                                <div className="robo-metrics">
+                                  <span className="robo-weight">{formatWeight(allocation.weight)}</span>
+                                  <span className="robo-alloc-amount">{formatPrice(allocation.allocatedAmount)}</span>
+                                </div>
+                                <div className="robo-bar-track" aria-hidden="true">
+                                  <div
+                                    className="robo-bar"
+                                    style={{ width: `${allocation.weight * 100}%`, animationDelay: `${index * 55 + 150}ms` }}
+                                  />
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </>
+                    ) : (
+                      <div className="robo-empty">
+                        <Shield size={28} />
+                        <h3>No qualifying assets</h3>
+                        <p>
+                          No assets in your watchlist currently clear the 70-point signal threshold. Adjust your
+                          inputs or check back later.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <footer className="robo-footer">
+                    <button
+                      type="button"
+                      className="robo-back"
+                      onClick={() => {
+                        setPhase('config');
+                        setError(null);
+                      }}
+                    >
+                      <ArrowLeft size={16} /> Adjust
+                    </button>
+                    <button type="button" className="robo-submit" onClick={closeModal}>
+                      Done
+                    </button>
+                  </footer>
+                </>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ArrowDown, ArrowUpRight, CandlestickChart, ExternalLink, Radio, RefreshCw, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { calculateSignalScore, fetchAssets, formatChange, formatPrice, formatReward, formatRisk, formatTradingViewSymbol, getAssetClass, getBrokerRoute, sampleAssets, type Asset, type AssetClass } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
@@ -158,7 +159,10 @@ function Index() {
           <section className="markets" aria-label="Markets">
             <div className="markets-head">
               <h2 className="markets-title">Markets</h2>
-              <span className="markets-count font-mono">{rows.length} ASSET{rows.length === 1 ? '' : 'S'}</span>
+              <div className="markets-head-actions">
+                <span className="markets-count font-mono">{rows.length} ASSET{rows.length === 1 ? '' : 'S'}</span>
+                <RoboAdvisor assets={assets} />
+              </div>
             </div>
             <div className="markets-controls">
               <div className="markets-pills" role="group" aria-label="Market view">

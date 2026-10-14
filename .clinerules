@@ -1,0 +1,16 @@
+# UI/UX & Frontend Skills Context
+
+## 1. Framer Motion Expert
+- Use `framer-motion` for complex React animations (layout transitions, AnimatePresence for mount/unmount, drag interactions).
+- Prefer spring animations (`type: "spring", stiffness: 300, damping: 30`) over linear easing for natural interfaces.
+- Do NOT use standard CSS `transition: all` on React components if Framer Motion is active.
+
+## 2. Shadcn UI & Radix Primitives
+- Strictly maintain Radix UI accessibility (a11y) standards (keyboard navigation, aria-labels, focus management).
+- When customizing shadcn components for the 'Terminal Chic' aesthetic, use Tailwind configuration and CSS variables (`--signal-green`, `--background`). Do not override base primitive functionality.
+- Never refactor original shadcn export patterns (suppress `react-refresh/only-export-components` warnings instead).
+
+## 3. Data Visualization (Fintech)
+- Use `lightweight-charts` by TradingView (or Recharts for simple stats) for high-performance financial charts.
+- Implement 'Terminal Chic' data viz: High contrast, dark mode backgrounds, neon gridlines (low opacity), and strict deterministic colors (Green/Red based on delta).
+- Avoid unnecessary chart decorations; maximize data-ink ratio.

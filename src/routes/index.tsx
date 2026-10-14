@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AssetIcon } from '@/components/AssetIcon';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
@@ -91,7 +92,10 @@ function Hero({ asset }: { asset: Asset }) {
         </span>
         <div className="hero-headline">
           <div>
-            <h2 className="hero-ticker">{asset.ticker}</h2>
+            <div className="hero-ticker-row">
+              <AssetIcon symbol={asset.ticker} name={asset.name} size="lg" />
+              <h2 className="hero-ticker">{asset.ticker}</h2>
+            </div>
             <div className="hero-price">{formatPrice(asset.current_price)}</div>
           </div>
           <ScoreRing score={score} />
@@ -178,7 +182,8 @@ function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
     <div className="markets-row">
       <span className="markets-rank">#{rank}</span>
       <span className="markets-ticker" title={asset.name || asset.ticker}>
-        {asset.ticker}
+        <AssetIcon symbol={asset.ticker} name={asset.name} size="sm" />
+        <span className="markets-ticker-label">{asset.ticker}</span>
       </span>
       <span className={cn('markets-price', priceFlash)}>{formatPrice(asset.current_price)}</span>
       <Sparkline

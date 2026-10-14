@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Zap } from 'lucide-react';
 import { toast } from 'sonner';
+import { AssetIcon } from '@/components/AssetIcon';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
@@ -135,7 +136,10 @@ export function TradeTicket({
                     <div>
                       <span className="ticket-eyebrow">{assetClass} · Quick trade</span>
                       <div className="ticket-title">
-                        <span>{asset.ticker}</span>
+                        <span className="ticket-title-asset">
+                          <AssetIcon symbol={asset.ticker} name={asset.name} size="lg" />
+                          <span>{asset.ticker}</span>
+                        </span>
                         <span className={cn('ticket-price', priceFlash)}>{formatPrice(price)}</span>
                       </div>
                     </div>

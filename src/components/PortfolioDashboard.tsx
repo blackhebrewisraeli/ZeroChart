@@ -19,6 +19,7 @@ import {
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
+import { AssetIcon } from '@/components/AssetIcon';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
@@ -188,7 +189,10 @@ function HoldingRow({
         onClick={() => setOpen((v) => !v)}
       >
         <div className="holding-asset">
-          <span className="holding-ticker">{position.ticker}</span>
+          <div className="holding-asset-head">
+            <AssetIcon symbol={position.ticker} name={asset?.name ?? null} size="md" />
+            <span className="holding-ticker">{position.ticker}</span>
+          </div>
           <span className="holding-name">{asset?.name ?? position.ticker}</span>
         </div>
         <div className="holding-cell holding-cell-secondary">

@@ -380,6 +380,10 @@ body {
 }
 .hero-action {
   margin-top: 28px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .hero-chart {
   width: 100%;
@@ -2819,5 +2823,347 @@ body {
     flex-direction: column;
     align-items: center;
   }
+}
+
+/* ===== Trade ticket (slide-over) ===== */
+.ticket-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  font:
+    600 13px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  transition:
+    transform 0.15s,
+    box-shadow 0.2s,
+    filter 0.2s;
+}
+.ticket-trigger:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+.ticket-trigger:active {
+  transform: scale(0.96);
+}
+.ticket-trigger-hero {
+  height: 58px;
+  padding: 0 30px;
+  border-radius: 14px;
+  font-size: 15px;
+  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 40%, transparent);
+}
+.ticket-trigger-hero:hover {
+  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 60%, transparent);
+}
+.ticket-trigger-compact {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 11px;
+  box-shadow: 0 0 20px color-mix(in oklch, var(--primary) 28%, transparent);
+}
+
+.ticket-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+.ticket-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 100vw);
+  height: 100dvh;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background:
+    radial-gradient(
+      520px 260px at 100% 0%,
+      color-mix(in oklch, var(--primary) 12%, transparent),
+      transparent 60%
+    ),
+    var(--card);
+  box-shadow: -30px 0 80px rgba(0, 0, 0, 0.5);
+}
+.ticket-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 24px 0;
+}
+.ticket-eyebrow {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.ticket-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+  font:
+    700 24px 'DM Sans',
+    sans-serif;
+  letter-spacing: -0.02em;
+}
+.ticket-price {
+  font:
+    700 16px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.ticket-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    color 0.15s ease-out,
+    background 0.15s ease-out,
+    transform 0.15s ease-out;
+}
+.ticket-close:hover {
+  color: var(--foreground);
+  background: rgba(255, 255, 255, 0.08);
+}
+.ticket-close:active {
+  transform: scale(0.92);
+}
+.ticket-name {
+  margin-top: 2px;
+  padding: 0 24px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.ticket-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px 24px 28px;
+  flex: 1;
+}
+.ticket-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--muted);
+}
+.ticket-side-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  border: none;
+  border-radius: 10px;
+  font:
+    700 14px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  background: transparent;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.2s;
+}
+.ticket-side-btn.is-active-buy {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 45%, transparent);
+}
+.ticket-side-btn.is-active-sell {
+  color: #fff;
+  background: var(--signal-red);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 45%, transparent);
+}
+
+.ticket-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ticket-label {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.ticket-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 72px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--background);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.ticket-input-wrap:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 25%, transparent);
+}
+.ticket-input-prefix {
+  font:
+    700 26px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.ticket-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font:
+    700 34px 'JetBrains Mono',
+    monospace;
+  color: var(--foreground);
+}
+.ticket-input::placeholder {
+  color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+}
+.ticket-input::-webkit-outer-spin-button,
+.ticket-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.ticket-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.ticket-hint {
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+
+.ticket-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--background);
+}
+.ticket-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font:
+    600 13px 'JetBrains Mono',
+    monospace;
+}
+.ticket-summary-label {
+  color: var(--muted-foreground);
+}
+.ticket-summary-value {
+  color: var(--foreground);
+}
+.ticket-summary-total {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.ticket-summary-total .ticket-summary-label {
+  color: var(--foreground);
+  font-weight: 700;
+}
+.ticket-summary-total .ticket-summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.ticket-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 64px;
+  border: none;
+  border-radius: 16px;
+  font:
+    700 17px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 0.12s,
+    filter 0.2s,
+    box-shadow 0.2s,
+    opacity 0.2s;
+}
+.ticket-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ticket-submit-buy {
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--primary) 45%, transparent);
+}
+.ticket-submit-sell {
+  color: #fff;
+  background: var(--signal-red);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--signal-red) 45%, transparent);
+}
+.ticket-submit:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+.ticket-submit:not(:disabled):active {
+  transform: scale(0.985);
+}
+.ticket-footnote {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.ticket-trigger:focus-visible,
+.ticket-close:focus-visible,
+.ticket-side-btn:focus-visible,
+.ticket-submit:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 

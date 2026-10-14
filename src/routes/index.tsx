@@ -19,6 +19,7 @@ import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { TradeTicket } from '@/components/TradeTicket';
 import {
   calculateSignalScore,
   fetchAssets,
@@ -109,6 +110,7 @@ function Hero({ asset }: { asset: Asset }) {
           )}
         </div>
         <div className="hero-action">
+          <TradeTicket asset={asset} variant="hero" />
           <BrokerModal asset={asset} variant="hero" />
         </div>
       </div>

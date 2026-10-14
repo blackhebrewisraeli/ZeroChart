@@ -22,6 +22,7 @@ import { AddPositionModal } from '@/components/AddPositionModal';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
+import { TradeTicket } from '@/components/TradeTicket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
 
@@ -309,6 +310,7 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
   );
   const stats = calculatePortfolioStats(visible, assets);
   const suggestions = generateSuggestions(visible, assets, AVAILABLE_CASH);
+  const topAsset = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
 
   let dayChange = 0;
   let hasDayChange = false;
@@ -336,15 +338,18 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
             Simulate strategies or track live holdings — one engine, zero noise.
           </p>
         </div>
-        <Segmented
-          value={mode}
-          ariaLabel="Portfolio mode"
-          onChange={setMode}
-          options={[
-            { value: 'simulation', label: 'Simulation' },
-            { value: 'live', label: 'Live Tracking' },
-          ]}
-        />
+        <div className="flex items-center gap-3">
+          {topAsset && <TradeTicket asset={topAsset} variant="compact" />}
+          <Segmented
+            value={mode}
+            ariaLabel="Portfolio mode"
+            onChange={setMode}
+            options={[
+              { value: 'simulation', label: 'Simulation' },
+              { value: 'live', label: 'Live Tracking' },
+            ]}
+          />
+        </div>
       </header>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

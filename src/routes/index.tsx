@@ -36,8 +36,8 @@ import {
   type AssetClass,
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
+import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
-import { useSimulatedPrices } from '@/hooks/useSimulatedPrices';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
 export const Route = createFileRoute('/')({
@@ -220,7 +220,7 @@ function Index() {
   const preview =
     source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const baseAssets = preview ? sampleAssets : query.data || [];
-  const assets = useSimulatedPrices(baseAssets);
+  const assets = useBinanceWebSocket(baseAssets);
   const topPick = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
   const filtered =
     assetClass === 'All' ? assets : assets.filter((a) => getAssetClass(a.ticker) === assetClass);

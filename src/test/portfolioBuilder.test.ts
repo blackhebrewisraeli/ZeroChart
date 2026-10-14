@@ -17,6 +17,7 @@ function makeAsset(ticker: string, rewardPct: number, riskPct: number): Asset {
     reward_pct: rewardPct,
     volume_spike: null,
     rsi_14: null,
+    change_24h: null,
     updated_at: null,
   };
 }

@@ -15,7 +15,7 @@ export interface AssetStatus {
   rsi_14: number | null;
   sma_50: number | null;
   sma_200: number | null;
-  change_24h?: number | null;
+  change_24h: number | null;
   updated_at?: string | null;
 }
 export type Asset = AssetStatus;
@@ -27,7 +27,7 @@ export async function fetchAssets(): Promise<Asset[]> {
     const { data, error } = await supabase
       .from('assets_status')
       .select(
-        'ticker,current_price,stable_signal,stable_explanation,radar_signal,radar_explanation,risk_pct,reward_pct,volume_spike,rsi_14,sma_50,sma_200,updated_at',
+        'ticker,current_price,change_24h,stable_signal,stable_explanation,radar_signal,radar_explanation,risk_pct,reward_pct,volume_spike,rsi_14,sma_50,sma_200,updated_at',
       )
       .order('ticker')
       .range(offset, offset + pageSize - 1)

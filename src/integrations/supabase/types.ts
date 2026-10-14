@@ -11,6 +11,7 @@ export type Database = {
       assets_status: {
         Row: {
           current_price: number | null;
+          change_24h: number | null;
           radar_explanation: string | null;
           radar_signal: string | null;
           reward_pct: number | null;
@@ -26,6 +27,7 @@ export type Database = {
         };
         Insert: {
           current_price?: number | null;
+          change_24h?: number | null;
           radar_explanation?: string | null;
           radar_signal?: string | null;
           reward_pct?: number | null;
@@ -41,6 +43,7 @@ export type Database = {
         };
         Update: {
           current_price?: number | null;
+          change_24h?: number | null;
           radar_explanation?: string | null;
           radar_signal?: string | null;
           reward_pct?: number | null;

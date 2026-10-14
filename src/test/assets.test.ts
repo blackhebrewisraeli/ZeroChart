@@ -105,6 +105,7 @@ describe('asset data', () => {
       reward_pct: 0.1,
       volume_spike: null,
       rsi_14: null,
+      change_24h: null,
       updated_at: null,
     };
     // ratio = 2 -> base 60, no volume spike, trend positive -> +10 = 70

@@ -15,11 +15,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AssetIcon } from '@/components/AssetIcon';
+import { AssetDetailsModal } from '@/components/AssetDetailsModal';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
+import { SetAlertButton } from '@/components/SetAlertModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
 import {
@@ -174,16 +176,38 @@ function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
 }
 
-function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
+function MarketRow({
+  asset,
+  rank,
+  onSelect,
+}: {
+  asset: Asset;
+  rank: number;
+  onSelect: (asset: Asset) => void;
+}) {
   const score = calculateSignalScore(asset);
   const change = asset.change_24h ?? null;
   const priceFlash = usePriceFlash(asset.current_price);
   return (
-    <div className="markets-row">
+    <div
+      className="markets-row markets-row-clickable"
+      role="button"
+      tabIndex={0}
+      aria-label={`View ${asset.ticker} details`}
+      onClick={() => onSelect(asset)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(asset);
+        }
+      }}
+    >
       <span className="markets-rank">#{rank}</span>
       <span className="markets-ticker" title={asset.name || asset.ticker}>
         <AssetIcon symbol={asset.ticker} name={asset.name} size="sm" />
         <span className="markets-ticker-label">{asset.ticker}</span>
+        <SetAlertButton asset={asset} />
       </span>
       <span className={cn('markets-price', priceFlash)}>{formatPrice(asset.current_price)}</span>
       <Sparkline
@@ -204,7 +228,7 @@ function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
       <span className="markets-score-cell">
         <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
       </span>
-      <span className="markets-trade">
+      <span className="markets-trade" onClick={(e) => e.stopPropagation()}>
         <BrokerModal asset={asset} />
       </span>
     </div>
@@ -216,6 +240,7 @@ function Index() {
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
   const [view, setView] = useState<'scanner' | 'portfolio'>('scanner');
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const query = useQuery({
     queryKey: ['assets-status'],
     queryFn: fetchAssets,
@@ -406,7 +431,12 @@ function Index() {
                     <span />
                   </div>
                   {rows.map((asset, index) => (
-                    <MarketRow key={asset.ticker} asset={asset} rank={index + 1} />
+                    <MarketRow
+                      key={asset.ticker}
+                      asset={asset}
+                      rank={index + 1}
+                      onSelect={setSelectedAsset}
+                    />
                   ))}
                 </div>
               )}
@@ -436,6 +466,10 @@ function Index() {
           <ArrowDown size={10} className="ml-1 inline" />
         </span>
       </footer>
+
+      {selectedAsset && (
+        <AssetDetailsModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
+      )}
     </div>
   );
 }

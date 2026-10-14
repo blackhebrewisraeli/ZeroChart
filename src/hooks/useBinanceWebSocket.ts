@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Asset } from '@/lib/assets';
+import { toast } from 'sonner';
+import { formatPrice, type Asset } from '@/lib/assets';
+import { getAlerts, hasCrossed, removeAlert } from '@/lib/alertsStore';
+import { toBinanceSymbol, toDisplayTicker } from '@/lib/binance';
 
 const STREAM_URL = 'wss://stream.binance.com:9443/ws/!miniTicker@arr';
 const THROTTLE_MS = 600;
@@ -11,16 +14,19 @@ interface TickerUpdate {
 }
 
 /**
- * Maps an app ticker to its Binance USDT market symbol:
- *   'BTC-USD' -> 'BTCUSDT', 'BTC' -> 'BTCUSDT'.
- * Forex (`=X`) returns null. Non-crypto symbols resolve to a candidate that
- * simply never appears in the Binance stream, so they are ignored downstream.
+ * Fires any active price alerts crossed by the latest tick. Triggered alerts
+ * are removed and surfaced as a toast notification.
  */
-function toBinanceSymbol(ticker: string): string | null {
-  const symbol = ticker.trim().toUpperCase();
-  if (!symbol || symbol.endsWith('=X')) return null;
-  const base = symbol.endsWith('-USD') ? symbol.slice(0, -4) : symbol;
-  return `${base}USDT`;
+function checkAlerts(binanceSymbol: string, price: number): void {
+  for (const alert of getAlerts()) {
+    if (toBinanceSymbol(alert.ticker) !== binanceSymbol) continue;
+    if (!hasCrossed(alert, price)) continue;
+    removeAlert(alert.id);
+    toast.success(`${toDisplayTicker(alert.ticker)} reached ${formatPrice(alert.targetPrice)}!`, {
+      description:
+        alert.direction === 'above' ? 'Price rose to your target.' : 'Price fell to your target.',
+    });
+  }
 }
 
 /**
@@ -66,6 +72,7 @@ export function useBinanceWebSocket(assets: Asset[]): Asset[] {
             const open = Number.parseFloat(tick.o ?? '');
             if (!Number.isFinite(price) || !Number.isFinite(open) || open <= 0) continue;
             pending.current.set(symbol, { price, change: (price - open) / open });
+            checkAlerts(symbol, price);
           }
         } catch {
           // Ignore malformed or non-JSON frames.

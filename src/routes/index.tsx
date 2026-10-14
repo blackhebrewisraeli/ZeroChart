@@ -332,7 +332,7 @@ function Index() {
                   <span className="markets-count font-mono">
                     {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
                   </span>
-                  <RoboAdvisor assets={assets} />
+                  <RoboAdvisor assets={assets} onInvest={() => setView('portfolio')} />
                 </div>
               </div>
               <div className="markets-controls">

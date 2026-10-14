@@ -16,31 +16,13 @@ import {
   type Position,
   type Suggestion,
 } from '@/lib/portfolioManager';
+import { usePortfolio } from '@/lib/portfolioStore';
 import { Segmented } from '@/components/Segmented';
 import { cn } from '@/lib/utils';
 
 type PortfolioMode = 'simulation' | 'live';
 
 const AVAILABLE_CASH = 2500;
-
-const MOCK_POSITIONS: Position[] = [
-  {
-    id: 'sim-nvda',
-    ticker: 'NVDA',
-    buyPrice: 108,
-    shares: 10,
-    isSimulation: true,
-    dateAdded: '2026-09-02',
-  },
-  {
-    id: 'sim-aapl',
-    ticker: 'AAPL',
-    buyPrice: 252,
-    shares: 4,
-    isSimulation: true,
-    dateAdded: '2026-09-18',
-  },
-];
 
 function formatPnl(value: number) {
   const sign = value > 0 ? '+' : value < 0 ? '-' : '';
@@ -269,21 +251,13 @@ function HoldingRow({
 
 export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
   const [mode, setMode] = useState<PortfolioMode>('simulation');
-  const [positions, setPositions] = useState<Position[]>(MOCK_POSITIONS);
+  const { positions, removePosition, updatePosition } = usePortfolio();
 
   const visible = positions.filter((p) =>
     mode === 'simulation' ? p.isSimulation : !p.isSimulation,
   );
   const stats = calculatePortfolioStats(visible, assets);
   const suggestions = generateSuggestions(visible, assets, AVAILABLE_CASH);
-
-  function closePosition(id: string) {
-    setPositions((prev) => prev.filter((p) => p.id !== id));
-  }
-
-  function updatePosition(id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) {
-    setPositions((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
-  }
 
   return (
     <section className="portfolio" aria-label="Portfolio dashboard">
@@ -369,7 +343,7 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
                 position={position}
                 assets={assets}
                 index={i}
-                onClose={closePosition}
+                onClose={removePosition}
                 onUpdate={updatePosition}
               />
             ))}

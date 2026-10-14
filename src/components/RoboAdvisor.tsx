@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, ArrowRight, Bot, Gauge, Rocket, Shield, X } from 'lucide-react';
 import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
 import { generatePortfolio, type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
+import { type Position } from '@/lib/portfolioManager';
+import { usePortfolio } from '@/lib/portfolioStore';
 import { cn } from '@/lib/utils';
 
 const RISK_OPTIONS: {
@@ -46,7 +48,7 @@ function scoreTone(score: number | null) {
   return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
 }
 
-export function RoboAdvisor({ assets }: { assets: Asset[] }) {
+export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: () => void }) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [phase, setPhase] = useState<'config' | 'results'>('config');
@@ -62,6 +64,7 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
   const closeTimer = useRef<number | undefined>(undefined);
 
   const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
+  const { addPositions } = usePortfolio();
 
   function openModal() {
     closingRef.current = false;
@@ -125,6 +128,38 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
     setTotal(value);
     setResult(generatePortfolio({ totalCapital: value, riskProfile }, assets));
     setPhase('results');
+  }
+
+  function handleConfirmInvest() {
+    if (closingRef.current || !result || result.length === 0) return;
+
+    const now = new Date();
+    const dateAdded = now.toISOString().slice(0, 10);
+    const positions: Position[] = [];
+
+    result.forEach((allocation, index) => {
+      const asset = assetByTicker.get(allocation.ticker);
+      const price = asset?.current_price;
+      if (price === null || price === undefined || !Number.isFinite(price) || price <= 0) return;
+
+      positions.push({
+        id: `robo-${allocation.ticker.toLowerCase()}-${now.getTime()}-${index}`,
+        ticker: allocation.ticker,
+        buyPrice: price,
+        shares: Number((allocation.allocatedAmount / price).toFixed(4)),
+        isSimulation: true,
+        dateAdded,
+      });
+    });
+
+    if (positions.length > 0) {
+      addPositions(positions);
+    }
+
+    closeModal();
+    if (onInvest) {
+      window.setTimeout(onInvest, CLOSE_MS);
+    }
   }
 
   const activeRisk = RISK_OPTIONS.find((r) => r.id === riskProfile);
@@ -339,8 +374,12 @@ export function RoboAdvisor({ assets }: { assets: Asset[] }) {
                     >
                       <ArrowLeft size={16} /> Adjust
                     </button>
-                    <button type="button" className="robo-submit" onClick={closeModal}>
-                      Done
+                    <button
+                      type="button"
+                      className="robo-submit robo-submit-invest"
+                      onClick={handleConfirmInvest}
+                    >
+                      Confirm & Invest <Rocket size={16} />
                     </button>
                   </footer>
                 </>

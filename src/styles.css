@@ -1116,6 +1116,16 @@ body {
   width: auto;
   flex: 1;
 }
+.robo-submit-invest {
+  background: linear-gradient(
+    135deg,
+    var(--signal-green),
+    color-mix(in oklch, var(--signal-green) 55%, var(--signal-yellow))
+  );
+  box-shadow:
+    0 0 34px color-mix(in oklch, var(--signal-green) 42%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
 
 .robo-summary {
   display: grid;

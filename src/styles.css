@@ -163,6 +163,7 @@ body {
 }
 
 .page-width {
+  width: 100%;
   max-width: 1184px;
   margin-inline: auto;
   padding-inline: 32px;
@@ -276,7 +277,7 @@ body {
   color: var(--muted-foreground);
 }
 .hero-name {
-  margin-top: 10px;
+  margin-top: 18px;
   font-size: 15px;
   color: var(--muted-foreground);
 }
@@ -367,9 +368,19 @@ body {
   margin-top: 28px;
 }
 .hero-chart {
+  width: 100%;
+  min-width: 0;
   height: 460px;
-  margin-top: 18px;
+  margin-top: 32px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.hero-chart > div > div:not(.tradingview-widget-copyright) {
+  width: 100%;
+  height: 100%;
+}
+.hero-chart iframe {
+  width: 100%;
+  max-width: 100%;
 }
 
 .trade-button {

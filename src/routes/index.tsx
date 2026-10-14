@@ -249,7 +249,7 @@ function Index() {
           </div>
         </div>
       </header>
-      <main className="page-width pb-16 pt-8">
+      <main className="page-width w-full mx-auto pb-16 pt-8">
         {preview && (
           <div className="preview-note">
             <span className="flex items-center gap-2">

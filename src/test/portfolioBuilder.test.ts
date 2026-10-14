@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generatePortfolio, type PortfolioPreferences } from '@/lib/portfolioBuilder';
+import {
+  generatePortfolio,
+  getQualifyingAssets,
+  type PortfolioPreferences,
+} from '@/lib/portfolioBuilder';
 import type { Asset } from '@/lib/assets';
 
 function makeAsset(ticker: string, rewardPct: number, riskPct: number): Asset {
@@ -69,5 +73,35 @@ describe('portfolio builder', () => {
     expect(generatePortfolio({ totalCapital: 1000, riskProfile: 'aggressive' }, assets)).toEqual(
       [],
     );
+  });
+
+  it('excludes tickers so a swap replaces them with the next best asset', () => {
+    const assets = [
+      makeAsset('A', 0.2, 0.05), // 100
+      makeAsset('B', 0.15, 0.05), // 90
+      makeAsset('C', 0.1, 0.05), // 70
+      makeAsset('D', 0.05, 0.05), // 50 (below threshold)
+    ];
+    const prefs: PortfolioPreferences = { totalCapital: 30000, riskProfile: 'aggressive' };
+
+    expect(generatePortfolio(prefs, assets).map((a) => a.ticker)).toEqual(['A', 'B', 'C']);
+
+    const swapped = generatePortfolio(prefs, assets, new Set(['A']));
+    expect(swapped.map((a) => a.ticker)).toEqual(['B', 'C']);
+    for (const allocation of swapped) {
+      expect(allocation.weight).toBeCloseTo(0.5, 5);
+      expect(allocation.allocatedAmount).toBeCloseTo(15000, 2);
+    }
+  });
+
+  it('ranks qualifying assets and applies exclusions', () => {
+    const assets = [
+      makeAsset('A', 0.2, 0.05), // 100
+      makeAsset('B', 0.15, 0.05), // 90
+      makeAsset('C', 0.1, 0.05), // 70
+      makeAsset('D', 0.05, 0.05), // 50
+    ];
+    expect(getQualifyingAssets(assets).map((a) => a.ticker)).toEqual(['A', 'B', 'C']);
+    expect(getQualifyingAssets(assets, new Set(['A', 'B'])).map((a) => a.ticker)).toEqual(['C']);
   });
 });

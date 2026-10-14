@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ArrowRight, Bot, Gauge, Rocket, Shield, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, Gauge, RefreshCw, Rocket, Shield, X } from 'lucide-react';
 import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
-import { generatePortfolio, type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
+import {
+  generatePortfolio,
+  getQualifyingAssets,
+  type Allocation,
+  type RiskProfile,
+} from '@/lib/portfolioBuilder';
 import { type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { cn } from '@/lib/utils';
@@ -56,6 +61,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   const [riskProfile, setRiskProfile] = useState<RiskProfile>('moderate');
   const [result, setResult] = useState<Allocation[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [rejectedTickers, setRejectedTickers] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,6 +77,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
     setClosing(false);
     setPhase('config');
     setResult(null);
+    setRejectedTickers(new Set());
     setError(null);
     setOpen(true);
   }
@@ -126,8 +133,16 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
     }
     setError(null);
     setTotal(value);
+    setRejectedTickers(new Set());
     setResult(generatePortfolio({ totalCapital: value, riskProfile }, assets));
     setPhase('results');
+  }
+
+  function handleSwap(ticker: string) {
+    const nextRejected = new Set(rejectedTickers);
+    nextRejected.add(ticker);
+    setRejectedTickers(nextRejected);
+    setResult(generatePortfolio({ totalCapital: total, riskProfile }, assets, nextRejected));
   }
 
   function handleConfirmInvest() {
@@ -163,6 +178,12 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   }
 
   const activeRisk = RISK_OPTIONS.find((r) => r.id === riskProfile);
+
+  const qualifyingCount = useMemo(
+    () => getQualifyingAssets(assets, rejectedTickers).length,
+    [assets, rejectedTickers],
+  );
+  const canSwapMore = result != null && qualifyingCount > result.length;
 
   return (
     <>
@@ -307,7 +328,8 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                           </div>
                         </div>
                         <p className="robo-results-note">
-                          Equal-weight allocation · signal score ≥ 70
+                          Equal-weight allocation · signal score ≥ 70 · Swap any holding to replace
+                          it
                         </p>
                         <ul className="robo-allocation-list">
                           {result.map((allocation, index) => {
@@ -337,6 +359,21 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                     {formatPrice(allocation.allocatedAmount)}
                                   </span>
                                 </div>
+                                <button
+                                  type="button"
+                                  className="robo-swap"
+                                  onClick={() => handleSwap(allocation.ticker)}
+                                  disabled={!canSwapMore}
+                                  aria-label={`Swap ${allocation.ticker} for the next best asset`}
+                                  title={
+                                    canSwapMore
+                                      ? 'Replace with the next best asset'
+                                      : 'No more replacements available'
+                                  }
+                                >
+                                  <RefreshCw size={14} />
+                                  <span className="robo-swap-label">Swap</span>
+                                </button>
                                 <div className="robo-bar-track" aria-hidden="true">
                                   <div
                                     className="robo-bar"

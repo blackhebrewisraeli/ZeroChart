@@ -1238,8 +1238,8 @@ body {
 .robo-allocation {
   position: relative;
   display: grid;
-  grid-template-columns: 26px 1fr auto;
-  grid-template-areas: 'rank asset metrics' 'bar bar bar';
+  grid-template-columns: 26px 1fr auto auto;
+  grid-template-areas: 'rank asset metrics swap' 'bar bar bar bar';
   column-gap: 12px;
   row-gap: 10px;
   align-items: center;
@@ -1313,6 +1313,37 @@ body {
     600 13px 'JetBrains Mono',
     monospace;
   color: var(--muted-foreground);
+}
+.robo-swap {
+  grid-area: swap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font:
+    600 12px 'DM Sans',
+    sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease-out,
+    border-color 0.15s ease-out,
+    box-shadow 0.15s ease-out;
+}
+.robo-swap:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--signal-green) 55%, transparent);
+  box-shadow: 0 0 14px color-mix(in oklch, var(--signal-green) 25%, transparent);
+}
+.robo-swap:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .robo-bar-track {
   grid-area: bar;
@@ -3742,6 +3773,19 @@ body {
   to {
     opacity: 0;
     transform: translateY(12px) scale(0.97);
+  }
+}
+
+@media (max-width: 500px) {
+  .robo-allocation {
+    grid-template-columns: 26px 1fr auto;
+    grid-template-areas:
+      'rank asset metrics'
+      'bar bar bar'
+      'swap swap swap';
+  }
+  .robo-swap {
+    justify-self: end;
   }
 }
 

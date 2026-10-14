@@ -358,15 +358,15 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
-          label="Total Value"
-          value={formatPrice(stats.totalValue)}
-          sub={`Invested ${formatPrice(stats.totalInvested)}`}
+          label="Invested"
+          value={formatPrice(stats.totalInvested)}
+          sub={`Cost basis · ${visible.length} ${visible.length === 1 ? 'holding' : 'holdings'}`}
           icon={<Wallet size={18} />}
         />
         <KpiCard
-          label="24h Change"
-          value={hasDayChange ? formatPnl(dayChange) : '—'}
-          sub={hasDayChange ? formatSignedPercent(dayChangePct) : '—'}
+          label="Current Value"
+          value={formatPrice(stats.totalValue)}
+          sub={hasDayChange ? `24h ${formatPnl(dayChange)}` : 'Live prices'}
           icon={
             dayTone ? (
               dayTone === 'pnl-up' ? (
@@ -379,7 +379,7 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
           tone={dayTone}
         />
         <KpiCard
-          label="Unrealized P&L"
+          label="Profit / Loss"
           value={formatPnl(stats.unrealizedPnL)}
           sub={formatSignedPercent(stats.pnlPercent)}
           icon={<Briefcase size={18} />}

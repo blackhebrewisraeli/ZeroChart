@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ArrowDown, ArrowUpRight, CandlestickChart, ExternalLink, Radio, RefreshCw, TrendingUp, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUpRight, CandlestickChart, ExternalLink, Radio, RefreshCw, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { calculateSignalScore, fetchAssets, formatPrice, formatReward, formatRisk, formatTradingViewSymbol, getBrokerRoute, sampleAssets, type Asset } from '@/lib/assets';
+import { calculateSignalScore, fetchAssets, formatChange, formatPrice, formatReward, formatRisk, formatTradingViewSymbol, getAssetClass, getBrokerRoute, sampleAssets, type Asset, type AssetClass } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
@@ -85,29 +85,60 @@ function Hero({ asset }: { asset: Asset }) {
   );
 }
 
-function OpportunityCard({ asset, rank }: { asset: Asset; rank: number }) {
+type MarketView = 'signals' | 'gainers' | 'losers';
+type AssetClassFilter = 'All' | AssetClass;
+
+const MARKET_VIEWS: { id: MarketView; label: string }[] = [
+  { id: 'signals', label: '🔥 Top Signals' },
+  { id: 'gainers', label: '📈 Top Gainers' },
+  { id: 'losers', label: '📉 Top Losers' },
+];
+
+const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['All', 'Stocks', 'Crypto', 'Forex'];
+
+function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
+  const list = [...assets];
+  if (view === 'signals') return list.sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a));
+  if (view === 'gainers') return list.sort((a, b) => (b.change_24h ?? -Infinity) - (a.change_24h ?? -Infinity));
+  return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
+}
+
+function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
   const score = calculateSignalScore(asset);
+  const change = asset.change_24h ?? null;
+  const route = getBrokerRoute(asset.ticker);
   return (
-    <article className="opportunity-card">
-      <span className="opportunity-rank" aria-hidden="true">#{rank}</span>
-      <div className="opportunity-top">
-        <span className="opportunity-ticker">{asset.ticker}</span>
-        <span className={cn('opportunity-score', scoreToneOf(score))}>{score}</span>
-      </div>
-      <div className="opportunity-price">{formatPrice(asset.current_price)}</div>
-      <div className="opportunity-action"><TradeButton ticker={asset.ticker} /></div>
-    </article>
+    <div className="markets-row">
+      <span className="markets-rank">#{rank}</span>
+      <span className="markets-ticker" title={asset.name || asset.ticker}>{asset.ticker}</span>
+      <span className="markets-price">{formatPrice(asset.current_price)}</span>
+      <span className={cn('markets-change', change != null && change > 0 && 'markets-change-up', change != null && change < 0 && 'markets-change-down')}>
+        {change != null && change > 0 && <TrendingUp size={13} />}
+        {change != null && change < 0 && <TrendingDown size={13} />}
+        {formatChange(change)}
+      </span>
+      <span className="markets-score-cell">
+        <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
+      </span>
+      <span className="markets-trade">
+        <a className="markets-trade-link" href={route.url} target="_blank" rel="noopener noreferrer" aria-label={`${route.label} for ${asset.ticker}`} title={route.label}>
+          <ExternalLink size={15} />
+        </a>
+      </span>
+    </div>
   );
 }
 
 function Index() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
+  const [marketView, setMarketView] = useState<MarketView>('signals');
+  const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
   const query = useQuery({ queryKey: ['assets-status'], queryFn: fetchAssets, refetchInterval: 60000, retry: 1 });
   const preview = source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const assets = preview ? sampleAssets : query.data || [];
-  const sorted = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a));
-  const topPick = sorted[0];
-  const otherSignals = sorted.slice(1);
+  const topPick = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
+  const filtered = assetClass === 'All' ? assets : assets.filter((a) => getAssetClass(a.ticker) === assetClass);
+  const rows = sortMarkets(filtered, marketView);
 
   return <div className="min-h-screen text-foreground">
     <header className="terminal-header"><div className="page-width flex h-full items-center justify-between gap-4"><a href="/" className="flex items-center gap-2.5" aria-label="ZeroChart home"><span className="brand-mark"><Zap size={19} fill="currentColor" /></span><span className="text-xl font-semibold">zerochart<span className="text-primary">.</span></span><span className="terminal-tag">SIGNALS</span></a><div className="flex items-center gap-4"><span className="connection-status"><span className={cn('status-dot', query.isError && !preview && 'status-error')} />{preview ? 'Sample data' : query.isPending ? 'Connecting' : query.isError ? 'Offline' : 'Live'}</span><Button variant="outline" size="icon" aria-label="Refresh signals" title="Refresh signals" disabled={query.isFetching} onClick={() => query.refetch()}><RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} /></Button></div></div></header>
@@ -117,21 +148,50 @@ function Index() {
       {query.isPending && !preview ? (
         <div aria-busy="true">
           <div className="hero skeleton-hero"><div className="skeleton h-7 w-56" /><div className="skeleton mt-5 h-14 w-44" /><div className="skeleton mt-6 h-9 w-64" /><div className="skeleton mt-6 h-4 w-full max-w-md" /></div>
-          <div className="opportunity-grid mt-14">
-            {Array.from({ length: 6 }, (_, i) => <div key={i} className="opportunity-card"><div className="skeleton h-6 w-20" /><div className="skeleton h-8 w-28" /><div className="skeleton h-10 w-full" /></div>)}
+          <div className="markets-table mt-14">
+            {Array.from({ length: 6 }, (_, i) => <div key={i} className="markets-row markets-row-skeleton"><div className="skeleton markets-skeleton" /></div>)}
           </div>
         </div>
       ) : topPick ? (
         <>
           <Hero asset={topPick} />
-          {otherSignals.length > 0 && (
-            <section className="opportunities" aria-label="More opportunities">
-              <div className="opportunities-head"><h2 className="opportunities-title">More Opportunities</h2><span className="opportunities-count font-mono">{otherSignals.length} SIGNALS</span></div>
-              <div className="opportunity-grid">
-                {otherSignals.map((asset, index) => <OpportunityCard key={asset.ticker} asset={asset} rank={index + 2} />)}
+          <section className="markets" aria-label="Markets">
+            <div className="markets-head">
+              <h2 className="markets-title">Markets</h2>
+              <span className="markets-count font-mono">{rows.length} ASSET{rows.length === 1 ? '' : 'S'}</span>
+            </div>
+            <div className="markets-controls">
+              <div className="markets-pills" role="group" aria-label="Market view">
+                {MARKET_VIEWS.map((view) => (
+                  <button key={view.id} type="button" className={cn('markets-pill', marketView === view.id && 'markets-pill-active')} aria-pressed={marketView === view.id} onClick={() => setMarketView(view.id)}>
+                    {view.label}
+                  </button>
+                ))}
               </div>
-            </section>
-          )}
+              <div className="markets-pills" role="group" aria-label="Asset class">
+                {ASSET_CLASS_FILTERS.map((filter) => (
+                  <button key={filter} type="button" className={cn('markets-pill', assetClass === filter && 'markets-pill-active')} aria-pressed={assetClass === filter} onClick={() => setAssetClass(filter)}>
+                    {filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {rows.length === 0 ? (
+              <div className="markets-empty">No assets match this filter.</div>
+            ) : (
+              <div className="markets-table">
+                <div className="markets-row markets-row-head" aria-hidden="true">
+                  <span className="markets-head-cell markets-rank-head">#</span>
+                  <span className="markets-head-cell">Asset</span>
+                  <span className="markets-head-cell">Price</span>
+                  <span className="markets-head-cell">24h %</span>
+                  <span className="markets-head-cell">Signal</span>
+                  <span />
+                </div>
+                {rows.map((asset, index) => <MarketRow key={asset.ticker} asset={asset} rank={index + 1} />)}
+              </div>
+            )}
+          </section>
         </>
       ) : !query.isError ? (
         <div className="empty-state"><CandlestickChart size={32} className="mx-auto mb-4 text-muted-foreground" /><h3>No signals yet</h3><p className="mt-2 text-sm text-muted-foreground">Your watchlist is empty. Check back soon, or preview sample data.</p><Button variant="outline" className="mt-5" onClick={() => setSource('sample')}>View sample data</Button></div>

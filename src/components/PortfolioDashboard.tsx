@@ -21,6 +21,8 @@ import { usePortfolio } from '@/lib/portfolioStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
+import { AllocationChart } from '@/components/AllocationChart';
+import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
 
 type PortfolioMode = 'simulation' | 'live';
@@ -152,6 +154,7 @@ function HoldingRow({
   const pnlPct =
     position.buyPrice > 0 ? ((currentPrice - position.buyPrice) / position.buyPrice) * 100 : 0;
   const tone = pnl >= 0 ? 'pnl-up' : 'pnl-down';
+  const priceFlash = usePriceFlash(currentPrice);
 
   function startEdit() {
     setDraftShares(String(position.shares));
@@ -192,7 +195,7 @@ function HoldingRow({
           <span className="holding-cell-label">Shares</span>
         </div>
         <div className="holding-cell holding-cell-secondary">
-          <span className="holding-cell-value">{formatPrice(marketValue)}</span>
+          <span className={cn('holding-cell-value', priceFlash)}>{formatPrice(marketValue)}</span>
           <span className="holding-cell-label">Value</span>
         </div>
         <Sparkline
@@ -218,7 +221,9 @@ function HoldingRow({
             </div>
             <div className="holding-metric">
               <span className="holding-metric-label">Market price</span>
-              <span className="holding-metric-value">{formatPrice(currentPrice)}</span>
+              <span className={cn('holding-metric-value', priceFlash)}>
+                {formatPrice(currentPrice)}
+              </span>
             </div>
             <div className="holding-metric">
               <span className="holding-metric-label">Invested</span>
@@ -376,6 +381,13 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
           <HealthRing score={stats.healthScore} />
         </div>
       </div>
+
+      <section className="portfolio-section" aria-label="Allocation">
+        <div className="portfolio-section-head">
+          <h3 className="portfolio-section-title">Allocation</h3>
+        </div>
+        <AllocationChart positions={visible} assets={assets} />
+      </section>
 
       <section className="portfolio-section" aria-label="Smart suggestions">
         <div className="portfolio-section-head">

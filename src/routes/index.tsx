@@ -34,6 +34,8 @@ import {
   type AssetClass,
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
+import { usePriceFlash } from '@/hooks/usePriceFlash';
+import { useSimulatedPrices } from '@/hooks/useSimulatedPrices';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
 export const Route = createFileRoute('/')({
@@ -145,13 +147,14 @@ function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
 function MarketRow({ asset, rank }: { asset: Asset; rank: number }) {
   const score = calculateSignalScore(asset);
   const change = asset.change_24h ?? null;
+  const priceFlash = usePriceFlash(asset.current_price);
   return (
     <div className="markets-row">
       <span className="markets-rank">#{rank}</span>
       <span className="markets-ticker" title={asset.name || asset.ticker}>
         {asset.ticker}
       </span>
-      <span className="markets-price">{formatPrice(asset.current_price)}</span>
+      <span className={cn('markets-price', priceFlash)}>{formatPrice(asset.current_price)}</span>
       <Sparkline
         data={generateTrendData(asset.current_price, asset.change_24h ?? null)}
         change={asset.change_24h ?? null}
@@ -190,7 +193,8 @@ function Index() {
   });
   const preview =
     source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
-  const assets = preview ? sampleAssets : query.data || [];
+  const baseAssets = preview ? sampleAssets : query.data || [];
+  const assets = useSimulatedPrices(baseAssets);
   const topPick = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
   const filtered =
     assetClass === 'All' ? assets : assets.filter((a) => getAssetClass(a.ticker) === assetClass);

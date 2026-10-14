@@ -2665,3 +2665,159 @@ body {
     transform: translateY(100%);
   }
 }
+
+/* ===== HFT live price flashes ===== */
+@keyframes price-flash-up {
+  0% {
+    background-color: color-mix(in oklch, var(--signal-green) 20%, transparent);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--signal-green) 40%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 transparent;
+  }
+}
+@keyframes price-flash-down {
+  0% {
+    background-color: color-mix(in oklch, var(--signal-red) 20%, transparent);
+    box-shadow: 0 0 12px color-mix(in oklch, var(--signal-red) 40%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 transparent;
+  }
+}
+.price-flash-up {
+  border-radius: 6px;
+  animation: price-flash-up 520ms ease-out;
+}
+.price-flash-down {
+  border-radius: 6px;
+  animation: price-flash-down 520ms ease-out;
+}
+
+/* ===== Portfolio allocation donut ===== */
+.allocation-card {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.allocation-donut {
+  position: relative;
+  flex-shrink: 0;
+  width: 180px;
+  height: 180px;
+}
+.allocation-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.allocation-center-label {
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.12em;
+  color: var(--muted-foreground);
+}
+.allocation-center-value {
+  font:
+    700 16px 'JetBrains Mono',
+    monospace;
+}
+.allocation-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.allocation-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.allocation-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.allocation-legend-ticker {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font:
+    600 13px 'JetBrains Mono',
+    monospace;
+}
+.allocation-legend-pct {
+  font:
+    600 13px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.allocation-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+.allocation-tooltip-ticker {
+  font:
+    700 13px 'JetBrains Mono',
+    monospace;
+}
+.allocation-tooltip-value {
+  font:
+    600 13px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.allocation-tooltip-pct {
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  color: var(--primary);
+}
+.allocation-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 40px 20px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  color: var(--muted-foreground);
+}
+.allocation-empty-title {
+  font:
+    600 15px 'DM Sans',
+    sans-serif;
+  color: var(--foreground);
+}
+.allocation-empty-sub {
+  font-size: 12.5px;
+}
+@media (max-width: 640px) {
+  .allocation-card {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+

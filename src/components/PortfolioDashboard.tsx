@@ -30,6 +30,7 @@ import { AssetIcon } from '@/components/AssetIcon';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
+import { BacktestChart } from '@/components/BacktestChart';
 import { TradeTicket } from '@/components/TradeTicket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
@@ -447,6 +448,10 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
           <h3 className="portfolio-section-title">Allocation</h3>
         </div>
         <AllocationChart positions={visible} assets={assets} />
+      </section>
+
+      <section className="portfolio-section" aria-label="Historical simulation">
+        <BacktestChart positions={visible} assets={assets} />
       </section>
 
       <section className="portfolio-section" aria-label="Smart suggestions">

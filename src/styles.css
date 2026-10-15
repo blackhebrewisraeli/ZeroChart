@@ -4362,3 +4362,185 @@ body {
   }
 }
 
+
+/* ===== Portfolio backtest simulation ===== */
+.backtest-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+}
+.backtest-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.backtest-eyebrow {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.backtest-description {
+  margin: 6px 0 0;
+  max-width: 520px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.backtest-note {
+  margin: 12px 0 0;
+  font:
+    500 11.5px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.backtest-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--signal-green);
+  color: var(--primary-foreground);
+  font:
+    600 12.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 28px color-mix(in oklch, var(--signal-green) 35%, transparent);
+  transition:
+    transform 0.15s ease-out,
+    filter 0.15s ease-out,
+    box-shadow 0.2s ease-out;
+}
+.backtest-button:hover {
+  filter: brightness(1.05);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--signal-green) 50%, transparent);
+}
+.backtest-button:active {
+  transform: scale(0.97);
+}
+.backtest-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.backtest-button:focus-visible {
+  outline: 2px solid var(--signal-green);
+  outline-offset: 2px;
+}
+.backtest-spinner {
+  animation: backtest-spin 0.9s linear infinite;
+}
+@keyframes backtest-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.backtest-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-radius: 12px;
+}
+.backtest-summary-up {
+  border: 1px solid color-mix(in oklch, var(--signal-green) 30%, transparent);
+  background: color-mix(in oklch, var(--signal-green) 8%, transparent);
+}
+.backtest-summary-down {
+  border: 1px solid color-mix(in oklch, var(--signal-red) 30%, transparent);
+  background: color-mix(in oklch, var(--signal-red) 8%, transparent);
+}
+.backtest-summary-label {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.backtest-summary-value {
+  font:
+    700 26px 'JetBrains Mono',
+    monospace;
+  letter-spacing: -0.02em;
+}
+.backtest-summary-up .backtest-summary-value {
+  color: var(--signal-green);
+  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-green) 45%, transparent);
+}
+.backtest-summary-down .backtest-summary-value {
+  color: var(--signal-red);
+  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 45%, transparent);
+}
+.backtest-summary-sub {
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.backtest-chart {
+  position: relative;
+  height: 300px;
+  margin-top: 16px;
+  padding: 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.backtest-chart .recharts-cartesian-grid-horizontal line {
+  stroke: var(--border);
+}
+.backtest-chart .recharts-cartesian-axis-tick-value {
+  fill: var(--muted-foreground);
+  font-size: 11px;
+}
+.backtest-chart .recharts-tooltip-cursor {
+  stroke: var(--muted-foreground);
+  stroke-opacity: 0.4;
+}
+.backtest-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.backtest-tooltip-date {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.backtest-tooltip-value {
+  font:
+    700 15px 'JetBrains Mono',
+    monospace;
+  color: var(--foreground);
+}
+.backtest-empty {
+  margin-top: 16px;
+  padding: 28px 20px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+

@@ -7,7 +7,6 @@ import {
   Briefcase,
   CandlestickChart,
   Flame,
-  LogIn,
   Radio,
   RefreshCw,
   TrendingDown,
@@ -22,6 +21,7 @@ import { AuthModal } from '@/components/AuthModal';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
+import { LandingPage } from '@/components/LandingPage';
 import { OnboardingTour } from '@/components/OnboardingTour';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
@@ -240,14 +240,13 @@ function MarketRow({
   );
 }
 
-function Index() {
+function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
-  const [view, setView] = useState<'scanner' | 'portfolio'>('scanner');
+  const [view, setView] = useState<'scanner' | 'portfolio'>('portfolio');
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
-  const { user, loading, signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const query = useQuery({
     queryKey: ['assets-status'],
     queryFn: fetchAssets,
@@ -330,7 +329,7 @@ function Index() {
               <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
             </Button>
             <ThemeToggle />
-            {loading ? null : user ? (
+            {user ? (
               <div className="flex items-center gap-2">
                 <Avatar className="h-8 w-8 border border-border">
                   <AvatarFallback className="text-[11px] font-semibold">
@@ -344,11 +343,7 @@ function Index() {
                   Log Out
                 </Button>
               </div>
-            ) : (
-              <Button variant="default" size="sm" onClick={() => setAuthOpen(true)}>
-                <LogIn /> Sign In
-              </Button>
-            )}
+            ) : null}
             <OnboardingTour ready={!!topPick} />
           </div>
         </div>
@@ -497,8 +492,35 @@ function Index() {
       {selectedAsset && (
         <AssetDetailsModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
       )}
-
-      <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
     </div>
   );
+}
+
+function Index() {
+  const { user, loading } = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen text-foreground">
+        <div className="page-width mx-auto flex min-h-screen w-full items-center justify-center">
+          <div aria-busy="true" className="landing-loading">
+            <span className="landing-loading-cursor" />
+            Loading your workspace…
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <LandingPage onSignIn={() => setAuthOpen(true)} onGetStarted={() => setAuthOpen(true)} />
+        <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
+      </>
+    );
+  }
+
+  return <Terminal />;
 }

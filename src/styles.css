@@ -2467,6 +2467,41 @@ body {
   align-items: center;
   gap: 12px;
 }
+.share-portfolio-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in oklch, var(--signal-green) 40%, transparent);
+  border-radius: 11px;
+  background: color-mix(in oklch, var(--signal-green) 10%, transparent);
+  color: var(--signal-green);
+  font:
+    600 12.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease-out,
+    background 0.15s ease-out,
+    border-color 0.15s ease-out,
+    box-shadow 0.2s ease-out;
+}
+.share-portfolio-button:hover {
+  background: color-mix(in oklch, var(--signal-green) 18%, transparent);
+  border-color: color-mix(in oklch, var(--signal-green) 62%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--signal-green) 30%, transparent);
+}
+.share-portfolio-button:active {
+  transform: scale(0.96);
+}
+.share-portfolio-button:focus-visible {
+  outline: 2px solid var(--signal-green);
+  outline-offset: 2px;
+}
 .position-overlay {
   position: fixed;
   inset: 0;
@@ -2756,6 +2791,9 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
+  box-shadow:
+    0 0 40px color-mix(in oklch, var(--primary) 10%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 .allocation-donut {
   position: relative;

@@ -5,14 +5,17 @@ import {
   CheckCircle2,
   ChevronDown,
   Pencil,
+  Share2,
   Trash2,
   TrendingDown,
   TrendingUp,
   Wallet,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { calculateSignalScore, formatPrice, generateTrendData, type Asset } from '@/lib/assets';
 import {
   calculatePortfolioStats,
+  generateShareText,
   generateSuggestions,
   type Position,
   type Suggestion,
@@ -333,6 +336,27 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
       : 'pnl-down'
     : undefined;
 
+  async function handleShare() {
+    const text = generateShareText(visible, assets);
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'My ZeroChart Portfolio', text });
+        return;
+      } catch (error) {
+        // The user dismissed the native share sheet — nothing to fall back to.
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copied to clipboard!');
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  }
+
   return (
     <section className="portfolio" aria-label="Portfolio dashboard">
       <header className="portfolio-head">
@@ -342,8 +366,12 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
             Simulate strategies or track live holdings — one engine, zero noise.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {topAsset && <TradeTicket asset={topAsset} variant="compact" />}
+          <button type="button" className="share-portfolio-button" onClick={handleShare}>
+            <Share2 size={15} />
+            Share Portfolio
+          </button>
           <Segmented
             value={mode}
             ariaLabel="Portfolio mode"

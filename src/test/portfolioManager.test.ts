@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePortfolioStats,
+  deriveRiskLabel,
+  generateShareText,
   generateSuggestions,
   type Position,
 } from '@/lib/portfolioManager';
@@ -193,5 +195,69 @@ describe('generateSuggestions', () => {
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0]).toMatchObject({ type: 'SELL', ticker: 'DUP', score: 40 });
+  });
+});
+
+describe('generateShareText', () => {
+  it('formats allocation, risk label, and footer sorted by descending weight', () => {
+    const positions = [
+      makePosition({ id: 'btc', ticker: 'BTC-USD', buyPrice: 100, shares: 4 }),
+      makePosition({ id: 'eth', ticker: 'ETH-USD', buyPrice: 100, shares: 3 }),
+      makePosition({ id: 'aapl', ticker: 'AAPL', buyPrice: 100, shares: 3 }),
+    ];
+    const assets = [
+      makeAsset('BTC-USD', 0.1, 0.05, 100),
+      makeAsset('ETH-USD', 0.1, 0.06, 100),
+      makeAsset('AAPL', 0.1, 0.02, 100),
+    ];
+
+    const text = generateShareText(positions, assets);
+
+    expect(text).toBe(
+      [
+        'My ZeroChart Portfolio 🚀',
+        'Risk: Moderate',
+        '• 40% BTC-USD',
+        '• 30% ETH-USD',
+        '• 30% AAPL',
+        'Built with zero financial knowledge using ZeroChart.',
+      ].join('\n'),
+    );
+  });
+
+  it('falls back to buy price and a neutral risk label when live data is missing', () => {
+    const positions = [makePosition({ id: 'x', ticker: 'X', buyPrice: 50, shares: 2 })];
+
+    const text = generateShareText(positions, []);
+
+    expect(text).toBe(
+      [
+        'My ZeroChart Portfolio 🚀',
+        'Risk: Moderate',
+        '• 100% X',
+        'Built with zero financial knowledge using ZeroChart.',
+      ].join('\n'),
+    );
+  });
+
+  it('reports an empty portfolio without fabricating allocations', () => {
+    expect(generateShareText([], [])).toBe(
+      [
+        'My ZeroChart Portfolio 🚀',
+        'Risk: Moderate',
+        '• No positions yet',
+        'Built with zero financial knowledge using ZeroChart.',
+      ].join('\n'),
+    );
+  });
+});
+
+describe('deriveRiskLabel', () => {
+  it('maps value-weighted risk into conservative, moderate, and aggressive bands', () => {
+    expect(deriveRiskLabel(0.02)).toBe('Conservative');
+    expect(deriveRiskLabel(0.04)).toBe('Moderate');
+    expect(deriveRiskLabel(0.08)).toBe('Moderate');
+    expect(deriveRiskLabel(0.12)).toBe('Aggressive');
+    expect(deriveRiskLabel(null)).toBe('Moderate');
   });
 });

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import {
   Briefcase,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useAuth } from '@/lib/authStore';
+import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
 import { savePortfolio } from '@/lib/db';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { AuthModal } from '@/components/AuthModal';
@@ -314,11 +315,18 @@ function HoldingRow({
   );
 }
 
-export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
+export const PortfolioDashboard = memo(function PortfolioDashboard({
+  assets: baseAssets,
+}: {
+  assets: Asset[];
+}) {
   const [mode, setMode] = useState<PortfolioMode>('simulation');
   const [authOpen, setAuthOpen] = useState(false);
   const { user } = useAuth();
   const { positions, removePosition, updatePosition } = usePortfolio();
+
+  const livePrices = useLivePrices();
+  const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
 
   const visible = positions.filter((p) =>
     mode === 'simulation' ? p.isSimulation : !p.isSimulation,
@@ -532,4 +540,4 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
       <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
     </section>
   );
-}
+});

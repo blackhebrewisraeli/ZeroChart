@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, Trash2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { toast } from 'sonner';
@@ -161,10 +162,18 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
         </div>
       )}
 
-      {notifications.length > 0 && (
-        <div className="price-alerts-toasts" role="region" aria-label="Price alert notifications">
+      <div className="price-alerts-toasts" role="region" aria-label="Price alert notifications">
+        <AnimatePresence initial={false}>
           {notifications.map((notification) => (
-            <div key={notification.id} className="price-alert-toast">
+            <motion.div
+              key={notification.id}
+              className="price-alert-toast"
+              layout
+              initial={{ opacity: 0, x: 24, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 24, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            >
               <div className="price-alert-toast-body">
                 <span className="price-alert-toast-title">
                   {toDisplayTicker(notification.ticker)} target hit
@@ -183,10 +192,10 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
               >
                 ×
               </button>
-            </div>
+            </motion.div>
           ))}
-        </div>
-      )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

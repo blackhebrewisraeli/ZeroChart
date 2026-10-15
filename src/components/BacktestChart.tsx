@@ -1,15 +1,8 @@
 import { useMemo, useState } from 'react';
+import type { UTCTimestamp } from 'lightweight-charts';
 import { History, Loader2 } from 'lucide-react';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 import { formatPrice, type Asset } from '@/lib/assets';
+import { ValueAreaChart, type ValuePoint } from '@/components/LightweightChart';
 import { fetchYearlyKlines, isBinanceCrypto } from '@/lib/binance';
 import {
   computeBacktest,
@@ -22,42 +15,6 @@ import { cn } from '@/lib/utils';
 
 const INITIAL_INVESTMENT = 10000;
 
-interface ChartPoint {
-  timestamp: number;
-  label: string;
-  value: number;
-}
-
-function formatDate(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(timestamp);
-}
-
-function formatFullDate(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(timestamp);
-}
-
-function BacktestTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload?: ChartPoint }>;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const point = payload[0]?.payload;
-  if (!point) return null;
-  return (
-    <div className="backtest-tooltip">
-      <span className="backtest-tooltip-date">{formatFullDate(point.timestamp)}</span>
-      <span className="backtest-tooltip-value">{formatPrice(point.value)}</span>
-    </div>
-  );
-}
-
 export function BacktestChart({ positions, assets }: { positions: Position[]; assets: Asset[] }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -69,11 +26,10 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   const nonCryptoTickers = tickers.filter((ticker) => !isBinanceCrypto(ticker));
   const hasPositions = weights.length > 0;
 
-  const chartData = useMemo<ChartPoint[]>(() => {
+  const valueData = useMemo<ValuePoint[]>(() => {
     if (!result) return [];
     return result.points.map((point) => ({
-      timestamp: point.timestamp,
-      label: formatDate(point.timestamp),
+      time: Math.floor(point.timestamp / 1000) as UTCTimestamp,
       value: point.value,
     }));
   }, [result]);
@@ -170,35 +126,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
 
           {result.points.length > 0 ? (
             <div className="backtest-chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 12, right: 8, left: 8, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="backtestGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        style={{ stopColor: 'var(--signal-green)', stopOpacity: 0.35 }}
-                      />
-                      <stop
-                        offset="95%"
-                        style={{ stopColor: 'var(--signal-green)', stopOpacity: 0 }}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} />
-                  <YAxis hide domain={['auto', 'auto']} />
-                  <Tooltip content={<BacktestTooltip />} />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="var(--signal-green)"
-                    strokeWidth={2}
-                    fill="url(#backtestGradient)"
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <ValueAreaChart data={valueData} height={276} />
             </div>
           ) : (
             <div className="backtest-empty">No historical data available for this portfolio.</div>

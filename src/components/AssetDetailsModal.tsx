@@ -1,57 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import type { UTCTimestamp } from 'lightweight-charts';
 import { LineChart, X } from 'lucide-react';
 import { AssetIcon } from '@/components/AssetIcon';
+import { CandlestickChart, type CandlePoint } from '@/components/LightweightChart';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
-import { fetchHistoricalKlines, isBinanceCrypto, type Kline } from '@/lib/binance';
+import { fetchHistoricalCandles, isBinanceCrypto, type Candle } from '@/lib/binance';
 import { cn } from '@/lib/utils';
 
 const CLOSE_MS = 260;
-
-interface ChartPoint {
-  timestamp: number;
-  label: string;
-  price: number;
-}
-
-function formatDate(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(timestamp);
-}
-
-function formatFullDate(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(timestamp);
-}
-
-function AssetTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean;
-  payload?: ReadonlyArray<{ payload?: ChartPoint }>;
-}) {
-  if (!active || !payload || payload.length === 0) return null;
-  const point = payload[0]?.payload;
-  if (!point) return null;
-  return (
-    <div className="asset-chart-tooltip">
-      <span className="asset-chart-tooltip-date">{formatFullDate(point.timestamp)}</span>
-      <span className="asset-chart-tooltip-price">{formatPrice(point.price)}</span>
-    </div>
-  );
-}
 
 /**
  * A modal shown when a user clicks a row in the Markets table. It fetches daily
@@ -61,7 +18,7 @@ function AssetTooltip({
 export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const [closing, setClosing] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [klines, setKlines] = useState<Kline[]>([]);
+  const [candles, setCandles] = useState<Candle[]>([]);
 
   const closingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
@@ -104,15 +61,15 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
   useEffect(() => {
     if (!isCrypto) {
       setStatus('idle');
-      setKlines([]);
+      setCandles([]);
       return;
     }
     let cancelled = false;
     setStatus('loading');
-    fetchHistoricalKlines(asset.ticker)
+    fetchHistoricalCandles(asset.ticker)
       .then((data) => {
         if (cancelled) return;
-        setKlines(data);
+        setCandles(data);
         setStatus('success');
       })
       .catch(() => {
@@ -124,14 +81,16 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
     };
   }, [asset.ticker, isCrypto]);
 
-  const chartData = useMemo<ChartPoint[]>(
+  const candleData = useMemo<CandlePoint[]>(
     () =>
-      klines.map((kline) => ({
-        timestamp: kline.timestamp,
-        label: formatDate(kline.timestamp),
-        price: kline.close,
+      candles.map((candle) => ({
+        time: Math.floor(candle.timestamp / 1000) as UTCTimestamp,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
       })),
-    [klines],
+    [candles],
   );
 
   return createPortal(
@@ -181,29 +140,7 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
               <span>Couldn't load chart data. Please try again.</span>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 12, right: 8, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="assetAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" style={{ stopColor: 'var(--primary)', stopOpacity: 0.35 }} />
-                    <stop offset="95%" style={{ stopColor: 'var(--primary)', stopOpacity: 0 }} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={28} />
-                <YAxis hide domain={['auto', 'auto']} />
-                <Tooltip content={<AssetTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke="var(--primary)"
-                  strokeWidth={2}
-                  fill="url(#assetAreaGradient)"
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <CandlestickChart data={candleData} height={276} />
           )}
         </section>
 

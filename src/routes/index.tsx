@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import {
   ArrowDown,
   ArrowUpRight,
@@ -43,6 +43,8 @@ import {
   type AssetClass,
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
+import { toBinanceSymbol } from '@/lib/binance';
+import { useLivePrice } from '@/lib/livePriceStore';
 import { useAuth } from '@/lib/authStore';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
@@ -181,7 +183,7 @@ function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
 }
 
-function MarketRow({
+const MarketRow = memo(function MarketRow({
   asset,
   rank,
   onSelect,
@@ -190,9 +192,11 @@ function MarketRow({
   rank: number;
   onSelect: (asset: Asset) => void;
 }) {
+  const live = useLivePrice(toBinanceSymbol(asset.ticker));
+  const currentPrice = live?.price ?? asset.current_price;
+  const change = live?.change ?? asset.change_24h ?? null;
   const score = calculateSignalScore(asset);
-  const change = asset.change_24h ?? null;
-  const priceFlash = usePriceFlash(asset.current_price);
+  const priceFlash = usePriceFlash(currentPrice);
   return (
     <div
       className="markets-row markets-row-clickable"
@@ -214,11 +218,8 @@ function MarketRow({
         <span className="markets-ticker-label">{asset.ticker}</span>
         <SetAlertButton asset={asset} />
       </span>
-      <span className={cn('markets-price', priceFlash)}>{formatPrice(asset.current_price)}</span>
-      <Sparkline
-        data={generateTrendData(asset.current_price, asset.change_24h ?? null)}
-        change={asset.change_24h ?? null}
-      />
+      <span className={cn('markets-price', priceFlash)}>{formatPrice(currentPrice)}</span>
+      <Sparkline data={generateTrendData(currentPrice, change)} change={change} />
       <span
         className={cn(
           'markets-change',
@@ -238,7 +239,7 @@ function MarketRow({
       </span>
     </div>
   );
-}
+});
 
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
@@ -256,10 +257,14 @@ function Terminal() {
   const preview =
     source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const baseAssets = preview ? sampleAssets : query.data || [];
-  const assets = useBinanceWebSocket(baseAssets);
-  const topPick = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
+  useBinanceWebSocket(baseAssets);
+  const topPick = [...baseAssets].sort(
+    (a, b) => calculateSignalScore(b) - calculateSignalScore(a),
+  )[0];
   const filtered =
-    assetClass === 'All' ? assets : assets.filter((a) => getAssetClass(a.ticker) === assetClass);
+    assetClass === 'All'
+      ? baseAssets
+      : baseAssets.filter((a) => getAssetClass(a.ticker) === assetClass);
   const rows = sortMarkets(filtered, marketView);
 
   return (
@@ -378,7 +383,7 @@ function Terminal() {
           </div>
         )}
         {view === 'portfolio' ? (
-          <PortfolioDashboard assets={assets} />
+          <PortfolioDashboard assets={baseAssets} />
         ) : query.isPending && !preview ? (
           <div aria-busy="true">
             <div className="hero skeleton-hero">
@@ -405,7 +410,7 @@ function Terminal() {
                   <span className="markets-count font-mono">
                     {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
                   </span>
-                  <RoboAdvisor assets={assets} onInvest={() => setView('portfolio')} />
+                  <RoboAdvisor assets={baseAssets} onInvest={() => setView('portfolio')} />
                 </div>
               </div>
               <div className="markets-controls">

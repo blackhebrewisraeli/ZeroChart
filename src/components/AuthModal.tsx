@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
@@ -110,13 +111,16 @@ export function AuthModal({
 
   return createPortal(
     <div className={cn('auth-overlay', closing && 'is-closing')} onClick={close}>
-      <form
-        className={cn('auth-sheet', closing && 'is-closing')}
+      <motion.form
+        className="auth-sheet"
         role="dialog"
         aria-modal="true"
         aria-label="ZeroChart account"
         onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={closing ? { opacity: 0, scale: 0.96, y: 12 } : { opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 32 }}
       >
         <header className="auth-header">
           <div>
@@ -195,7 +199,7 @@ export function AuthModal({
             {submitting ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
           </button>
         </footer>
-      </form>
+      </motion.form>
     </div>,
     document.body,
   );

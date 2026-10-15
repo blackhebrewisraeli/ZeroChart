@@ -57,6 +57,15 @@ export interface Kline {
   close: number;
 }
 
+/** A full OHLC candle for a single interval. */
+export interface Candle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
 /**
  * Parses the raw klines array returned by Binance into `{ timestamp, close }`
  * points, dropping any malformed rows.
@@ -75,16 +84,35 @@ export function parseKlines(raw: unknown): Kline[] {
 }
 
 /**
- * Fetches daily historical candles for a crypto asset from Binance's public
- * REST API. Returns an empty array for non-crypto tickers without making a
- * network request.
+ * Parses the raw klines array returned by Binance into full OHLC candles,
+ * dropping any malformed rows.
  */
-export async function fetchHistoricalKlines(
-  ticker: string,
-  interval = '1d',
-  limit = 30,
-): Promise<Kline[]> {
-  if (!isBinanceCrypto(ticker)) return [];
+export function parseCandles(raw: unknown): Candle[] {
+  if (!Array.isArray(raw)) return [];
+  const result: Candle[] = [];
+  for (const row of raw) {
+    if (!Array.isArray(row)) continue;
+    const timestamp = Number(row[0]);
+    const open = Number.parseFloat(String(row[1]));
+    const high = Number.parseFloat(String(row[2]));
+    const low = Number.parseFloat(String(row[3]));
+    const close = Number.parseFloat(String(row[4]));
+    if (
+      !Number.isFinite(timestamp) ||
+      !Number.isFinite(open) ||
+      !Number.isFinite(high) ||
+      !Number.isFinite(low) ||
+      !Number.isFinite(close)
+    ) {
+      continue;
+    }
+    result.push({ timestamp, open, high, low, close });
+  }
+  return result;
+}
+
+/** Fetches raw klines JSON from Binance's public REST API. */
+async function fetchRawKlines(ticker: string, interval: string, limit: number): Promise<unknown> {
   const symbol = toBinanceSymbol(ticker);
   if (!symbol) return [];
   const url =
@@ -96,7 +124,34 @@ export async function fetchHistoricalKlines(
   if (!response.ok) {
     throw new Error(`Binance klines request failed with status ${response.status}`);
   }
-  return parseKlines(await response.json());
+  return response.json();
+}
+
+/**
+ * Fetches daily historical candles for a crypto asset from Binance's public
+ * REST API. Returns an empty array for non-crypto tickers without making a
+ * network request.
+ */
+export async function fetchHistoricalKlines(
+  ticker: string,
+  interval = '1d',
+  limit = 30,
+): Promise<Kline[]> {
+  if (!isBinanceCrypto(ticker)) return [];
+  return parseKlines(await fetchRawKlines(ticker, interval, limit));
+}
+
+/**
+ * Fetches OHLC candles (default daily) for a crypto asset, for the
+ * lightweight-charts candlestick chart.
+ */
+export async function fetchHistoricalCandles(
+  ticker: string,
+  interval = '1d',
+  limit = 30,
+): Promise<Candle[]> {
+  if (!isBinanceCrypto(ticker)) return [];
+  return parseCandles(await fetchRawKlines(ticker, interval, limit));
 }
 
 /**

@@ -38,6 +38,7 @@ const MOCK_POSITIONS: Position[] = [
 interface PortfolioStore {
   positions: Position[];
   addPositions: (incoming: Position[]) => void;
+  replacePositions: (incoming: Position[]) => void;
   removePosition: (id: string) => void;
   updatePosition: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
 }
@@ -72,6 +73,10 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     setPositions((prev) => [...prev, ...incoming]);
   }, []);
 
+  const replacePositions = useCallback((incoming: Position[]) => {
+    setPositions(incoming);
+  }, []);
+
   const removePosition = useCallback((id: string) => {
     setPositions((prev) => prev.filter((position) => position.id !== id));
   }, []);
@@ -86,8 +91,8 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ positions, addPositions, removePosition, updatePosition }),
-    [positions, addPositions, removePosition, updatePosition],
+    () => ({ positions, addPositions, replacePositions, removePosition, updatePosition }),
+    [positions, addPositions, replacePositions, removePosition, updatePosition],
   );
 
   return <PortfolioContext.Provider value={value}>{children}</PortfolioContext.Provider>;

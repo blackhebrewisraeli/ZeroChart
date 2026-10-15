@@ -7,6 +7,7 @@ import {
   Briefcase,
   CandlestickChart,
   Flame,
+  LogIn,
   Radio,
   RefreshCw,
   TrendingDown,
@@ -14,8 +15,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { AssetIcon } from '@/components/AssetIcon';
 import { AssetDetailsModal } from '@/components/AssetDetailsModal';
+import { AuthModal } from '@/components/AuthModal';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
@@ -40,6 +43,7 @@ import {
   type AssetClass,
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/authStore';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
@@ -242,6 +246,8 @@ function Index() {
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
   const [view, setView] = useState<'scanner' | 'portfolio'>('scanner');
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const { user, loading, signOut } = useAuth();
   const query = useQuery({
     queryKey: ['assets-status'],
     queryFn: fetchAssets,
@@ -324,6 +330,25 @@ function Index() {
               <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
             </Button>
             <ThemeToggle />
+            {loading ? null : user ? (
+              <div className="flex items-center gap-2">
+                <Avatar className="h-8 w-8 border border-border">
+                  <AvatarFallback className="text-[11px] font-semibold">
+                    {(user.email ?? '?').slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="hidden max-w-[140px] truncate text-xs text-muted-foreground md:inline-block">
+                  {user.email}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => void signOut()}>
+                  Log Out
+                </Button>
+              </div>
+            ) : (
+              <Button variant="default" size="sm" onClick={() => setAuthOpen(true)}>
+                <LogIn /> Sign In
+              </Button>
+            )}
             <OnboardingTour ready={!!topPick} />
           </div>
         </div>
@@ -472,6 +497,8 @@ function Index() {
       {selectedAsset && (
         <AssetDetailsModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
       )}
+
+      <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
     </div>
   );
 }

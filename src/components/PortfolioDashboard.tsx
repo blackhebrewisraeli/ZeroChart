@@ -4,6 +4,7 @@ import {
   Briefcase,
   CheckCircle2,
   ChevronDown,
+  CloudUpload,
   Pencil,
   Share2,
   Trash2,
@@ -21,7 +22,10 @@ import {
   type Suggestion,
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { useAuth } from '@/lib/authStore';
+import { savePortfolio } from '@/lib/db';
 import { AddPositionModal } from '@/components/AddPositionModal';
+import { AuthModal } from '@/components/AuthModal';
 import { AssetIcon } from '@/components/AssetIcon';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
@@ -310,6 +314,8 @@ function HoldingRow({
 
 export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
   const [mode, setMode] = useState<PortfolioMode>('simulation');
+  const [authOpen, setAuthOpen] = useState(false);
+  const { user } = useAuth();
   const { positions, removePosition, updatePosition } = usePortfolio();
 
   const visible = positions.filter((p) =>
@@ -357,6 +363,19 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
     }
   }
 
+  async function handleSaveToCloud() {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    try {
+      await savePortfolio(user.id, positions);
+      toast.success('Portfolio saved to cloud');
+    } catch {
+      toast.error("Couldn't save portfolio");
+    }
+  }
+
   return (
     <section className="portfolio" aria-label="Portfolio dashboard">
       <header className="portfolio-head">
@@ -371,6 +390,10 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
           <button type="button" className="share-portfolio-button" onClick={handleShare}>
             <Share2 size={15} />
             Share Portfolio
+          </button>
+          <button type="button" className="save-cloud-button" onClick={handleSaveToCloud}>
+            <CloudUpload size={15} />
+            Save to Cloud
           </button>
           <Segmented
             value={mode}
@@ -495,6 +518,8 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
           </div>
         )}
       </section>
+
+      <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
     </section>
   );
 }

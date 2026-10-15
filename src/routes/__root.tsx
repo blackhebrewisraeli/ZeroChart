@@ -14,6 +14,7 @@ import appCss from '../styles.css?url';
 import { reportLovableError } from '../lib/lovable-error-reporting';
 import { Toaster } from '../components/ui/sonner';
 import { PortfolioProvider } from '../lib/portfolioStore';
+import { AuthProvider } from '../lib/authStore';
 import { ThemeProvider } from 'next-themes';
 
 function NotFoundComponent() {
@@ -132,8 +133,10 @@ function RootComponent() {
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <QueryClientProvider client={queryClient}>
         <PortfolioProvider>
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
+          <AuthProvider>
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
+          </AuthProvider>
         </PortfolioProvider>
         <Toaster />
       </QueryClientProvider>

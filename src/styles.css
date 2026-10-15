@@ -4914,3 +4914,249 @@ body {
   }
 }
 
+/* ===== Price alerts ===== */
+.price-alerts-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+}
+.price-alerts-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.price-alerts-eyebrow {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--signal-green);
+}
+.price-alerts-sub {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.price-alerts-icon {
+  flex-shrink: 0;
+  color: var(--signal-green);
+}
+.price-alerts-form {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.price-alerts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.price-alerts-label {
+  font:
+    600 10.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.price-alerts-select,
+.price-alerts-input {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--background);
+  color: var(--foreground);
+  font:
+    500 13px 'JetBrains Mono',
+    monospace;
+}
+.price-alerts-select:focus,
+.price-alerts-input:focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--signal-green) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--signal-green) 14%, transparent);
+}
+.price-alerts-condition {
+  display: flex;
+  gap: 6px;
+}
+.price-alerts-condition-btn {
+  flex: 1;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font:
+    600 11.5px 'JetBrains Mono',
+    monospace;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    color 0.15s ease-out,
+    border-color 0.15s ease-out;
+}
+.price-alerts-condition-btn.is-active {
+  color: var(--signal-green);
+  border-color: color-mix(in oklch, var(--signal-green) 45%, transparent);
+  background: color-mix(in oklch, var(--signal-green) 12%, transparent);
+}
+.price-alerts-submit {
+  height: 42px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 11px;
+  background: var(--signal-green);
+  color: var(--primary-foreground);
+  font:
+    600 12.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 26px color-mix(in oklch, var(--signal-green) 30%, transparent);
+  transition:
+    transform 0.15s ease-out,
+    filter 0.15s ease-out;
+}
+.price-alerts-submit:hover {
+  filter: brightness(1.05);
+}
+.price-alerts-submit:active {
+  transform: scale(0.97);
+}
+.price-alerts-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.price-alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+.price-alert-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+}
+.price-alert-ticker {
+  font:
+    700 14px 'JetBrains Mono',
+    monospace;
+}
+.price-alert-cond {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.price-alert-target {
+  margin-left: auto;
+  font:
+    700 14px 'JetBrains Mono',
+    monospace;
+  color: var(--signal-green);
+}
+.price-alert-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    color 0.15s ease-out,
+    border-color 0.15s ease-out;
+}
+.price-alert-delete:hover {
+  color: var(--signal-red);
+  border-color: color-mix(in oklch, var(--signal-red) 50%, transparent);
+}
+.price-alerts-empty {
+  padding: 18px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.price-alerts-toasts {
+  position: fixed;
+  top: 88px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+}
+.price-alert-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in oklch, var(--signal-green) 45%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--background) 92%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--signal-green) 25%, transparent);
+}
+.price-alert-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.price-alert-toast-title {
+  font:
+    700 14px 'JetBrains Mono',
+    monospace;
+  color: var(--signal-green);
+}
+.price-alert-toast-desc {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.price-alert-toast-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 16px;
+  cursor: pointer;
+}
+.price-alert-toast-close:hover {
+  color: var(--foreground);
+}
+@media (max-width: 760px) {
+  .price-alerts-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .price-alerts-toasts {
+    left: 20px;
+    right: 20px;
+    max-width: none;
+  }
+}
+

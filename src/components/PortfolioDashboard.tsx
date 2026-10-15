@@ -31,6 +31,7 @@ import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
 import { BacktestChart } from '@/components/BacktestChart';
+import { PriceAlerts } from '@/components/PriceAlerts';
 import { TradeTicket } from '@/components/TradeTicket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
@@ -522,6 +523,10 @@ export function PortfolioDashboard({ assets }: { assets: Asset[] }) {
             </span>
           </div>
         )}
+      </section>
+
+      <section className="portfolio-section" aria-label="Price alerts">
+        <PriceAlerts assets={assets} user={user} />
       </section>
 
       <AuthModal open={authOpen} onOpenChange={setAuthOpen} />

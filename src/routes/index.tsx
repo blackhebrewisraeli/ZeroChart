@@ -22,7 +22,7 @@ import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { LandingPage } from '@/components/LandingPage';
-import { OnboardingTour } from '@/components/OnboardingTour';
+import { TourGuide } from '@/components/TourGuide';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { SetAlertButton } from '@/components/SetAlertModal';
@@ -359,7 +359,7 @@ function Terminal() {
                 </Button>
               </div>
             ) : null}
-            <OnboardingTour ready={!!topPick} />
+            <TourGuide onBeforeStart={() => setView('portfolio')} />
           </div>
         </div>
       </header>

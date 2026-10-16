@@ -10,6 +10,13 @@ jobs:
   build:
     name: Lint, typecheck, build & test
     runs-on: ubuntu-latest
+    env:
+      # Dummy placeholders: src/lib/supabaseClient.ts throws at import time if
+      # these are missing, which would fail the build and test steps before they
+      # even start. CI never talks to a live Supabase project, so no real
+      # credentials are needed (or should be committed).
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-test-anon-key
     steps:
       - name: Checkout
         uses: actions/checkout@v4

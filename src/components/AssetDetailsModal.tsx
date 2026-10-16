@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UTCTimestamp } from 'lightweight-charts';
-import { LineChart, X } from 'lucide-react';
+import { ExternalLink, LineChart, X } from 'lucide-react';
 import { AssetIcon } from '@/components/AssetIcon';
 import {
   CandlestickChart,
@@ -10,6 +10,7 @@ import {
 } from '@/components/LightweightChart';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { fetchHistoricalCandles, isBinanceCrypto, type Candle } from '@/lib/binance';
+import { getBrokerUrl } from '@/lib/tradeRouter';
 import { cn } from '@/lib/utils';
 
 const CLOSE_MS = 260;
@@ -143,6 +144,16 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
         <div className="asset-details-price">
           <span className="asset-details-price-label">Current price</span>
           <span className="asset-details-price-value">{formatPrice(asset.current_price)}</span>
+          {assetClass !== 'Forex' && (
+            <a
+              className="trade-now-button"
+              href={getBrokerUrl(asset.ticker, assetClass === 'Crypto' ? 'crypto' : 'stock')}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink size={15} /> Trade Now
+            </a>
+          )}
         </div>
 
         {isCrypto && status === 'success' && (

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ArrowRight, Bot, Gauge, RefreshCw, Rocket, Shield, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  ExternalLink,
+  Gauge,
+  RefreshCw,
+  Rocket,
+  Shield,
+  X,
+} from 'lucide-react';
 import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
 import {
   generatePortfolio,
@@ -11,6 +21,8 @@ import {
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { isBinanceCrypto } from '@/lib/binance';
+import { getBrokerUrl } from '@/lib/tradeRouter';
 import { cn } from '@/lib/utils';
 
 const RISK_OPTIONS: {
@@ -74,6 +86,11 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
 
   const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
   const { addPositions } = usePortfolio();
+
+  const topAllocation =
+    result && result.length > 0
+      ? ([...result].sort((a, b) => b.weight - a.weight)[0] ?? null)
+      : null;
 
   function openModal() {
     closingRef.current = false;
@@ -443,21 +460,35 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                     {formatPrice(allocation.allocatedAmount)}
                                   </span>
                                 </div>
-                                <button
-                                  type="button"
-                                  className="robo-swap"
-                                  onClick={() => handleSwap(allocation.ticker)}
-                                  disabled={!canSwapMore}
-                                  aria-label={`Swap ${allocation.ticker} for the next best asset`}
-                                  title={
-                                    canSwapMore
-                                      ? 'Replace with the next best asset'
-                                      : 'No more replacements available'
-                                  }
-                                >
-                                  <RefreshCw size={14} />
-                                  <span className="robo-swap-label">Swap</span>
-                                </button>
+                                <div className="robo-actions">
+                                  <a
+                                    className="robo-trade"
+                                    href={getBrokerUrl(
+                                      allocation.ticker,
+                                      isBinanceCrypto(allocation.ticker) ? 'crypto' : 'stock',
+                                    )}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label={`Trade ${allocation.ticker}`}
+                                  >
+                                    <ExternalLink size={13} /> Trade
+                                  </a>
+                                  <button
+                                    type="button"
+                                    className="robo-swap"
+                                    onClick={() => handleSwap(allocation.ticker)}
+                                    disabled={!canSwapMore}
+                                    aria-label={`Swap ${allocation.ticker} for the next best asset`}
+                                    title={
+                                      canSwapMore
+                                        ? 'Replace with the next best asset'
+                                        : 'No more replacements available'
+                                    }
+                                  >
+                                    <RefreshCw size={14} />
+                                    <span className="robo-swap-label">Swap</span>
+                                  </button>
+                                </div>
                                 <div className="robo-bar-track" aria-hidden="true">
                                   <div
                                     className="robo-bar"
@@ -471,6 +502,20 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                             );
                           })}
                         </ul>
+
+                        {topAllocation && (
+                          <a
+                            className="robo-buy-portfolio"
+                            href={getBrokerUrl(
+                              topAllocation.ticker,
+                              isBinanceCrypto(topAllocation.ticker) ? 'crypto' : 'stock',
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Rocket size={16} /> Buy Portfolio
+                          </a>
+                        )}
                       </>
                     ) : (
                       <div className="robo-empty">

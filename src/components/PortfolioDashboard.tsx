@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CloudUpload,
+  ExternalLink,
   Pencil,
   Share2,
   Trash2,
@@ -36,6 +37,8 @@ import { PriceAlerts } from '@/components/PriceAlerts';
 import { TradeTicket } from '@/components/TradeTicket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
+import { isBinanceCrypto } from '@/lib/binance';
+import { getBrokerUrl } from '@/lib/tradeRouter';
 
 type PortfolioMode = 'simulation' | 'live';
 
@@ -298,6 +301,17 @@ function HoldingRow({
           )}
 
           <div className="holding-actions">
+            <a
+              className="trade-now-button"
+              href={getBrokerUrl(
+                position.ticker,
+                isBinanceCrypto(position.ticker) ? 'crypto' : 'stock',
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink size={15} /> Trade
+            </a>
             <button
               type="button"
               className="holding-action holding-action-danger"

@@ -12,6 +12,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { loadPortfolio } from '@/lib/db';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 
 interface AuthStore {
   user: User | null;
@@ -70,6 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
+
+  useSessionTimeout(user?.id ?? null, signOut);
 
   const value = useMemo(() => ({ user, loading, signOut }), [user, loading, signOut]);
 

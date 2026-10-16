@@ -5206,3 +5206,66 @@ body {
   box-shadow: 0 0 18px color-mix(in oklch, var(--signal-green) 20%, transparent);
 }
 
+/* ===== OAuth buttons ===== */
+.oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 22px 0;
+}
+.oauth-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--background) 60%, transparent);
+  color: var(--foreground);
+  font:
+    600 13.5px 'DM Sans',
+    sans-serif;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease-out,
+    background 0.15s ease-out,
+    border-color 0.15s ease-out,
+    box-shadow 0.2s ease-out;
+}
+.oauth-button:hover {
+  border-color: color-mix(in oklch, var(--primary) 50%, transparent);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 20%, transparent);
+}
+.oauth-button:active {
+  transform: scale(0.98);
+}
+.oauth-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.oauth-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 22px 0;
+  color: var(--muted-foreground);
+  font:
+    600 10.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+

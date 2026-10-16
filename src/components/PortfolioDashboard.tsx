@@ -43,8 +43,6 @@ import { getBrokerUrl } from '@/lib/tradeRouter';
 
 type PortfolioMode = 'simulation' | 'live';
 
-const AVAILABLE_CASH = 2500;
-
 const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
 
 function formatPnl(value: number) {
@@ -161,15 +159,16 @@ function HoldingRow({
 
   const asset = assets.find((a) => a.ticker === position.ticker);
   const livePrice = asset?.current_price;
-  const currentPrice =
-    typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0
-      ? livePrice
-      : position.buyPrice;
+  const hasLivePrice = typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0;
+  // Without a live price the totals fall back to cost basis (no phantom P&L),
+  // but the row must NOT imply the price is unchanged — show '—' instead
+  // (M1-T3, F-1.3b).
+  const currentPrice = hasLivePrice ? livePrice : position.buyPrice;
   const marketValue = currentPrice * position.shares;
   const pnl = (currentPrice - position.buyPrice) * position.shares;
   const pnlPct =
     position.buyPrice > 0 ? ((currentPrice - position.buyPrice) / position.buyPrice) * 100 : 0;
-  const tone = pnl >= 0 ? 'pnl-up' : 'pnl-down';
+  const tone = !hasLivePrice ? undefined : pnl >= 0 ? 'pnl-up' : 'pnl-down';
   const priceFlash = usePriceFlash(currentPrice);
 
   function startEdit() {
@@ -214,7 +213,12 @@ function HoldingRow({
           <span className="holding-cell-label">Shares</span>
         </div>
         <div className="holding-cell holding-cell-secondary">
-          <span className={cn('holding-cell-value', priceFlash)}>{formatPrice(marketValue)}</span>
+          <span
+            className={cn('holding-cell-value', priceFlash)}
+            title={hasLivePrice ? undefined : 'No live price — totals use cost basis'}
+          >
+            {hasLivePrice ? formatPrice(marketValue) : '—'}
+          </span>
           <span className="holding-cell-label">Value</span>
         </div>
         <Sparkline
@@ -225,8 +229,12 @@ function HoldingRow({
           change={asset?.change_24h ?? null}
         />
         <div className="holding-cell">
-          <span className={cn('holding-cell-value', tone)}>{formatPnl(pnl)}</span>
-          <span className={cn('holding-cell-label', tone)}>{formatSignedPercent(pnlPct)}</span>
+          <span className={cn('holding-cell-value', tone)}>
+            {hasLivePrice ? formatPnl(pnl) : '—'}
+          </span>
+          <span className={cn('holding-cell-label', tone)}>
+            {hasLivePrice ? formatSignedPercent(pnlPct) : '—'}
+          </span>
         </div>
         <ChevronDown size={18} className={cn('holding-chevron', open && 'is-open')} />
       </button>
@@ -240,8 +248,15 @@ function HoldingRow({
             </div>
             <div className="holding-metric">
               <span className="holding-metric-label">Market price</span>
-              <span className={cn('holding-metric-value', priceFlash)}>
-                {formatPrice(currentPrice)}
+              <span
+                className={cn('holding-metric-value', priceFlash)}
+                title={
+                  hasLivePrice
+                    ? undefined
+                    : 'No live price available — position totals use cost basis'
+                }
+              >
+                {hasLivePrice ? formatPrice(currentPrice) : '—'}
               </span>
             </div>
             <div className="holding-metric">
@@ -337,8 +352,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
 }) {
   const [mode, setMode] = useState<PortfolioMode>('simulation');
   const [authOpen, setAuthOpen] = useState(false);
+  const [cashAmount, setCashAmount] = useState('');
   const { user } = useAuth();
-  const { positions, removePosition, updatePosition } = usePortfolio();
+  const { positions, removePosition, updatePosition, cashBalance, depositCash, withdrawCash } =
+    usePortfolio();
   const hydration = useHydrationState();
 
   // Cloud saves stay disabled until this user's cloud hydration settled —
@@ -357,7 +374,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     mode === 'simulation' ? p.isSimulation : !p.isSimulation,
   );
   const stats = calculatePortfolioStats(visible, assets);
-  const suggestions = generateSuggestions(visible, assets, AVAILABLE_CASH);
+  const suggestions = generateSuggestions(visible, assets, cashBalance);
   const topAsset = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
 
   let dayChange = 0;
@@ -396,6 +413,21 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     } catch {
       toast.error("Couldn't copy to clipboard");
     }
+  }
+
+  function handleCashAction(type: 'deposit' | 'withdrawal') {
+    const amount = Number(cashAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Enter an amount greater than $0.');
+      return;
+    }
+    const applied = type === 'deposit' ? depositCash(amount) : withdrawCash(amount);
+    if (!applied) {
+      toast.error('Cannot withdraw more than your available cash.');
+      return;
+    }
+    toast.success(`${type === 'deposit' ? 'Deposited' : 'Withdrew'} ${formatPrice(amount)}`);
+    setCashAmount('');
   }
 
   async function handleSaveToCloud() {
@@ -507,9 +539,36 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       <section className="portfolio-section" aria-label="Smart suggestions">
         <div className="portfolio-section-head">
           <h3 className="portfolio-section-title">Smart Suggestions</h3>
-          <span className="portfolio-cash">
-            <Wallet size={14} /> {formatPrice(AVAILABLE_CASH)} available
-          </span>
+          <div className="portfolio-cash-controls">
+            <span className="portfolio-cash">
+              <Wallet size={14} /> {formatPrice(cashBalance)} available
+            </span>
+            <input
+              className="portfolio-cash-input"
+              type="number"
+              min="0"
+              step="any"
+              inputMode="decimal"
+              placeholder="Amount"
+              aria-label="Cash amount"
+              value={cashAmount}
+              onChange={(event) => setCashAmount(event.target.value)}
+            />
+            <button
+              type="button"
+              className="portfolio-cash-btn"
+              onClick={() => handleCashAction('deposit')}
+            >
+              Deposit
+            </button>
+            <button
+              type="button"
+              className="portfolio-cash-btn"
+              onClick={() => handleCashAction('withdrawal')}
+            >
+              Withdraw
+            </button>
+          </div>
         </div>
         {suggestions.length > 0 ? (
           <div className="suggestion-list">

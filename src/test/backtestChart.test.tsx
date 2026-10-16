@@ -28,6 +28,8 @@ vi.mock('@/lib/financeClient', () => ({
     totalReturnPercent: 15,
     maxDrawdownPercent: 18.4,
     sharpeRatio: 1.87,
+    coverageWeight: 1,
+    coverage: [{ ticker: 'BTC-USD', weight: 1, status: 'covered' }],
   })),
 }));
 
@@ -78,5 +80,58 @@ describe('BacktestChart risk metrics', () => {
     expect(screen.getByText('-18.4%')).toBeInTheDocument();
     expect(screen.getByText('Sharpe Ratio')).toBeInTheDocument();
     expect(screen.getByText('1.87')).toBeInTheDocument();
+
+    // Full coverage: cost disclosure shown, no partial-data banner (M1-T3).
+    expect(screen.getByText(/Net of 25 bps entry fee \+ 10 bps slippage/)).toBeInTheDocument();
+    expect(screen.queryByText(/Partial data/)).toBeNull();
+    expect(screen.getByText(/Annualized, risk-free = 0$/)).toBeInTheDocument();
+  });
+
+  it('flags partial coverage with a warning and relabels risk stats', async () => {
+    const aaplAsset: Asset = {
+      ...assets[0]!,
+      ticker: 'AAPL',
+      name: 'Apple',
+      current_price: 200,
+    };
+    const aaplPosition: Position = {
+      id: 'p2',
+      ticker: 'AAPL',
+      buyPrice: 180,
+      shares: 10,
+      isSimulation: true,
+      dateAdded: '2026-01-01',
+    };
+    // Simulate the engine reporting AAPL as uncovered (no Binance history).
+    const { computeBacktestAsync } = await import('@/lib/financeClient');
+    vi.mocked(computeBacktestAsync).mockResolvedValueOnce({
+      points: [
+        { timestamp: 1_700_000_000_000, value: 10000 },
+        { timestamp: 1_700_086_400_000, value: 11500 },
+      ],
+      initialValue: 10000,
+      finalValue: 11500,
+      totalReturnPercent: 15,
+      maxDrawdownPercent: 18.4,
+      sharpeRatio: 1.87,
+      coverageWeight: 0.79,
+      coverage: [
+        { ticker: 'BTC-USD', weight: 0.79, status: 'covered' },
+        { ticker: 'AAPL', weight: 0.21, status: 'missing' },
+      ],
+    });
+
+    render(
+      <BacktestChart positions={[...positions, aaplPosition]} assets={[...assets, aaplAsset]} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+
+    // The data gap is flagged, never silent (M1-T3, F-2.1a/b).
+    const banner = await screen.findByText(/Partial data:/);
+    expect(banner).toBeInTheDocument();
+    expect(screen.getByText(/AAPL had no usable history/)).toBeInTheDocument();
+    expect(screen.getByText(/Annualized, risk-free = 0 · partial data/)).toBeInTheDocument();
+    // Non-crypto exclusion is disclosed up front too.
+    expect(screen.getByText(/AAPL will be excluded and/)).toBeInTheDocument();
   });
 });

@@ -101,20 +101,32 @@ describe('async worker wrappers (fallback path)', () => {
   });
 
   it('resolves backtest results', async () => {
-    const result = await computeBacktestAsync({
-      weights: [{ ticker: 'A', weight: 1 }],
-      series: [
-        {
-          ticker: 'A',
-          points: [
-            { timestamp: 0, price: 10 },
-            { timestamp: 1, price: 20 },
-          ],
-        },
-      ],
-    });
+    const weights = [{ ticker: 'A', weight: 1 }] as const;
+    const series = [
+      {
+        ticker: 'A',
+        points: [
+          { timestamp: 0, price: 10 },
+          { timestamp: 1, price: 20 },
+        ],
+      },
+    ];
+
+    const result = await computeBacktestAsync({ weights: [...weights], series: [...series] });
 
     expect(result.finalValue).toBe(20000);
     expect(result.totalReturnPercent).toBeCloseTo(100, 5);
+    expect(result.coverageWeight).toBe(1);
+    expect(result.coverage).toEqual([{ ticker: 'A', weight: 1, status: 'covered' }]);
+
+    // The cost model threads through the worker protocol (M1-T3, F-2.1c):
+    // entry drag of 35 bps applies before the doubling.
+    const net = await computeBacktestAsync({
+      weights: [...weights],
+      series: [...series],
+      costModel: { feeRate: 0.0025, slippageRate: 0.001 },
+    });
+    expect(net.finalValue).toBeCloseTo(10000 * 0.9965 * 2, 6);
+    expect(net.finalValue).toBeLessThan(result.finalValue);
   });
 });

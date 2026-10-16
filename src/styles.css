@@ -1884,6 +1884,49 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+/* Cash ledger controls (M1-T3, F-1.3a). */
+.portfolio-cash-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.portfolio-cash-input {
+  width: 92px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+}
+.portfolio-cash-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.portfolio-cash-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition:
+    border-color 0.15s ease-out,
+    background 0.15s ease-out;
+}
+.portfolio-cash-btn:hover {
+  border-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+}
 .portfolio-count {
   font:
     600 11px 'JetBrains Mono',
@@ -4520,6 +4563,22 @@ body {
     500 11.5px 'JetBrains Mono',
     monospace;
   color: var(--muted-foreground);
+}
+/* Partial-data coverage warning (M1-T3, F-2.1a/b). */
+.backtest-coverage-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklch, var(--signal-yellow) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--signal-yellow) 10%, transparent);
+  color: var(--foreground);
+  font:
+    500 11.5px 'JetBrains Mono',
+    monospace;
+  line-height: 1.5;
+}
+.backtest-coverage-warning strong {
+  color: var(--signal-yellow);
 }
 .backtest-button {
   display: inline-flex;

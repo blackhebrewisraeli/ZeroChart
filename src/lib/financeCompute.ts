@@ -3,6 +3,7 @@ import {
   computeBacktest,
   type AllocationWeight,
   type AssetPriceSeries,
+  type BacktestCostModel,
   type BacktestResult,
 } from './backtestManager';
 
@@ -16,6 +17,7 @@ export type FinanceRequest =
       weights: AllocationWeight[];
       series: AssetPriceSeries[];
       initialValue: number | undefined;
+      costModel: BacktestCostModel | undefined;
     };
 
 export type FinanceResult = Float64Array | MacdResult | BacktestResult;
@@ -36,8 +38,10 @@ export function computeFinance(request: FinanceRequest): FinanceResult {
         weights: AllocationWeight[];
         series: AssetPriceSeries[];
         initialValue?: number;
+        costModel?: BacktestCostModel;
       } = { weights: request.weights, series: request.series };
       if (request.initialValue !== undefined) options.initialValue = request.initialValue;
+      if (request.costModel !== undefined) options.costModel = request.costModel;
       return computeBacktest(options);
     }
   }

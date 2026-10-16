@@ -127,7 +127,7 @@ describe('computeBacktest', () => {
     expect(result.totalReturnPercent).toBeCloseTo(100, 5);
   });
 
-  it('holds assets without historical data flat and treats leftover weight as cash', () => {
+  it('treats unallocated weight as cash and reports full coverage of traded tickers', () => {
     const result = computeBacktest({
       weights: [{ ticker: 'A', weight: 0.5 }],
       series: [
@@ -144,6 +144,36 @@ describe('computeBacktest', () => {
     // 50% of the portfolio doubles; the remaining 50% is unallocated cash.
     expect(result.points.map((point) => point.value)).toEqual([10000, 15000]);
     expect(result.totalReturnPercent).toBeCloseTo(50, 5);
+    // Unallocated cash is a user choice, not a data gap — no missing coverage.
+    expect(result.coverageWeight).toBeCloseTo(0.5, 10);
+    expect(result.coverage).toEqual([{ ticker: 'A', weight: 0.5, status: 'covered' }]);
+  });
+
+  it('flags weighted tickers without history as missing and holds their weight as cash (F-2.1a/b)', () => {
+    const result = computeBacktest({
+      weights: [
+        { ticker: 'A', weight: 0.5 },
+        { ticker: 'MISSING', weight: 0.5 },
+      ],
+      series: [
+        {
+          ticker: 'A',
+          points: [
+            { timestamp: 0, price: 100 },
+            { timestamp: 1, price: 200 },
+          ],
+        },
+      ],
+    });
+
+    // The curve is numerically identical to the old silent-flat treatment…
+    expect(result.points.map((point) => point.value)).toEqual([10000, 15000]);
+    // …but the data gap is explicit, never silent.
+    expect(result.coverageWeight).toBeCloseTo(0.5, 10);
+    expect(result.coverage).toEqual([
+      { ticker: 'A', weight: 0.5, status: 'covered' },
+      { ticker: 'MISSING', weight: 0.5, status: 'missing' },
+    ]);
   });
 
   it('returns a flat 0% result when there is no historical data', () => {
@@ -157,6 +187,77 @@ describe('computeBacktest', () => {
     expect(result.totalReturnPercent).toBe(0);
     expect(result.maxDrawdownPercent).toBe(0);
     expect(result.sharpeRatio).toBe(0);
+    // Full data gap, fully flagged.
+    expect(result.coverageWeight).toBe(0);
+    expect(result.coverage).toEqual([{ ticker: 'A', weight: 1, status: 'missing' }]);
+  });
+
+  it('applies the entry-cost model as a one-time drag on invested capital (F-2.1c)', () => {
+    const series = [
+      {
+        ticker: 'A',
+        points: [
+          { timestamp: 0, price: 100 },
+          { timestamp: 1, price: 100 }, // flat market
+        ],
+      },
+    ];
+    const weights = [{ ticker: 'A', weight: 1 }];
+
+    const gross = computeBacktest({ weights, series });
+    const net = computeBacktest({
+      weights,
+      series,
+      costModel: { feeRate: 0.0025, slippageRate: 0.001 },
+    });
+
+    // Flat market: gross ends at 10,000 (0%); net pays 35 bps on entry.
+    expect(gross.finalValue).toBe(10000);
+    expect(net.points[0]?.value).toBeCloseTo(9965, 6);
+    expect(net.finalValue).toBeCloseTo(9965, 6);
+    expect(net.totalReturnPercent).toBeCloseTo(-0.35, 6);
+
+    // Invalid rates are ignored (treated as zero).
+    const ignored = computeBacktest({
+      weights,
+      series,
+      costModel: { feeRate: -1, slippageRate: Number.NaN },
+    });
+    expect(ignored.finalValue).toBe(gross.finalValue);
+  });
+
+  it('a zero-cost model reproduces the gross curve exactly', () => {
+    const weights = [
+      { ticker: 'A', weight: 0.6 },
+      { ticker: 'B', weight: 0.4 },
+    ];
+    const series = [
+      {
+        ticker: 'A',
+        points: [
+          { timestamp: 0, price: 100 },
+          { timestamp: 1, price: 150 },
+        ],
+      },
+      {
+        ticker: 'B',
+        points: [
+          { timestamp: 0, price: 50 },
+          { timestamp: 1, price: 50 },
+        ],
+      },
+    ];
+
+    const gross = computeBacktest({ weights, series });
+    const zero = computeBacktest({
+      weights,
+      series,
+      costModel: { feeRate: 0, slippageRate: 0 },
+    });
+
+    expect(zero.points).toEqual(gross.points);
+    expect(zero.finalValue).toBe(gross.finalValue);
+    expect(zero.totalReturnPercent).toBe(gross.totalReturnPercent);
   });
 
   it('reports max drawdown and an annualized Sharpe ratio for the equity curve', () => {

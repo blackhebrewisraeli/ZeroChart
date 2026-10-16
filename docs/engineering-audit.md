@@ -47,13 +47,13 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 | F-1.2a | ATR suggested-size notional can exceed allocated capital / total capital | **Fixed (M1-T2)** | P0 |
 | F-1.2b | `stopPrice` not floored at 0 when ATR ≥ price | **Fixed (M1-T2)** | P2 |
 | F-1.2c | "Guaranteed max loss" UI claim | Not Reproducible (no such copy found) | — |
-| F-1.3a | Hardcoded `AVAILABLE_CASH = 2500` drives suggestions + UI | Confirmed | P1 |
-| F-1.3b | Missing live price silently valued at buy price (no staleness cue) | Confirmed | P2 |
+| F-1.3a | Hardcoded `AVAILABLE_CASH = 2500` drives suggestions + UI | **Fixed (M1-T3)**³ | P1 |
+| F-1.3b | Missing live price silently valued at buy price (no staleness cue) | **Fixed (M1-T3)**⁴ | P2 |
 | F-1.3c | No lot/transaction model; edit permits 0-share rows | Confirmed | P2 |
 | F-1.3d | Sim-vs-live flag exists but one shared storage/cash/suggestions blob | Partially Resolved | P1 |
 | F-2.1a | Backtester = static-weight buy&hold replay, no strategy signals | Confirmed | P1 |
-| F-2.1b | Non-crypto **and silently failed** fetches held flat ⇒ Sharpe/MDD distortion | Confirmed | P1 |
-| F-2.1c | No fees/slippage/transaction costs in backtest | Confirmed | P1 |
+| F-2.1b | Non-crypto **and silently failed** fetches held flat ⇒ Sharpe/MDD distortion | **Fixed (M1-T3)** | P1 |
+| F-2.1c | No fees/slippage/transaction costs in backtest | **Fixed (M1-T3)** | P1 |
 | F-2.1d | Risk-free rate fixed at 0 (disclosed in UI) | Confirmed | P2 |
 | F-2.1e | Weights from *today's* portfolio applied retroactively (retrodictive) | Confirmed | P2 |
 | F-2.1f | Look-ahead risk when strategy signals arrive (same-bar close) | Requires Further Investigation (future) | P2 |
@@ -253,6 +253,22 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 **Verification (2026-10-17):** `npx tsc --noEmit` ✅ · `npx eslint .` ✅ · `npx vitest run` ✅ **23 files / 128 tests** (16 new: hydration barrier + account isolation + singleton + save gate), **zero** "Multiple GoTrueClient instances detected" warnings · `npm run build` ✅.
 
 **Residual notes:** remote DB state still requires the M1-1 dump/policy export before applying 0002 (repo-side migration is untracked-remote by design); `assets_status` ingestion ownership (F-3.2a) remains open.
+
+² F-2.1a: strategy-signal execution remains open (roadmap M2-5 — `Strategy` interface + persisted runs); the data-integrity dimension of the backtester (silent flat-price substitution, F-2.1b) was fixed in M1-T3.
+³ F-1.3a: cash ledger is client-side (per-scope localStorage); cloud sync of cash lands with `portfolios.cash_balance` in M2-2.
+⁴ F-1.3b: row-level `—` + cue landed in M1-T3; the full per-asset freshness state machine (`Live/Delayed/Stale/Unavailable/Simulated`, F-3.2b) remains roadmap M1-13.
+
+### M1-T3 — Portfolio accounting & backtest integrity (branch `fix/m1-t3-portfolio-accounting-and-backtest`)
+
+| Finding | Fix | Key files |
+| --- | --- | --- |
+| F-1.3a (P1) | `AVAILABLE_CASH = 2500` constant removed; `portfolioStore` now carries a **cash ledger** (`CashTransaction[]` deposit/withdrawal history + derived `cashBalance`), persisted in the v2 scope payload (legacy v1 array payloads migrate cleanly); overdrafts and invalid amounts rejected atomically; dashboard suggestions consume store cash and the header gains Deposit/Withdraw controls; $2,500 survives only as ledger *seed data* | `src/lib/portfolioStore.tsx`, `src/components/PortfolioDashboard.tsx`, `src/styles.css` |
+| F-1.3b (P2) | `HoldingRow` shows `—` for Market price / Value / P&L with a "no live price — totals use cost basis" cue instead of silently implying the price is unchanged; KPI totals keep the tested cost-basis fallback (no phantom P&L) | `src/components/PortfolioDashboard.tsx` |
+| F-2.1b (P1) | `computeBacktest` audits every weighted ticker: `coverage: TickerCoverage[]` (`covered`/`missing`) + `coverageWeight`; missing series are **excluded and held as cash** (numerically identical curve — zero golden-curve regressions — but never silent); `BacktestChart` tracks failed fetches distinctly (`(fetch failed)` annotation), renders an amber "Partial data" warning banner, and relabels risk stats "· partial data"; non-crypto note now says "excluded and held as cash" | `src/lib/backtestManager.ts`, `src/components/BacktestChart.tsx`, `src/styles.css` |
+| F-2.1c (P1) | `BacktestCostModel { feeRate, slippageRate }` (default 25 bps + 10 bps = `DEFAULT_BACKTEST_COST_MODEL`) applied as a one-time entry drag on the invested sleeve; threaded through the worker protocol (`FinanceRequest`/`computeBacktestAsync`); zero-cost default reproduces the gross curve exactly; invalid rates ignored; UI discloses "Net of 25 bps entry fee + 10 bps slippage" | `src/lib/backtestManager.ts`, `src/lib/financeCompute.ts`, `src/lib/financeClient.ts`, `src/components/BacktestChart.tsx` |
+
+**Verification (2026-10-17):** `npx tsc --noEmit` ✅ · `npx eslint .` ✅ · `npx vitest run` ✅ **24 files / 146 tests** (+10: cash ledger ×6, backtest coverage/cost ×3, BacktestChart partial-coverage ×1; financeCompute worker-protocol case extended) · `npm run build` ✅ · zero regressions across the M1-T1/T2 suites.
+
 
 ¹ F-1.1a: both models still exist, but they now share one missing-data contract (neutral 50 / weight re-normalization) so they cannot contradict each other on absent data; full single-model unification remains roadmap M1-7.
 

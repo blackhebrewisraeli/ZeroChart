@@ -2630,6 +2630,16 @@ body {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+/* Hydration barrier (M1-T1): saves are disabled until the cloud row settled. */
+.save-cloud-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.save-cloud-button:disabled:hover {
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-color: color-mix(in oklch, var(--primary) 45%, transparent);
+  box-shadow: none;
+}
 
 /* ===== Authentication modal ===== */
 .auth-overlay {

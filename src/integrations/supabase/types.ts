@@ -59,6 +59,63 @@ export type Database = {
         };
         Relationships: [];
       };
+      // M1-T1 (F-3.1b): typed tables so `db.ts` / `priceAlerts.ts` queries are
+      // strictly typed instead of relying on manual row casts. Mirrors the
+      // idempotent baseline migration `0002_reconcile_schema_baseline.sql`.
+      user_alerts: {
+        Row: {
+          condition: string;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          target_price: number;
+          ticker: string;
+          user_id: string;
+        };
+        Insert: {
+          condition: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          target_price: number;
+          ticker: string;
+          user_id: string;
+        };
+        Update: {
+          condition?: string;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          target_price?: number;
+          ticker?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      user_portfolios: {
+        Row: {
+          created_at: string;
+          id: string;
+          positions: Json;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          positions?: Json;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          positions?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;

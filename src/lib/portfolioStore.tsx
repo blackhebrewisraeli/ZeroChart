@@ -9,12 +9,30 @@ import {
 } from 'react';
 import type { Position } from '@/lib/portfolioManager';
 
-const STORAGE_KEY = 'zerochart:portfolio-positions';
+/**
+ * Account-scoped local persistence (M1-T1, finding F-4.1a).
+ *
+ * Positions are stored under a scope key: one shared guest key for signed-out
+ * sessions and one key per authenticated user. `switchScope` re-scopes the
+ * store atomically — it flushes the outgoing owner's latest positions under
+ * their own key and loads the incoming owner's own persisted state — so
+ * positions can never bleed from one account (or a pre-login session) into
+ * another, even when the next account's cloud row is empty.
+ */
+const GUEST_STORAGE_KEY = 'zerochart:portfolio-positions';
+
+function userStorageKey(userId: string): string {
+  return `zerochart:portfolio-positions:${userId}`;
+}
+
+function storageKeyFor(userId: string | null): string {
+  return userId === null ? GUEST_STORAGE_KEY : userStorageKey(userId);
+}
 
 /**
  * Seed positions for the simulation portfolio. These are the canonical
- * starting state and are only used to initialise the store — every other
- * consumer reads from the global portfolio state below.
+ * starting state for a scope with no persisted data (first-time guest or a
+ * brand-new account) — demo data, never another account's positions.
  */
 const MOCK_POSITIONS: Position[] = [
   {
@@ -35,20 +53,11 @@ const MOCK_POSITIONS: Position[] = [
   },
 ];
 
-interface PortfolioStore {
-  positions: Position[];
-  addPositions: (incoming: Position[]) => void;
-  replacePositions: (incoming: Position[]) => void;
-  removePosition: (id: string) => void;
-  updatePosition: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
-}
-
-const PortfolioContext = createContext<PortfolioStore | null>(null);
-
-function readInitialPositions(): Position[] {
+/** Loads a scope's persisted positions, falling back to the demo seeds. */
+function readScopePositions(userId: string | null): Position[] {
   if (typeof window === 'undefined') return MOCK_POSITIONS;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKeyFor(userId));
     if (!raw) return MOCK_POSITIONS;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return MOCK_POSITIONS;
@@ -58,41 +67,90 @@ function readInitialPositions(): Position[] {
   }
 }
 
-export function PortfolioProvider({ children }: { children: ReactNode }) {
-  const [positions, setPositions] = useState<Position[]>(readInitialPositions);
+function persistScopePositions(userId: string | null, positions: Position[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKeyFor(userId), JSON.stringify(positions));
+  } catch {
+    // Ignore quota / private-mode errors — the store still works in memory.
+  }
+}
 
+interface PortfolioStore {
+  positions: Position[];
+  /** The owner of the in-memory positions: a user id, or null for guest. */
+  scopeUserId: string | null;
+  /**
+   * Re-scopes the store to another owner (user id, or null for guest). The
+   * outgoing owner's positions are flushed to their own storage key and the
+   * incoming owner's persisted state (or demo seed) is loaded — a fresh
+   * account always starts from ITS OWN state, never a previous session's.
+   */
+  switchScope: (userId: string | null) => void;
+  addPositions: (incoming: Position[]) => void;
+  replacePositions: (incoming: Position[]) => void;
+  removePosition: (id: string) => void;
+  updatePosition: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
+}
+
+const PortfolioContext = createContext<PortfolioStore | null>(null);
+
+export function PortfolioProvider({ children }: { children: ReactNode }) {
+  const [scope, setScope] = useState<{ userId: string | null; positions: Position[] }>(() => ({
+    userId: null,
+    positions: readScopePositions(null),
+  }));
+
+  // Persist the active scope's positions under that scope's own key.
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
-    } catch {
-      // Ignore quota / private-mode errors — the store still works in memory.
-    }
-  }, [positions]);
+    persistScopePositions(scope.userId, scope.positions);
+  }, [scope]);
+
+  const switchScope = useCallback((userId: string | null) => {
+    setScope((prev) => {
+      if (prev.userId === userId) return prev; // same owner — keep in-memory state
+      // Flush the outgoing owner's latest positions under their own key
+      // before swapping (idempotent; StrictMode re-invocation is harmless).
+      persistScopePositions(prev.userId, prev.positions);
+      return { userId, positions: readScopePositions(userId) };
+    });
+  }, []);
 
   const addPositions = useCallback((incoming: Position[]) => {
-    setPositions((prev) => [...prev, ...incoming]);
+    setScope((prev) => ({ ...prev, positions: [...prev.positions, ...incoming] }));
   }, []);
 
   const replacePositions = useCallback((incoming: Position[]) => {
-    setPositions(incoming);
+    setScope((prev) => ({ ...prev, positions: incoming }));
   }, []);
 
   const removePosition = useCallback((id: string) => {
-    setPositions((prev) => prev.filter((position) => position.id !== id));
+    setScope((prev) => ({ ...prev, positions: prev.positions.filter((p) => p.id !== id) }));
   }, []);
 
   const updatePosition = useCallback(
     (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => {
-      setPositions((prev) =>
-        prev.map((position) => (position.id === id ? { ...position, ...updates } : position)),
-      );
+      setScope((prev) => ({
+        ...prev,
+        positions: prev.positions.map((position) =>
+          position.id === id ? { ...position, ...updates } : position,
+        ),
+      }));
     },
     [],
   );
 
   const value = useMemo(
-    () => ({ positions, addPositions, replacePositions, removePosition, updatePosition }),
-    [positions, addPositions, replacePositions, removePosition, updatePosition],
+    () => ({
+      positions: scope.positions,
+      scopeUserId: scope.userId,
+      switchScope,
+      addPositions,
+      replacePositions,
+      removePosition,
+      updatePosition,
+    }),
+    [scope, switchScope, addPositions, replacePositions, removePosition, updatePosition],
   );
 
   return <PortfolioContext.Provider value={value}>{children}</PortfolioContext.Provider>;

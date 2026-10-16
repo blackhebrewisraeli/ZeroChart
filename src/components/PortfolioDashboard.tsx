@@ -25,7 +25,8 @@ import {
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useAuth } from '@/lib/authStore';
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
-import { savePortfolio } from '@/lib/db';
+import { PortfolioNotHydratedError, savePortfolio } from '@/lib/db';
+import { useHydrationState } from '@/lib/hydrationStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { AuthModal } from '@/components/AuthModal';
 import { AssetIcon } from '@/components/AssetIcon';
@@ -338,6 +339,16 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   const [authOpen, setAuthOpen] = useState(false);
   const { user } = useAuth();
   const { positions, removePosition, updatePosition } = usePortfolio();
+  const hydration = useHydrationState();
+
+  // Cloud saves stay disabled until this user's cloud hydration settled —
+  // never overwrite a row that is still loading (M1-T1, F-4.1b).
+  const saveBlocked =
+    user !== null &&
+    !(
+      hydration.userId === user.id &&
+      (hydration.status === 'ready' || hydration.status === 'error')
+    );
 
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
@@ -392,10 +403,18 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       setAuthOpen(true);
       return;
     }
+    if (saveBlocked) {
+      toast.error('Portfolio is still syncing — try again in a moment.');
+      return;
+    }
     try {
       await savePortfolio(user.id, positions);
       toast.success('Portfolio saved to cloud');
-    } catch {
+    } catch (error) {
+      if (error instanceof PortfolioNotHydratedError) {
+        toast.error('Portfolio is still syncing — try again in a moment.');
+        return;
+      }
       toast.error("Couldn't save portfolio");
     }
   }
@@ -415,7 +434,15 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             <Share2 size={15} />
             Share Portfolio
           </button>
-          <button type="button" className="save-cloud-button" onClick={handleSaveToCloud}>
+          <button
+            type="button"
+            className="save-cloud-button"
+            onClick={handleSaveToCloud}
+            disabled={saveBlocked}
+            title={
+              saveBlocked ? 'Portfolio is syncing — save is temporarily unavailable' : undefined
+            }
+          >
             <CloudUpload size={15} />
             Save to Cloud
           </button>

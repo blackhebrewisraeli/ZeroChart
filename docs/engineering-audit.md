@@ -57,17 +57,17 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 | F-2.1d | Risk-free rate fixed at 0 (disclosed in UI) | Confirmed | P2 |
 | F-2.1e | Weights from *today's* portfolio applied retroactively (retrodictive) | Confirmed | P2 |
 | F-2.1f | Look-ahead risk when strategy signals arrive (same-bar close) | Requires Further Investigation (future) | P2 |
-| F-3.1a | Drizzle migrations drift: `symbol` vs `ticker`, 5 missing columns | Confirmed | P0 |
-| F-3.1b | Generated types cover only `assets_status`; portfolio/alert tables untyped | Confirmed | P2 |
+| F-3.1a | Drizzle migrations drift: `symbol` vs `ticker`, 5 missing columns | **Fixed (M1-T1)** | P0 |
+| F-3.1b | Generated types cover only `assets_status`; portfolio/alert tables untyped | **Fixed (M1-T1)** | P2 |
 | F-3.2a | No `assets_status` ingestion in repo; external writer unverifiable | Requires Further Investigation | P1 |
 | F-3.2b | No per-asset freshness states (Live/Delayed/Stale/Unavailable/Simulated) | Confirmed | P1 |
 | F-3.2c | Global stale-snapshot banner + sample labeling **do exist** | Already Fixed | — |
 | F-3.2d | Symbol-handling inconsistencies (bare-crypto class, ungated merge) | Confirmed | P2 |
 | F-3.3a | `generateTrendData()` uses `Math.random()` for displayed price history | Confirmed | P1 |
-| F-4.1a | Positions survive logout / leak to next account on shared device | Confirmed | P0 |
-| F-4.1b | Hydration race: cloud load vs Save-to-Cloud can cross-write rows | Confirmed | P0 |
-| F-4.2a | Three Supabase client modules; duplicate GoTrueClient instances | Confirmed | P2 |
-| F-4.2b | Hardcoded URL + publishable key in `src/lib/supabase.ts` | Confirmed | P2 |
+| F-4.1a | Positions survive logout / leak to next account on shared device | **Fixed (M1-T1)** | P0 |
+| F-4.1b | Hydration race: cloud load vs Save-to-Cloud can cross-write rows | **Fixed (M1-T1)** | P0 |
+| F-4.2a | Three Supabase client modules; duplicate GoTrueClient instances | **Fixed (M1-T1)** | P2 |
+| F-4.2b | Hardcoded URL + publishable key in `src/lib/supabase.ts` | **Fixed (M1-T1)** | P2 |
 | F-4.2c | Service-role key server-only, not imported client-side | Already Fixed (verified) | — |
 | F-4.2d | RLS: repo scripts complete; **remote enforcement unverified** | Requires Further Investigation | P0 |
 | F-5.1a | Duplicate local vs cloud alert pipelines (dual UIs, dual firing) | Confirmed | P1 |
@@ -234,5 +234,24 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 
 
 
+
+
+---
+
+## 4. Remediation Log
+
+### M1-T1 — Account isolation, hydration barrier, client consolidation, schema alignment (branch `fix/m1-t1-isolation-and-schema`)
+
+| Finding | Fix | Key files |
+| --- | --- | --- |
+| F-4.1a (P0) | Per-user localStorage scoping (`zerochart:portfolio-positions:{userId}`) with atomic `switchScope`; `signOut` clears memory + re-scopes to guest **before** the network call resolves; explicit empty cloud row (`[]`) replaces seeds | `src/lib/portfolioStore.tsx`, `src/lib/authStore.tsx` |
+| F-4.1b (P0) | `hydrationStore` state machine (`idle/hydrating/ready/error` per user); `authStore` drives transitions with stale-response guards; `db.savePortfolio` throws `PortfolioNotHydratedError` while in-flight; Save button disabled + toast until settled; failed hydration counts as settled (offline saves not bricked) | `src/lib/hydrationStore.ts` (new), `src/lib/authStore.tsx`, `src/lib/db.ts`, `src/components/PortfolioDashboard.tsx` |
+| F-4.2a/b (P2) | One canonical browser client (`src/lib/supabaseClient.ts`, typed `<Database>`); `src/lib/supabase.ts` + `src/integrations/supabase/client.ts` are re-exports; env resolution centralized in `src/lib/supabaseConfig.ts`; hardcoded URL/key removed; server-only `client.server.ts` untouched | `src/lib/supabaseClient.ts`, `src/lib/supabaseConfig.ts` (new), `src/lib/supabase.ts`, `src/integrations/supabase/client.ts` |
+| F-3.1a (P0) | `drizzle/schema.ts` populated (3 tables, uniques, checks); idempotent non-destructive `0002_reconcile_schema_baseline.sql` (ticker backfill from legacy `symbol`, missing columns, `user_portfolios`/`user_alerts` baselines + RLS) + journal entry; legacy `symbol` column retained | `drizzle/schema.ts`, `drizzle/migrations/0002_reconcile_schema_baseline.sql` (new), `drizzle/migrations/meta/_journal.json` |
+| F-3.1b (P2) | `user_portfolios` + `user_alerts` added to `Database` types; typed client; `db.ts` and `priceAlerts.ts` row casts replaced with schema-derived types | `src/integrations/supabase/types.ts`, `src/lib/db.ts`, `src/lib/priceAlerts.ts` |
+
+**Verification (2026-10-17):** `npx tsc --noEmit` ✅ · `npx eslint .` ✅ · `npx vitest run` ✅ **23 files / 128 tests** (16 new: hydration barrier + account isolation + singleton + save gate), **zero** "Multiple GoTrueClient instances detected" warnings · `npm run build` ✅.
+
+**Residual notes:** remote DB state still requires the M1-1 dump/policy export before applying 0002 (repo-side migration is untracked-remote by design); `assets_status` ingestion ownership (F-3.2a) remains open.
 
 

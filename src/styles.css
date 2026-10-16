@@ -3113,8 +3113,19 @@ body {
 }
 .allocation-legend-item {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 20rem;
+  gap: 12px;
+}
+.allocation-legend-label {
+  display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 .allocation-legend-dot {
   width: 10px;
@@ -3127,11 +3138,13 @@ body {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   font:
     600 13px 'JetBrains Mono',
     monospace;
 }
 .allocation-legend-pct {
+  flex-shrink: 0;
   font:
     600 13px 'JetBrains Mono',
     monospace;

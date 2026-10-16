@@ -74,8 +74,10 @@ export function AllocationChart({ positions, assets }: { positions: Position[]; 
       <div className="allocation-legend">
         {data.map((slice) => (
           <div key={slice.ticker} className="allocation-legend-item">
-            <span className="allocation-legend-dot" style={{ backgroundColor: slice.color }} />
-            <span className="allocation-legend-ticker">{slice.ticker}</span>
+            <span className="allocation-legend-label">
+              <span className="allocation-legend-dot" style={{ backgroundColor: slice.color }} />
+              <span className="allocation-legend-ticker">{slice.ticker}</span>
+            </span>
             <span className="allocation-legend-pct">{slice.percent.toFixed(1)}%</span>
           </div>
         ))}

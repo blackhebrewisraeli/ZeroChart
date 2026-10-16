@@ -5159,4 +5159,50 @@ body {
 .lwc-chart {
   width: 100%;
 }
+.lwc-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lwc-chart-pane {
+  width: 100%;
+}
+
+/* ===== Indicator toggles ===== */
+.indicator-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 24px 0;
+}
+.indicator-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    color 0.15s ease-out,
+    border-color 0.15s ease-out,
+    box-shadow 0.15s ease-out;
+}
+.indicator-pill:hover {
+  border-color: color-mix(in oklch, var(--signal-green) 45%, transparent);
+  color: var(--foreground);
+}
+.indicator-pill.is-active {
+  color: var(--signal-green);
+  border-color: color-mix(in oklch, var(--signal-green) 45%, transparent);
+  background: color-mix(in oklch, var(--signal-green) 12%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--signal-green) 20%, transparent);
+}
 

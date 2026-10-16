@@ -3,12 +3,22 @@ import { createPortal } from 'react-dom';
 import type { UTCTimestamp } from 'lightweight-charts';
 import { LineChart, X } from 'lucide-react';
 import { AssetIcon } from '@/components/AssetIcon';
-import { CandlestickChart, type CandlePoint } from '@/components/LightweightChart';
+import {
+  CandlestickChart,
+  type CandlePoint,
+  type IndicatorToggles,
+} from '@/components/LightweightChart';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { fetchHistoricalCandles, isBinanceCrypto, type Candle } from '@/lib/binance';
 import { cn } from '@/lib/utils';
 
 const CLOSE_MS = 260;
+
+const INDICATOR_OPTIONS = [
+  { key: 'sma50', label: 'SMA 50' },
+  { key: 'sma200', label: 'SMA 200' },
+  { key: 'rsi', label: 'RSI' },
+] as const;
 
 /**
  * A modal shown when a user clicks a row in the Markets table. It fetches daily
@@ -19,6 +29,15 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
   const [closing, setClosing] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [indicators, setIndicators] = useState<IndicatorToggles>({
+    sma50: true,
+    sma200: false,
+    rsi: false,
+  });
+
+  function toggleIndicator(key: 'sma50' | 'sma200' | 'rsi') {
+    setIndicators((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   const closingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
@@ -126,6 +145,22 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
           <span className="asset-details-price-value">{formatPrice(asset.current_price)}</span>
         </div>
 
+        {isCrypto && status === 'success' && (
+          <div className="indicator-toggles" role="group" aria-label="Technical indicators">
+            {INDICATOR_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                className={cn('indicator-pill', indicators[option.key] && 'is-active')}
+                aria-pressed={indicators[option.key]}
+                onClick={() => toggleIndicator(option.key)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <section className="asset-details-chart" aria-label={`${asset.ticker} historical chart`}>
           {!isCrypto ? (
             <div className="asset-chart-fallback">
@@ -140,7 +175,7 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
               <span>Couldn't load chart data. Please try again.</span>
             </div>
           ) : (
-            <CandlestickChart data={candleData} height={276} />
+            <CandlestickChart data={candleData} height={276} indicators={indicators} />
           )}
         </section>
 

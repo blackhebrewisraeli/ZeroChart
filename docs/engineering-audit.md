@@ -42,10 +42,10 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 
 | ID | Finding | Status | Sev |
 | --- | --- | --- | --- |
-| F-1.1a | Two divergent scoring models consumed by different views | Confirmed | P1 |
-| F-1.1b | Missing `risk_pct`/`reward_pct` ⇒ guaranteed SELL suggestion | Confirmed | P1 |
-| F-1.2a | ATR suggested-size notional can exceed allocated capital / total capital | Confirmed | P0 |
-| F-1.2b | `stopPrice` not floored at 0 when ATR ≥ price | Confirmed | P2 |
+| F-1.1a | Two divergent scoring models consumed by different views | **Partially Fixed (M1-T2)**¹ | P1 |
+| F-1.1b | Missing `risk_pct`/`reward_pct` ⇒ guaranteed SELL suggestion | **Fixed (M1-T2)** | P1 |
+| F-1.2a | ATR suggested-size notional can exceed allocated capital / total capital | **Fixed (M1-T2)** | P0 |
+| F-1.2b | `stopPrice` not floored at 0 when ATR ≥ price | **Fixed (M1-T2)** | P2 |
 | F-1.2c | "Guaranteed max loss" UI claim | Not Reproducible (no such copy found) | — |
 | F-1.3a | Hardcoded `AVAILABLE_CASH = 2500` drives suggestions + UI | Confirmed | P1 |
 | F-1.3b | Missing live price silently valued at buy price (no staleness cue) | Confirmed | P2 |
@@ -63,7 +63,7 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 | F-3.2b | No per-asset freshness states (Live/Delayed/Stale/Unavailable/Simulated) | Confirmed | P1 |
 | F-3.2c | Global stale-snapshot banner + sample labeling **do exist** | Already Fixed | — |
 | F-3.2d | Symbol-handling inconsistencies (bare-crypto class, ungated merge) | Confirmed | P2 |
-| F-3.3a | `generateTrendData()` uses `Math.random()` for displayed price history | Confirmed | P1 |
+| F-3.3a | `generateTrendData()` uses `Math.random()` for displayed price history | **Fixed (M1-T2)** | P1 |
 | F-4.1a | Positions survive logout / leak to next account on shared device | **Fixed (M1-T1)** | P0 |
 | F-4.1b | Hydration race: cloud load vs Save-to-Cloud can cross-write rows | **Fixed (M1-T1)** | P0 |
 | F-4.2a | Three Supabase client modules; duplicate GoTrueClient instances | **Fixed (M1-T1)** | P2 |
@@ -253,5 +253,21 @@ Existing: `docs/AGENTS.md` (Lovable connection rules + architecture notes), `doc
 **Verification (2026-10-17):** `npx tsc --noEmit` ✅ · `npx eslint .` ✅ · `npx vitest run` ✅ **23 files / 128 tests** (16 new: hydration barrier + account isolation + singleton + save gate), **zero** "Multiple GoTrueClient instances detected" warnings · `npm run build` ✅.
 
 **Residual notes:** remote DB state still requires the M1-1 dump/policy export before applying 0002 (repo-side migration is untracked-remote by design); `assets_status` ingestion ownership (F-3.2a) remains open.
+
+¹ F-1.1a: both models still exist, but they now share one missing-data contract (neutral 50 / weight re-normalization) so they cannot contradict each other on absent data; full single-model unification remains roadmap M1-7.
+
+### M1-T2 — Financial engine reliability (branch `fix/m1-t2-financial-engines`)
+
+| Finding | Fix | Key files |
+| --- | --- | --- |
+| F-1.2a (P0) | `recommendPositionSize` gains `allocatedCapital`; notional is hard-bounded by `min(capital, allocation)` with a round-down guard so 4dp rounding can never breach the budget; new `isCapped` flag; `buildQuantPortfolio` passes each asset's `allocatedAmount` (previously sized every asset with the FULL capital — $30k notional on a $10k allocation in tests); Robo UI copy updated to "risks **up to** 2% … capped at the allocation" | `src/lib/risk.ts`, `src/lib/roboAdvisor.ts`, `src/lib/portfolioBuilder.ts`, `src/components/RoboAdvisor.tsx` |
+| F-1.1b (P1) | `calculateSignalScore` returns a **neutral 50** when the provider omits `risk_pct`/`reward_pct` (was penalized base 20 ⇒ max 45 ⇒ permanent false SELL). Aligns the ratio model with `multiFactor.ts`'s re-normalization principle; real bonuses (volume +15, trend +10) still apply on top | `src/lib/assets.ts` |
+| F-1.2b (P2) | Stop price floored at 0 (`Math.max(0, price − atr)`) | `src/lib/risk.ts` |
+| F-3.3a (P1) | `generateTrendData` is now a deterministic linear interpolation between the 24h-change-derived start and the current price — zero `Math.random()`; docstring states it is a derived visualization, not market history | `src/lib/assets.ts` |
+
+**Test re-baselines (deliberate, bug-encoding assertions):** `assets.test.ts` "missing data" 20→50; `roboAdvisor.test.ts` suggested shares 300→100 (the old expectation WAS the P0: $30k notional on a $10k allocation). Everything else passed unchanged.
+
+**Verification (2026-10-17):** `npx tsc --noEmit` ✅ · `npx eslint .` ✅ · `npx vitest run` ✅ **23 files / 136 tests** (+8: budget caps, stop floor, scoring resilience, no-false-SELL, sparkline determinism) · `npm run build` ✅ · zero `Math.random()` in any price/sparkline path (only remaining use: alert-ID generation, `alertsStore.ts:37`).
+
 
 

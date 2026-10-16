@@ -195,9 +195,12 @@ export async function buildQuantPortfolio(
   return qualified.map(({ asset, score, price, atr }) => {
     const weight = score / totalScore;
     const allocatedAmount = Number((capital * weight).toFixed(2));
+    // The suggested size is bounded by this asset's allocation so the risk
+    // model can never recommend a notional worth more than the budget (or,
+    // indirectly, more than the total capital) — M1-T2, F-1.2a.
     const sizing =
       price !== null && atr !== null && atr > 0
-        ? recommendPositionSize({ capital, price, atr })
+        ? recommendPositionSize({ capital, price, atr, allocatedCapital: allocatedAmount })
         : null;
     return {
       ticker: asset.ticker,

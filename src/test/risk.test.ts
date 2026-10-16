@@ -78,6 +78,69 @@ describe('recommendPositionSize', () => {
       notional: 0,
     });
   });
+
+  it('caps notional at total capital when ATR is low relative to price (F-1.2a)', () => {
+    // 1% daily ATR: risk-optimal shares = 200/1 = 200 → $20,000 notional on
+    // $10,000 capital (the old P0 bug). Must cap at 100 shares / $10,000.
+    const size = recommendPositionSize({ capital: 10000, price: 100, atr: 1 });
+    expect(size.shares).toBe(100);
+    expect(size.notional).toBeLessThanOrEqual(10000);
+    expect(size.isCapped).toBe(true);
+  });
+
+  it('caps notional at the per-asset allocation when provided', () => {
+    // Risk-optimal 75 shares ($7,500) still exceeds a $5,000 allocation.
+    const size = recommendPositionSize({
+      capital: 30000,
+      price: 100,
+      atr: 8,
+      allocatedCapital: 5000,
+    });
+    expect(size.shares).toBe(50);
+    expect(size.notional).toBeLessThanOrEqual(5000);
+    expect(size.isCapped).toBe(true);
+
+    // Within budget, the risk model is untouched by the allocation.
+    const uncapped = recommendPositionSize({
+      capital: 30000,
+      price: 100,
+      atr: 8,
+      allocatedCapital: 20000,
+    });
+    expect(uncapped.shares).toBe(75);
+    expect(uncapped.isCapped).toBe(false);
+  });
+
+  it('never exceeds the tighter of capital and allocation, even after rounding', () => {
+    // budgetShares = 10000/300 = 33.3333… → 4dp rounding must not breach.
+    const size = recommendPositionSize({
+      capital: 10000,
+      price: 300,
+      atr: 1.2,
+      allocatedCapital: 10000,
+    });
+    expect(size.shares * 300).toBeLessThanOrEqual(10000);
+    expect(size.isCapped).toBe(true);
+
+    // An allocation larger than total capital is clamped to capital.
+    const clamped = recommendPositionSize({
+      capital: 1000,
+      price: 100,
+      atr: 1,
+      allocatedCapital: 999999,
+    });
+    expect(clamped.shares).toBe(10);
+    expect(clamped.notional).toBeLessThanOrEqual(1000);
+    expect(clamped.isCapped).toBe(true);
+  });
+
+  it('floors the stop price at zero when ATR exceeds the price', () => {
+    const size = recommendPositionSize({ capital: 10000, price: 5, atr: 8 });
+    expect(size.stopPrice).toBe(0);
+    // Risk-model share count stays intact; notional remains budget-safe.
+    expect(size.shares).toBe(25);
+    expect(size.notional).toBeLessThanOrEqual(10000);
+  });
 });
 
 describe('formatShares', () => {

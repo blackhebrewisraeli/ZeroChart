@@ -116,10 +116,39 @@ describe('asset data', () => {
     expect(calculateSignalScore({ ...base, risk_pct: 0.1, reward_pct: 0.1, sma_50: null })).toBe(
       40,
     );
-    // missing data -> minimal base 20
+    // missing risk/reward -> NEUTRAL 50 (was a penalized 20 that capped the
+    // score at 45 and forced permanent false SELL signals — M1-T2, F-1.1b)
     expect(calculateSignalScore({ ...base, risk_pct: null, reward_pct: null, sma_50: null })).toBe(
-      20,
+      50,
     );
+  });
+
+  it('respects missing-data resilience: neutral base plus real bonuses', () => {
+    const base: Asset = {
+      ticker: 'TEST',
+      name: null,
+      current_price: 100,
+      sma_50: null,
+      sma_200: null,
+      stable_signal: null,
+      radar_signal: null,
+      stable_explanation: null,
+      radar_explanation: null,
+      risk_pct: null,
+      reward_pct: null,
+      volume_spike: null,
+      rsi_14: null,
+      change_24h: null,
+      updated_at: null,
+    };
+    // Missing risk/reward only: neutral 50, no bonuses.
+    expect(calculateSignalScore(base)).toBe(50);
+    // Missing risk/reward but a real volume surge still earns its bonus: 65.
+    expect(calculateSignalScore({ ...base, volume_spike: 1.8 })).toBe(65);
+    // Volume present but <= 1 is real "no surge" data, not a penalty.
+    expect(calculateSignalScore({ ...base, volume_spike: 0.9 })).toBe(50);
+    // Neutral 50 is exactly at the SELL threshold and must never trigger one.
+    expect(calculateSignalScore(base)).toBeGreaterThanOrEqual(50);
   });
   it('routes tickers to external brokers', () => {
     expect(getBrokerRoute('BTC-USD')).toEqual({
@@ -163,5 +192,21 @@ describe('asset data', () => {
     expect(flat[0]).toBe(100);
     expect(flat[19]).toBe(100);
     expect(flat.every((value) => Math.abs(value - 100) <= 1)).toBe(true);
+  });
+
+  it('is fully deterministic with a monotone linear path (no randomness)', () => {
+    // Two independent calls must produce identical series — Math.random() jitter
+    // was removed in M1-T2 (F-3.3a).
+    expect(generateTrendData(100, 0.07)).toEqual(generateTrendData(100, 0.07));
+    expect(generateTrendData(100, -0.07)).toEqual(generateTrendData(100, -0.07));
+
+    const up = generateTrendData(100, 0.1);
+    for (let i = 1; i < up.length; i++) {
+      expect(up[i]!).toBeGreaterThan(up[i - 1]!);
+    }
+    const down = generateTrendData(100, -0.1);
+    for (let i = 1; i < down.length; i++) {
+      expect(down[i]!).toBeLessThan(down[i - 1]!);
+    }
   });
 });

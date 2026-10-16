@@ -455,8 +455,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         </div>
 
                         <p className="robo-results-note">
-                          Multi-Factor Score (RSI · MACD · ATR) · Suggested size risks 2% of capital
-                          at a 1×ATR stop · Swap any holding to replace it
+                          Multi-Factor Score (RSI · MACD · ATR) · Suggested size risks up to 2% of
+                          capital at a 1×ATR stop, capped at the allocation · Swap any holding to
+                          replace it
                         </p>
                         <ul className="robo-allocation-list">
                           {result.map((allocation, index) => {
@@ -491,7 +492,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                   </span>
                                   <span
                                     className="robo-size"
-                                    title="Suggested position size — risks 2% of total capital on a 1×ATR(14) stop"
+                                    title="Suggested position size — risks up to 2% of total capital on a 1×ATR(14) stop, capped at this holding's allocation"
                                   >
                                     <span className="robo-size-label">Suggested size</span>
                                     <span className="robo-size-value">

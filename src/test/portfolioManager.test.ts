@@ -131,6 +131,24 @@ describe('generateSuggestions', () => {
     expect(suggestions[0]).toMatchObject({ type: 'SELL', ticker: 'WEAK', score: 40 });
   });
 
+  it('never SELLs a held asset whose risk/reward data is missing (F-1.1b)', () => {
+    const positions = [
+      makePosition({ id: 'nodata', ticker: 'NODATA' }),
+      makePosition({ id: 'spike', ticker: 'SPIKE' }),
+    ];
+    const assets = [
+      // Provider omitted risk/reward → neutral 50 (not the old 20 → permanent
+      // false "cut losses" suggestion).
+      { ...makeAsset('NODATA', 0.1, 0.1, 100), risk_pct: null, reward_pct: null },
+      // Missing risk/reward but a real volume surge: 50 + 15 = 65 — still no SELL.
+      { ...makeAsset('SPIKE', 0.1, 0.1, 100), risk_pct: null, reward_pct: null, volume_spike: 1.8 },
+    ];
+
+    const suggestions = generateSuggestions(positions, assets, 0);
+
+    expect(suggestions.filter((s) => s.type === 'SELL')).toEqual([]);
+  });
+
   it('suggests buying non-held assets scoring 85+ when cash is available', () => {
     const positions = [makePosition({ id: 'held', ticker: 'HELD' })];
     const assets = [

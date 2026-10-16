@@ -229,6 +229,10 @@ body {
   background: var(--signal-red);
   box-shadow: 0 0 10px color-mix(in oklch, var(--signal-red) 70%, transparent);
 }
+.status-reconnecting {
+  background: var(--signal-yellow);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--signal-yellow) 70%, transparent);
+}
 
 .hero {
   position: relative;

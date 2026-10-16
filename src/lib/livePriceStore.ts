@@ -56,6 +56,34 @@ export function useLivePrices(): Map<string, LivePrice> {
   return useSyncExternalStore(subscribe, getLivePricesSnapshot, () => new Map());
 }
 
+export type ConnectionState = 'connected' | 'reconnecting';
+
+let connectionState: ConnectionState = 'connected';
+const connectionListeners = new Set<() => void>();
+
+function subscribeConnection(listener: () => void): () => void {
+  connectionListeners.add(listener);
+  return () => {
+    connectionListeners.delete(listener);
+  };
+}
+
+/** Marks the WebSocket connection as connected or reconnecting. */
+export function setConnectionState(state: ConnectionState): void {
+  if (connectionState === state) return;
+  connectionState = state;
+  for (const listener of connectionListeners) listener();
+}
+
+/** Subscribes to the WebSocket connection state. */
+export function useConnectionState(): ConnectionState {
+  return useSyncExternalStore(
+    subscribeConnection,
+    () => connectionState,
+    () => 'connected',
+  );
+}
+
 /** Merges live prices into a static asset list, leaving non-crypto assets alone. */
 export function mergeLivePrices(assets: Asset[], prices: Map<string, LivePrice>): Asset[] {
   return assets.map((asset) => {

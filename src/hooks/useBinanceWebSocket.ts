@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { getAlerts, hasCrossed, removeAlert } from '@/lib/alertsStore';
-import { setLivePrices, type LivePrice } from '@/lib/livePriceStore';
+import { setConnectionState, setLivePrices, type LivePrice } from '@/lib/livePriceStore';
 import { toBinanceSymbol, toDisplayTicker } from '@/lib/binance';
 
 const STREAM_URL = 'wss://stream.binance.com:9443/ws/!miniTicker@arr';
 const THROTTLE_MS = 600;
-const RECONNECT_DELAY_MS = 3000;
+const INITIAL_RECONNECT_DELAY_MS = 1000;
+const MAX_RECONNECT_DELAY_MS = 30000;
+const BACKOFF_FACTOR = 2;
 
 /**
  * Fires any active price alerts crossed by the latest tick. Triggered alerts
@@ -49,12 +51,27 @@ export function useBinanceWebSocket(assets: Asset[]): void {
   useEffect(() => {
     let socket: WebSocket | null = null;
     let reconnectTimer: number | undefined;
+    let reconnectAttempt = 0;
     let stopped = false;
+
+    function scheduleReconnect() {
+      const delay = Math.min(
+        INITIAL_RECONNECT_DELAY_MS * Math.pow(BACKOFF_FACTOR, reconnectAttempt),
+        MAX_RECONNECT_DELAY_MS,
+      );
+      reconnectAttempt += 1;
+      reconnectTimer = window.setTimeout(connect, delay);
+    }
 
     function connect() {
       if (stopped) return;
       const ws = new WebSocket(STREAM_URL);
       socket = ws;
+
+      ws.onopen = () => {
+        reconnectAttempt = 0;
+        setConnectionState('connected');
+      };
 
       ws.onmessage = (event) => {
         try {
@@ -76,9 +93,9 @@ export function useBinanceWebSocket(assets: Asset[]): void {
       };
 
       ws.onclose = () => {
-        if (!stopped) {
-          reconnectTimer = window.setTimeout(connect, RECONNECT_DELAY_MS);
-        }
+        if (stopped) return;
+        setConnectionState('reconnecting');
+        scheduleReconnect();
       };
 
       ws.onerror = () => ws.close();

@@ -44,7 +44,7 @@ import {
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { toBinanceSymbol } from '@/lib/binance';
-import { useLivePrice } from '@/lib/livePriceStore';
+import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import { useAuth } from '@/lib/authStore';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
@@ -258,6 +258,8 @@ function Terminal() {
     source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const baseAssets = preview ? sampleAssets : query.data || [];
   useBinanceWebSocket(baseAssets);
+  const connectionState = useConnectionState();
+  const reconnecting = connectionState === 'reconnecting';
   const topPick = [...baseAssets].sort(
     (a, b) => calculateSignalScore(b) - calculateSignalScore(a),
   )[0];
@@ -313,14 +315,22 @@ function Terminal() {
           />
           <div className="flex shrink-0 items-center gap-4">
             <span className="connection-status">
-              <span className={cn('status-dot', query.isError && !preview && 'status-error')} />
-              {preview
-                ? 'Sample data'
-                : query.isPending
-                  ? 'Connecting'
-                  : query.isError
-                    ? 'Offline'
-                    : 'Live'}
+              <span
+                className={cn(
+                  'status-dot',
+                  reconnecting && 'status-reconnecting',
+                  !reconnecting && query.isError && !preview && 'status-error',
+                )}
+              />
+              {reconnecting
+                ? 'Reconnecting…'
+                : preview
+                  ? 'Sample data'
+                  : query.isPending
+                    ? 'Connecting'
+                    : query.isError
+                      ? 'Offline'
+                      : 'Live'}
             </span>
             <Button
               variant="outline"

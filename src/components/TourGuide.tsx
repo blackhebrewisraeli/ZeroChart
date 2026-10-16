@@ -6,22 +6,22 @@ import { tourSteps } from '@/lib/tourSteps';
 const joyrideStyles: Partial<Styles> = {
   tooltip: {
     borderRadius: 14,
-    border: '1px solid rgba(0, 255, 65, 0.25)',
-    boxShadow: '0 0 40px rgba(0, 255, 65, 0.16)',
+    border: '1px solid rgba(0, 229, 255, 0.25)',
+    boxShadow: '0 0 40px rgba(0, 229, 255, 0.16)',
     fontSize: 14,
     fontFamily: "'JetBrains Mono', monospace",
   },
   tooltipContainer: { textAlign: 'left' },
   tooltipTitle: {
-    color: '#00ff41',
+    color: '#00e5ff',
     fontSize: 15,
     fontWeight: 700,
     fontFamily: "'DM Sans', sans-serif",
   },
   tooltipContent: { color: '#c9d4e0', lineHeight: 1.55 },
   buttonPrimary: {
-    backgroundColor: '#00ff41',
-    color: '#062b12',
+    backgroundColor: '#00e5ff',
+    color: '#022430',
     borderRadius: 10,
     fontSize: 12,
     fontWeight: 700,
@@ -66,7 +66,7 @@ export function TourGuide({ onBeforeStart }: { onBeforeStart?: () => void }) {
         options={{
           showProgress: true,
           buttons: ['back', 'skip', 'primary'],
-          primaryColor: '#00ff41',
+          primaryColor: '#00e5ff',
           backgroundColor: '#101828',
           textColor: '#e6edf3',
           overlayColor: 'rgba(2, 6, 16, 0.72)',

@@ -1,0 +1,78 @@
+import { rsi, sma } from './indicators';
+import {
+  computeBacktest,
+  type AllocationWeight,
+  type AssetPriceSeries,
+  type BacktestResult,
+} from './backtestManager';
+
+export type FinanceRequest =
+  | { kind: 'sma'; values: number[]; period: number }
+  | { kind: 'rsi'; values: number[]; period: number }
+  | {
+      kind: 'backtest';
+      weights: AllocationWeight[];
+      series: AssetPriceSeries[];
+      initialValue: number | undefined;
+    };
+
+export type FinanceResult = Float64Array | BacktestResult;
+
+/** Dispatches a request to the matching pure core function. */
+export function computeFinance(request: FinanceRequest): FinanceResult {
+  switch (request.kind) {
+    case 'sma':
+      return sma(request.values, request.period);
+    case 'rsi':
+      return rsi(request.values, request.period);
+    case 'backtest': {
+      const options: {
+        weights: AllocationWeight[];
+        series: AssetPriceSeries[];
+        initialValue?: number;
+      } = { weights: request.weights, series: request.series };
+      if (request.initialValue !== undefined) options.initialValue = request.initialValue;
+      return computeBacktest(options);
+    }
+  }
+}
+
+/** Deterministic cache key for a request (enables O(1) Map lookups). */
+export function cacheKey(request: FinanceRequest): string {
+  return JSON.stringify(request);
+}
+
+/** In-memory request cache used inside the Web Worker. */
+export class FinanceCache {
+  private store = new Map<string, FinanceResult>();
+
+  get(key: string): FinanceResult | undefined {
+    return this.store.get(key);
+  }
+
+  has(key: string): boolean {
+    return this.store.has(key);
+  }
+
+  set(key: string, value: FinanceResult): void {
+    this.store.set(key, value);
+  }
+
+  get size(): number {
+    return this.store.size;
+  }
+}
+
+/** Computes a result, returning the cached value when the inputs are identical. */
+export function computeWithCache(
+  request: FinanceRequest,
+  cache: FinanceCache,
+): { value: FinanceResult; cached: boolean } {
+  const key = cacheKey(request);
+  const cached = cache.get(key);
+  if (cached !== undefined) return { value: cached, cached: true };
+
+  const value = computeFinance(request);
+  cache.set(key, value);
+  return { value, cached: false };
+}

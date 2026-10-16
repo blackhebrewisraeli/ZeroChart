@@ -73,30 +73,10 @@ export function deriveWeights(positions: Position[], assets: Asset[]): Allocatio
 }
 
 /**
- * Returns the growth factor for a single asset at a given timestamp: the last
- * known close on or before `timestamp`, divided by the asset's first close.
- * Timestamps before the first data point use the first close (factor 1).
- */
-function growthFactor(sortedPoints: PricePoint[], timestamp: number): number {
-  const first = sortedPoints[0];
-  if (!first || first.price <= 0) return 1;
-
-  let lastClose = first.price;
-  for (const point of sortedPoints) {
-    if (point.timestamp <= timestamp) {
-      lastClose = point.price;
-    } else {
-      break;
-    }
-  }
-  return lastClose / first.price;
-}
-
-/**
  * Simulates a buy-and-hold portfolio over a shared timeline of historical
  * daily prices. Each asset grows by `price(t) / price(first)`, scaled by its
- * weight and the initial investment. Assets without a price series are held
- * flat, and any weight not allocated to an asset is held as flat cash.
+ * weight and the initial investment. The compounding loops run over
+ * `Float64Array` for predictable, allocation-light execution.
  */
 export function computeBacktest({
   weights,
@@ -128,18 +108,49 @@ export function computeBacktest({
     for (const point of points) timestamps.add(point.timestamp);
   }
   const timeline = [...timestamps].sort((a, b) => a - b);
-
   const cashWeight = Math.max(0, 1 - totalWeight);
 
-  const points: BacktestPoint[] = timeline.map((timestamp) => {
-    let value = cashWeight * initialValue;
-    for (const [ticker, weight] of weightByTicker) {
-      const assetPoints = seriesByTicker.get(ticker);
-      const factor = assetPoints ? growthFactor(assetPoints, timestamp) : 1;
-      value += weight * initialValue * factor;
+  const tickers = [...weightByTicker.keys()];
+  const weightValues = Float64Array.from(tickers.map((ticker) => weightByTicker.get(ticker) ?? 0));
+
+  // Precompute each asset's forward-filled growth factors aligned to the timeline.
+  const factorSeries = tickers.map((ticker) => {
+    const factors = new Float64Array(timeline.length).fill(1);
+    const points = seriesByTicker.get(ticker);
+    if (!points || points.length === 0) return factors;
+
+    const first = points[0];
+    const base = first && first.price > 0 ? first.price : 1;
+    let cursor = 0;
+    let lastClose = base;
+    for (let i = 0; i < timeline.length; i += 1) {
+      const time = timeline[i] ?? 0;
+      while (
+        cursor < points.length &&
+        (points[cursor]?.timestamp ?? Number.POSITIVE_INFINITY) <= time
+      ) {
+        lastClose = points[cursor]?.price ?? lastClose;
+        cursor += 1;
+      }
+      factors[i] = lastClose / base;
     }
-    return { timestamp, value };
+    return factors;
   });
+
+  const values = new Float64Array(timeline.length);
+  for (let i = 0; i < timeline.length; i += 1) {
+    let value = cashWeight * initialValue;
+    for (let j = 0; j < tickers.length; j += 1) {
+      const factors = factorSeries[j];
+      value += (weightValues[j] ?? 0) * initialValue * (factors ? (factors[i] ?? 1) : 1);
+    }
+    values[i] = value;
+  }
+
+  const points: BacktestPoint[] = timeline.map((timestamp, index) => ({
+    timestamp,
+    value: values[index] ?? initialValue,
+  }));
 
   const lastPoint = points[points.length - 1];
   const finalValue = lastPoint ? lastPoint.value : initialValue;

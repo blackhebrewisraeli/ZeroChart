@@ -12,7 +12,7 @@ import {
   type LogicalRange,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { rsi, sma } from '@/lib/indicators';
+import { rsiAsync, smaAsync } from '@/lib/financeClient';
 
 export interface CandlePoint {
   time: UTCTimestamp;
@@ -46,14 +46,14 @@ export interface IndicatorToggles {
 
 function toLineData(
   times: UTCTimestamp[],
-  values: (number | null)[],
+  values: ArrayLike<number>,
 ): { time: UTCTimestamp; value: number }[] {
   const points: { time: UTCTimestamp; value: number }[] = [];
   const length = Math.min(times.length, values.length);
   for (let i = 0; i < length; i += 1) {
     const time = times[i];
     const value = values[i];
-    if (time === undefined || value === null || value === undefined) continue;
+    if (time === undefined || value === undefined || Number.isNaN(value)) continue;
     points.push({ time, value });
   }
   return points;
@@ -154,16 +154,28 @@ export function CandlestickChart({
     if (!chart) return;
 
     candlesRef.current?.setData(data);
+    chart.timeScale().fitContent();
 
     const times = data.map((candle) => candle.time);
     const closes = data.map((candle) => candle.close);
+    let cancelled = false;
 
-    if (sma50Ref.current) sma50Ref.current.setData(toLineData(times, sma(closes, 50)));
-    if (sma200Ref.current) sma200Ref.current.setData(toLineData(times, sma(closes, 200)));
-    if (rsiSeriesRef.current) rsiSeriesRef.current.setData(toLineData(times, rsi(closes, 14)));
+    (async () => {
+      const [sma50Values, sma200Values, rsiValues] = await Promise.all([
+        smaAsync(closes, 50),
+        smaAsync(closes, 200),
+        rsiAsync(closes, 14),
+      ]);
+      if (cancelled) return;
+      sma50Ref.current?.setData(toLineData(times, sma50Values));
+      sma200Ref.current?.setData(toLineData(times, sma200Values));
+      rsiSeriesRef.current?.setData(toLineData(times, rsiValues));
+      rsiChartRef.current?.timeScale().fitContent();
+    })();
 
-    chart.timeScale().fitContent();
-    rsiChartRef.current?.timeScale().fitContent();
+    return () => {
+      cancelled = true;
+    };
   }, [data]);
 
   // Add/remove SMA overlays in response to toggles (base chart stays alive).
@@ -173,34 +185,45 @@ export function CandlestickChart({
 
     const closes = dataRef.current.map((candle) => candle.close);
     const times = dataRef.current.map((candle) => candle.time);
+    let cancelled = false;
 
-    if (indicators.sma50 && !sma50Ref.current) {
-      const series = chart.addSeries(LineSeries, {
-        color: SMA_50_COLOR,
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: true,
-      });
-      series.setData(toLineData(times, sma(closes, 50)));
-      sma50Ref.current = series;
-    } else if (!indicators.sma50 && sma50Ref.current) {
-      chart.removeSeries(sma50Ref.current);
-      sma50Ref.current = null;
-    }
+    (async () => {
+      if (indicators.sma50 && !sma50Ref.current) {
+        const values = await smaAsync(closes, 50);
+        if (cancelled) return;
+        const series = chart.addSeries(LineSeries, {
+          color: SMA_50_COLOR,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+        series.setData(toLineData(times, values));
+        sma50Ref.current = series;
+      } else if (!indicators.sma50 && sma50Ref.current) {
+        chart.removeSeries(sma50Ref.current);
+        sma50Ref.current = null;
+      }
 
-    if (indicators.sma200 && !sma200Ref.current) {
-      const series = chart.addSeries(LineSeries, {
-        color: SMA_200_COLOR,
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: true,
-      });
-      series.setData(toLineData(times, sma(closes, 200)));
-      sma200Ref.current = series;
-    } else if (!indicators.sma200 && sma200Ref.current) {
-      chart.removeSeries(sma200Ref.current);
-      sma200Ref.current = null;
-    }
+      if (indicators.sma200 && !sma200Ref.current) {
+        const values = await smaAsync(closes, 200);
+        if (cancelled) return;
+        const series = chart.addSeries(LineSeries, {
+          color: SMA_200_COLOR,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: true,
+        });
+        series.setData(toLineData(times, values));
+        sma200Ref.current = series;
+      } else if (!indicators.sma200 && sma200Ref.current) {
+        chart.removeSeries(sma200Ref.current);
+        sma200Ref.current = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [indicators.sma50, indicators.sma200]);
 
   // Create/destroy the synchronized RSI sub-chart.
@@ -244,7 +267,11 @@ export function CandlestickChart({
 
     const closes = dataRef.current.map((candle) => candle.close);
     const times = dataRef.current.map((candle) => candle.time);
-    rsiSeries.setData(toLineData(times, rsi(closes, 14)));
+    let cancelled = false;
+
+    rsiAsync(closes, 14).then((values) => {
+      if (!cancelled) rsiSeries.setData(toLineData(times, values));
+    });
 
     const syncHandler = (range: LogicalRange | null) => {
       if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
@@ -255,6 +282,7 @@ export function CandlestickChart({
     rsiSeriesRef.current = rsiSeries;
 
     return () => {
+      cancelled = true;
       mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncHandler);
     };
   }, [showRsi]);

@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { rsi, sma } from '@/lib/indicators';
 
+const toArray = (values: Float64Array) => Array.from(values);
+
 describe('sma', () => {
   it('computes a rolling average after the warm-up period', () => {
-    expect(sma([1, 2, 3, 4, 5], 3)).toEqual([null, null, 2, 3, 4]);
+    const result = sma([1, 2, 3, 4, 5], 3);
+    expect(result).toBeInstanceOf(Float64Array);
+    expect(toArray(result)).toEqual([NaN, NaN, 2, 3, 4]);
   });
 
   it('returns the identity series for period 1', () => {
-    expect(sma([7, 8, 9], 1)).toEqual([7, 8, 9]);
+    expect(toArray(sma([7, 8, 9], 1))).toEqual([7, 8, 9]);
   });
 
-  it('returns all nulls when there is not enough data', () => {
-    expect(sma([1, 2, 3], 5)).toEqual([null, null, null]);
-    expect(sma([], 3)).toEqual([]);
+  it('returns all NaN when there is not enough data', () => {
+    expect(toArray(sma([1, 2, 3], 5))).toEqual([NaN, NaN, NaN]);
+    expect(toArray(sma([], 3))).toEqual([]);
   });
 });
 
@@ -31,17 +35,16 @@ describe('rsi', () => {
   });
 
   it('matches a hand-computed Wilder RSI value', () => {
-    // period = 3 over [1, 3, 2, 4, 5]
     const result = rsi([1, 3, 2, 4, 5], 3);
 
-    expect(result[0]).toBeNull();
-    expect(result[1]).toBeNull();
-    expect(result[2]).toBeNull();
+    expect(Number.isNaN(result[0])).toBe(true);
+    expect(Number.isNaN(result[1])).toBe(true);
+    expect(Number.isNaN(result[2])).toBe(true);
     expect(result[3]).toBeCloseTo(80, 5);
     expect(result[4]).toBeCloseTo(84.6154, 3);
   });
 
-  it('returns all nulls when there is not enough data', () => {
-    expect(rsi([1, 2, 3], 14)).toEqual([null, null, null]);
+  it('returns all NaN when there is not enough data', () => {
+    expect(toArray(rsi([1, 2, 3], 14))).toEqual([NaN, NaN, NaN]);
   });
 });

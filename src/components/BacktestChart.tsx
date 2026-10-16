@@ -4,12 +4,8 @@ import { History, Loader2 } from 'lucide-react';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { ValueAreaChart, type ValuePoint } from '@/components/LightweightChart';
 import { fetchYearlyKlines, isBinanceCrypto } from '@/lib/binance';
-import {
-  computeBacktest,
-  deriveWeights,
-  type AssetPriceSeries,
-  type BacktestResult,
-} from '@/lib/backtestManager';
+import { deriveWeights, type AssetPriceSeries, type BacktestResult } from '@/lib/backtestManager';
+import { computeBacktestAsync } from '@/lib/financeClient';
 import type { Position } from '@/lib/portfolioManager';
 import { cn } from '@/lib/utils';
 
@@ -60,7 +56,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
         return;
       }
 
-      const computed = computeBacktest({
+      const computed = await computeBacktestAsync({
         weights,
         series,
         initialValue: INITIAL_INVESTMENT,

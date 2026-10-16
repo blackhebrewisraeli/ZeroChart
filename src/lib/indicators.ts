@@ -1,24 +1,20 @@
 /**
  * Pure technical-indicator math over a close-price series. Every function
- * returns an array aligned to the input length, using `null` for the warm-up
- * period where the indicator is not yet defined. Keeping this free of chart and
- * React dependencies makes it trivially unit-testable.
+ * returns a `Float64Array` aligned to the input length, using `NaN` for the
+ * warm-up period where the indicator is not yet defined. The hot loops run over
+ * typed arrays for predictable, allocation-light execution.
  */
 
 /** Simple Moving Average over `period` bars. */
-export function sma(values: number[], period: number): (number | null)[] {
-  const out: (number | null)[] = new Array<number | null>(values.length).fill(null);
+export function sma(values: number[], period: number): Float64Array {
+  const out = new Float64Array(values.length).fill(NaN);
   if (!Number.isInteger(period) || period <= 0 || values.length < period) return out;
 
+  const prices = Float64Array.from(values);
   let sum = 0;
-  for (let i = 0; i < values.length; i += 1) {
-    const value = values[i];
-    if (typeof value !== 'number') continue;
-    sum += value;
-    if (i >= period) {
-      const drop = values[i - period];
-      if (typeof drop === 'number') sum -= drop;
-    }
+  for (let i = 0; i < prices.length; i += 1) {
+    sum += prices[i]!;
+    if (i >= period) sum -= prices[i - period]!;
     if (i >= period - 1) out[i] = sum / period;
   }
   return out;
@@ -28,19 +24,17 @@ export function sma(values: number[], period: number): (number | null)[] {
  * Wilder's Relative Strength Index over `period` bars (default 14).
  * The first value is available at index `period` (one change earlier than SMA).
  */
-export function rsi(values: number[], period = 14): (number | null)[] {
-  const out: (number | null)[] = new Array<number | null>(values.length).fill(null);
+export function rsi(values: number[], period = 14): Float64Array {
+  const out = new Float64Array(values.length).fill(NaN);
   if (!Number.isInteger(period) || period <= 0 || values.length <= period) return out;
 
+  const prices = Float64Array.from(values);
   let avgGain = 0;
   let avgLoss = 0;
 
   // Seed with the simple average of the first `period` price changes.
   for (let i = 1; i <= period; i += 1) {
-    const current = values[i];
-    const previous = values[i - 1];
-    if (typeof current !== 'number' || typeof previous !== 'number') continue;
-    const change = current - previous;
+    const change = prices[i]! - prices[i - 1]!;
     if (change >= 0) avgGain += change;
     else avgLoss -= change;
   }
@@ -49,11 +43,8 @@ export function rsi(values: number[], period = 14): (number | null)[] {
   out[period] = rsiValue(avgGain, avgLoss);
 
   // Wilder smoothing for the remaining bars.
-  for (let i = period + 1; i < values.length; i += 1) {
-    const current = values[i];
-    const previous = values[i - 1];
-    if (typeof current !== 'number' || typeof previous !== 'number') continue;
-    const change = current - previous;
+  for (let i = period + 1; i < prices.length; i += 1) {
+    const change = prices[i]! - prices[i - 1]!;
     const gain = change > 0 ? change : 0;
     const loss = change < 0 ? -change : 0;
     avgGain = (avgGain * (period - 1) + gain) / period;

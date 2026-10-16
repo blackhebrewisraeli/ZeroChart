@@ -12,12 +12,8 @@ import {
   X,
 } from 'lucide-react';
 import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
-import {
-  generatePortfolio,
-  getQualifyingAssets,
-  type Allocation,
-  type RiskProfile,
-} from '@/lib/portfolioBuilder';
+import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
+import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
@@ -78,6 +74,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   const [monthlyDeposit, setMonthlyDeposit] = useState('250');
   const [monthly, setMonthly] = useState(250);
   const [error, setError] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -145,7 +142,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
     };
   }, [open, phase, closeModal]);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const value = Number(amount.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(value) || value <= 0) {
       setError('Enter an investment amount greater than $0.');
@@ -161,15 +158,36 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
     setTotal(value);
     setMonthly(monthlyValue);
     setRejectedTickers(new Set());
-    setResult(generatePortfolio({ totalCapital: value, riskProfile }, assets));
-    setPhase('results');
+    setBuilding(true);
+    try {
+      const allocation = await buildQuantPortfolio({
+        preferences: { totalCapital: value, riskProfile },
+        availableAssets: assets,
+      });
+      setResult(allocation);
+      setPhase('results');
+    } catch {
+      setError('Unable to analyze assets. Please try again.');
+    } finally {
+      setBuilding(false);
+    }
   }
 
-  function handleSwap(ticker: string) {
+  async function handleSwap(ticker: string) {
     const nextRejected = new Set(rejectedTickers);
     nextRejected.add(ticker);
     setRejectedTickers(nextRejected);
-    setResult(generatePortfolio({ totalCapital: total, riskProfile }, assets, nextRejected));
+    setBuilding(true);
+    try {
+      const allocation = await buildQuantPortfolio({
+        preferences: { totalCapital: total, riskProfile },
+        availableAssets: assets,
+        excludeTickers: nextRejected,
+      });
+      setResult(allocation);
+    } finally {
+      setBuilding(false);
+    }
   }
 
   function handleConfirmInvest() {
@@ -206,11 +224,13 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
 
   const activeRisk = RISK_OPTIONS.find((r) => r.id === riskProfile);
 
-  const qualifyingCount = useMemo(
-    () => getQualifyingAssets(assets, rejectedTickers).length,
-    [assets, rejectedTickers],
-  );
-  const canSwapMore = result != null && qualifyingCount > result.length;
+  const canSwapMore =
+    result != null &&
+    assets.some(
+      (asset) =>
+        !rejectedTickers.has(asset.ticker) &&
+        !result.some((allocation) => allocation.ticker === asset.ticker),
+    );
 
   return (
     <>
@@ -285,7 +305,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         />
                       </div>
                       <p id="robo-amount-hint" className="robo-hint">
-                        Equal-weighted across your strongest signals
+                        Quant-scored across trend, RSI, and volatility
                       </p>
                       {error && (
                         <p className="robo-error" role="alert">
@@ -352,8 +372,13 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                   </div>
 
                   <footer className="robo-footer">
-                    <button type="button" className="robo-submit" onClick={handleSubmit}>
-                      Build Portfolio <ArrowRight size={16} />
+                    <button
+                      type="button"
+                      className="robo-submit"
+                      onClick={handleSubmit}
+                      disabled={building}
+                    >
+                      {building ? 'Analyzing…' : 'Build Portfolio'} <ArrowRight size={16} />
                     </button>
                   </footer>
                 </>

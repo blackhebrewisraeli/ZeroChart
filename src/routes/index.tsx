@@ -7,6 +7,7 @@ import {
   Briefcase,
   CandlestickChart,
   Flame,
+  LogOut,
   Radio,
   RefreshCw,
   TrendingDown,
@@ -313,51 +314,60 @@ function Terminal() {
               },
             ]}
           />
-          <div className="flex shrink-0 items-center gap-4">
-            <span className="connection-status">
-              <span
-                className={cn(
-                  'status-dot',
-                  reconnecting && 'status-reconnecting',
-                  !reconnecting && query.isError && !preview && 'status-error',
-                )}
-              />
-              {reconnecting
-                ? 'Reconnecting…'
-                : preview
-                  ? 'Sample data'
-                  : query.isPending
-                    ? 'Connecting'
-                    : query.isError
-                      ? 'Offline'
-                      : 'Live'}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 flex-shrink-0"
-              aria-label="Refresh signals"
-              title="Refresh signals"
-              disabled={query.isFetching}
-              onClick={() => query.refetch()}
-            >
-              <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
-            </Button>
-            <ThemeToggle />
+          <div className="header-actions flex shrink-0 items-center gap-3">
+            <div className="header-utilities flex items-center gap-2.5">
+              <span className="connection-status">
+                <span
+                  className={cn(
+                    'status-dot',
+                    reconnecting && 'status-reconnecting',
+                    !reconnecting && query.isError && !preview && 'status-error',
+                  )}
+                />
+                {reconnecting
+                  ? 'Reconnecting…'
+                  : preview
+                    ? 'Sample data'
+                    : query.isPending
+                      ? 'Connecting'
+                      : query.isError
+                        ? 'Offline'
+                        : 'Live'}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="header-refresh h-9 w-9 flex-shrink-0"
+                aria-label="Refresh signals"
+                title="Refresh signals"
+                disabled={query.isFetching}
+                onClick={() => query.refetch()}
+              >
+                <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
+              </Button>
+              <ThemeToggle />
+            </div>
             {user ? (
-              <div className="flex items-center gap-2">
-                <Avatar className="h-8 w-8 border border-border">
-                  <AvatarFallback className="text-[11px] font-semibold">
-                    {(user.email ?? '?').slice(0, 2).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden max-w-[140px] truncate text-xs text-muted-foreground md:inline-block">
-                  {user.email}
-                </span>
-                <Button variant="outline" size="sm" onClick={() => void signOut()}>
-                  Log Out
-                </Button>
-              </div>
+              <>
+                <span className="header-divider" aria-hidden="true" />
+                <div className="header-profile flex items-center gap-1.5">
+                  <Avatar className="header-avatar h-8 w-8 border border-border">
+                    <AvatarFallback className="text-[11px] font-semibold">
+                      {(user.email ?? '?').slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="header-logout h-9 w-9 flex-shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Log out"
+                    title="Log out"
+                    onClick={() => void signOut()}
+                  >
+                    <LogOut size={15} />
+                  </Button>
+                </div>
+              </>
             ) : null}
             <TourGuide onBeforeStart={() => setView('portfolio')} />
           </div>

@@ -196,6 +196,12 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
+.header-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 24px;
+  background: color-mix(in oklch, var(--foreground) 18%, transparent);
+}
 .brand-mark {
   display: flex;
   flex-shrink: 0;
@@ -769,9 +775,6 @@ body {
 @media (max-width: 760px) {
   .page-width {
     padding-inline: 20px;
-  }
-  .terminal-tag {
-    display: none;
   }
   .hero-content {
     padding: 28px 20px 4px;
@@ -1555,7 +1558,7 @@ body {
   background: transparent;
   color: var(--muted-foreground);
   font:
-    600 12.5px 'DM Sans',
+    600 13px 'DM Sans',
     sans-serif;
   white-space: nowrap;
   cursor: pointer;
@@ -1571,6 +1574,12 @@ body {
 }
 .segment-option-active {
   color: var(--foreground);
+}
+/* Dark theme: active tab in pure white for maximum contrast (rule after
+   :hover so it wins while hovering the selected tab). */
+.dark .segment-option-active {
+  color: #fff;
+  text-shadow: 0 0 14px color-mix(in oklch, var(--brand-blue) 40%, transparent);
 }
 .segment-option:focus-visible {
   outline: 2px solid var(--brand-blue);
@@ -1605,8 +1614,64 @@ body {
   .terminal-header .page-width {
     padding-inline: 12px;
   }
+}
+
+/* ===== Header responsive tiers =====
+   The 72px terminal header must fit viewports ≥360px, so it sheds
+   secondary chrome in tiers instead of overflowing. Each tier was
+   measured (CDP) to keep ≥15px of slack: tag ≤840, status + tab icons
+   ≤760, refresh ≤640, wordmark ≤520, compact sizing ≤480. The tour
+   trigger tiers live with the tour styles below (they must override the
+   base .tour-trigger rules). */
+@media (max-width: 840px) {
+  .terminal-tag {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .connection-status {
+    display: none;
+  }
+  .terminal-header .segment-option svg {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  .terminal-header .header-refresh {
+    display: none;
+  }
+}
+@media (max-width: 520px) {
   .brand-wordmark {
     display: none;
+  }
+}
+@media (max-width: 480px) {
+  .terminal-header .page-width {
+    gap: 8px;
+  }
+  .terminal-header .header-actions,
+  .terminal-header .header-utilities {
+    gap: 8px;
+  }
+  .terminal-header .header-divider {
+    display: none;
+  }
+  .terminal-header .header-profile {
+    gap: 4px;
+  }
+  .terminal-header .header-avatar {
+    width: 28px;
+    height: 28px;
+  }
+  .terminal-header .header-logout,
+  .terminal-header .header-theme {
+    width: 32px;
+    height: 32px;
+  }
+  .terminal-header .segment-option {
+    padding: 4px 8px;
+    font-size: 11px;
   }
 }
 
@@ -2196,11 +2261,6 @@ body {
   }
   .holding-edit-actions {
     grid-column: 1 / -1;
-  }
-}
-@media (max-width: 640px) {
-  .connection-status {
-    display: none;
   }
 }
 
@@ -4199,29 +4259,35 @@ body {
 }
 
 /* ===== Onboarding tour ===== */
+/* Primary CTA: solid brand-blue with dark text so it outranks the
+   outline utility buttons in the header. */
 .tour-trigger {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
+  padding: 0 14px;
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: transparent;
-  color: var(--muted-foreground);
+  background: var(--brand-blue);
+  color: var(--primary-foreground);
   font:
-    600 13px 'DM Sans',
+    700 13px 'DM Sans',
     sans-serif;
   cursor: pointer;
+  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 30%, transparent);
   transition:
-    color 0.15s ease-out,
-    border-color 0.15s ease-out,
-    background 0.15s ease-out;
+    background 0.15s ease-out,
+    box-shadow 0.15s ease-out,
+    transform 0.15s ease-out;
 }
 .tour-trigger:hover {
-  color: var(--foreground);
-  border-color: color-mix(in oklch, var(--primary) 60%, transparent);
-  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  background: color-mix(in oklch, var(--brand-blue) 88%, var(--foreground));
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 45%, transparent);
+}
+.tour-trigger:active {
+  transform: scale(0.97);
 }
 .tour-backdrop {
   position: fixed;
@@ -4372,7 +4438,7 @@ body {
 .tour-next:active {
   transform: scale(0.98);
 }
-@media (max-width: 500px) {
+@media (max-width: 760px) {
   .tour-trigger-label {
     display: none;
   }
@@ -4380,6 +4446,12 @@ body {
     width: 36px;
     padding: 0;
     justify-content: center;
+  }
+}
+@media (max-width: 480px) {
+  .tour-trigger {
+    width: 32px;
+    height: 32px;
   }
 }
 

@@ -1,5 +1,6 @@
 import type { Asset } from '@/lib/assets';
 import type { Position } from '@/lib/portfolioManager';
+import { maxDrawdown, sharpeRatio } from '@/lib/risk';
 
 /**
  * Pure, testable backtesting utilities. This module intentionally avoids any
@@ -35,6 +36,10 @@ export interface BacktestResult {
   initialValue: number;
   finalValue: number;
   totalReturnPercent: number;
+  /** Largest peak-to-trough decline of the equity curve (0–100, positive). */
+  maxDrawdownPercent: number;
+  /** Simplified annualized Sharpe ratio of the equity curve (risk-free = 0). */
+  sharpeRatio: number;
 }
 
 const DEFAULT_INITIAL_VALUE = 10000;
@@ -156,5 +161,17 @@ export function computeBacktest({
   const finalValue = lastPoint ? lastPoint.value : initialValue;
   const totalReturnPercent = initialValue > 0 ? (finalValue / initialValue - 1) * 100 : 0;
 
-  return { points, initialValue, finalValue, totalReturnPercent };
+  // Risk metrics over the equity curve — computed here so they ride the same
+  // worker-backed `computeBacktest` request instead of a main-thread pass.
+  const maxDrawdownPercent = maxDrawdown(values) * 100;
+  const sharpe = sharpeRatio(values);
+
+  return {
+    points,
+    initialValue,
+    finalValue,
+    totalReturnPercent,
+    maxDrawdownPercent,
+    sharpeRatio: sharpe,
+  };
 }

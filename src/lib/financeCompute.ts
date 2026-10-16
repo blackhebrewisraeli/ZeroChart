@@ -1,4 +1,4 @@
-import { rsi, sma } from './indicators';
+import { atr, macd, rsi, sma, type MacdResult } from './indicators';
 import {
   computeBacktest,
   type AllocationWeight,
@@ -9,6 +9,8 @@ import {
 export type FinanceRequest =
   | { kind: 'sma'; values: number[]; period: number }
   | { kind: 'rsi'; values: number[]; period: number }
+  | { kind: 'macd'; values: number[]; fast: number; slow: number; signalPeriod: number }
+  | { kind: 'atr'; highs: number[]; lows: number[]; closes: number[]; period: number }
   | {
       kind: 'backtest';
       weights: AllocationWeight[];
@@ -16,7 +18,7 @@ export type FinanceRequest =
       initialValue: number | undefined;
     };
 
-export type FinanceResult = Float64Array | BacktestResult;
+export type FinanceResult = Float64Array | MacdResult | BacktestResult;
 
 /** Dispatches a request to the matching pure core function. */
 export function computeFinance(request: FinanceRequest): FinanceResult {
@@ -25,6 +27,10 @@ export function computeFinance(request: FinanceRequest): FinanceResult {
       return sma(request.values, request.period);
     case 'rsi':
       return rsi(request.values, request.period);
+    case 'macd':
+      return macd(request.values, request.fast, request.slow, request.signalPeriod);
+    case 'atr':
+      return atr(request.highs, request.lows, request.closes, request.period);
     case 'backtest': {
       const options: {
         weights: AllocationWeight[];

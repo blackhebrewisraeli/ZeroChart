@@ -11,9 +11,10 @@ import {
   Shield,
   X,
 } from 'lucide-react';
-import { calculateSignalScore, formatPrice, type Asset } from '@/lib/assets';
+import { formatPrice, type Asset } from '@/lib/assets';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { buildQuantPortfolio } from '@/lib/roboAdvisor';
+import { formatShares } from '@/lib/risk';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
@@ -305,7 +306,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         />
                       </div>
                       <p id="robo-amount-hint" className="robo-hint">
-                        Quant-scored across trend, RSI, and volatility
+                        Multi-factor scored on RSI, MACD momentum, and ATR volatility
                       </p>
                       {error && (
                         <p className="robo-error" role="alert">
@@ -454,13 +455,14 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         </div>
 
                         <p className="robo-results-note">
-                          Equal-weight allocation · signal score ≥ 70 · Swap any holding to replace
-                          it
+                          Multi-Factor Score (RSI · MACD · ATR) · Suggested size risks 2% of capital
+                          at a 1×ATR stop · Swap any holding to replace it
                         </p>
                         <ul className="robo-allocation-list">
                           {result.map((allocation, index) => {
                             const asset = assetByTicker.get(allocation.ticker);
-                            const score = asset ? calculateSignalScore(asset) : null;
+                            const score = allocation.score ?? null;
+                            const shares = allocation.suggestedShares ?? null;
                             return (
                               <li
                                 key={allocation.ticker}
@@ -471,7 +473,10 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                 <div className="robo-asset">
                                   <div className="robo-asset-row">
                                     <span className="robo-ticker">{allocation.ticker}</span>
-                                    <span className={cn('robo-score', scoreTone(score))}>
+                                    <span
+                                      className={cn('robo-score', scoreTone(score))}
+                                      title="Multi-Factor Score — RSI · MACD · ATR"
+                                    >
                                       {score ?? '—'}
                                     </span>
                                   </div>
@@ -483,6 +488,15 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                   </span>
                                   <span className="robo-alloc-amount">
                                     {formatPrice(allocation.allocatedAmount)}
+                                  </span>
+                                  <span
+                                    className="robo-size"
+                                    title="Suggested position size — risks 2% of total capital on a 1×ATR(14) stop"
+                                  >
+                                    <span className="robo-size-label">Suggested size</span>
+                                    <span className="robo-size-value">
+                                      {shares !== null ? `${formatShares(shares)} shares` : '—'}
+                                    </span>
                                   </span>
                                 </div>
                                 <div className="robo-actions">
@@ -547,8 +561,8 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         <Shield size={28} />
                         <h3>No qualifying assets</h3>
                         <p>
-                          No assets in your watchlist currently clear the 70-point signal threshold.
-                          Adjust your inputs or check back later.
+                          No assets in your watchlist currently produce a positive Multi-Factor
+                          signal. Adjust your inputs or check back later.
                         </p>
                       </div>
                     )}

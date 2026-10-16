@@ -11,6 +11,13 @@ import { cn } from '@/lib/utils';
 
 const INITIAL_INVESTMENT = 10000;
 
+/** Tones the simplified Sharpe ratio: ≥1 solid, 0–1 caution, ≤0 poor. */
+function sharpeTone(sharpe: number): string {
+  if (sharpe >= 1) return 'backtest-risk-good';
+  if (sharpe > 0) return 'backtest-risk-caution';
+  return 'backtest-risk-bad';
+}
+
 export function BacktestChart({ positions, assets }: { positions: Position[]; assets: Asset[] }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -118,6 +125,24 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
             <span className="backtest-summary-sub">
               {formatPrice(result.initialValue)} → {formatPrice(result.finalValue)}
             </span>
+          </div>
+
+          <div className="backtest-risk" aria-label="Risk metrics">
+            <div className="backtest-risk-item">
+              <span className="backtest-risk-label">Max Drawdown</span>
+              <span className="backtest-risk-value backtest-risk-bad">
+                {result.maxDrawdownPercent > 0 ? `-${result.maxDrawdownPercent.toFixed(1)}` : '0.0'}
+                %
+              </span>
+              <span className="backtest-risk-sub">Peak-to-trough decline</span>
+            </div>
+            <div className="backtest-risk-item">
+              <span className="backtest-risk-label">Sharpe Ratio</span>
+              <span className={cn('backtest-risk-value', sharpeTone(result.sharpeRatio))}>
+                {result.sharpeRatio.toFixed(2)}
+              </span>
+              <span className="backtest-risk-sub">Annualized, risk-free = 0</span>
+            </div>
           </div>
 
           {result.points.length > 0 ? (

@@ -5,7 +5,8 @@ import {
   computeWithCache,
   type FinanceRequest,
 } from '@/lib/financeCompute';
-import { computeBacktestAsync, rsiAsync, smaAsync } from '@/lib/financeClient';
+import { atrAsync, computeBacktestAsync, macdAsync, rsiAsync, smaAsync } from '@/lib/financeClient';
+import type { MacdResult } from '@/lib/indicators';
 
 // Force the worker-less fallback path for deterministic tests.
 beforeAll(() => {
@@ -30,6 +31,33 @@ describe('computeFinance', () => {
     expect(Number.isNaN(rsiResult[0])).toBe(true);
     expect(rsiResult[3]).toBeCloseTo(80, 5);
     expect(rsiResult[4]).toBeCloseTo(84.6154, 3);
+  });
+
+  it('dispatches MACD and ATR requests to the pure core', () => {
+    const macdResult = computeFinance({
+      kind: 'macd',
+      values: [1, 2, 4, 8, 16, 32, 64, 128],
+      fast: 2,
+      slow: 3,
+      signalPeriod: 2,
+    }) as MacdResult;
+    expect(macdResult.macd).toBeInstanceOf(Float64Array);
+    expect(macdResult.signal).toBeInstanceOf(Float64Array);
+    expect(macdResult.histogram).toBeInstanceOf(Float64Array);
+    expect(macdResult.macd[2]).toBeCloseTo(0.8333333, 6);
+    expect(macdResult.signal[3]).toBeCloseTo(1.0277778, 6);
+    expect(macdResult.histogram[5]).toBeCloseTo(0.8297325, 6);
+
+    const atrResult = computeFinance({
+      kind: 'atr',
+      highs: [10, 12, 13],
+      lows: [8, 9, 11],
+      closes: [9, 11, 12],
+      period: 2,
+    }) as Float64Array;
+    expect(atrResult).toBeInstanceOf(Float64Array);
+    expect(atrResult[1]).toBeCloseTo(2.5, 10);
+    expect(atrResult[2]).toBeCloseTo(2.25, 10);
   });
 });
 
@@ -63,6 +91,13 @@ describe('async worker wrappers (fallback path)', () => {
 
     const rsiResult = await rsiAsync([1, 3, 2, 4, 5], 3);
     expect(rsiResult[4]).toBeCloseTo(84.6154, 3);
+
+    const macdResult = await macdAsync([1, 2, 3, 4, 5, 6, 7, 8], 2, 3, 2);
+    expect(macdResult.macd[2]).toBeCloseTo(0.5, 10);
+    expect(macdResult.signal[3]).toBeCloseTo(0.5, 10);
+
+    const atrResult = await atrAsync([10, 12, 13], [8, 9, 11], [9, 11, 12], 2);
+    expect(atrResult[2]).toBeCloseTo(2.25, 10);
   });
 
   it('resolves backtest results', async () => {

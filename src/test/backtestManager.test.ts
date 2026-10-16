@@ -155,5 +155,29 @@ describe('computeBacktest', () => {
     expect(result.points).toEqual([]);
     expect(result.finalValue).toBe(10000);
     expect(result.totalReturnPercent).toBe(0);
+    expect(result.maxDrawdownPercent).toBe(0);
+    expect(result.sharpeRatio).toBe(0);
+  });
+
+  it('reports max drawdown and an annualized Sharpe ratio for the equity curve', () => {
+    const result = computeBacktest({
+      weights: [{ ticker: 'A', weight: 1 }],
+      series: [
+        {
+          ticker: 'A',
+          points: [
+            { timestamp: 0, price: 100 },
+            { timestamp: 1, price: 120 },
+            { timestamp: 2, price: 60 },
+            { timestamp: 3, price: 90 },
+          ],
+        },
+      ],
+    });
+
+    // Equity 10000 → 12000 → 6000 → 9000: peak 12000, trough 6000 → −50%.
+    expect(result.maxDrawdownPercent).toBeCloseTo(50, 5);
+    // Returns +20%, −50%, +50% → mean 6.67%, σ 41.9%, annualized ≈ 3.04.
+    expect(result.sharpeRatio).toBeCloseTo(3.04, 2);
   });
 });

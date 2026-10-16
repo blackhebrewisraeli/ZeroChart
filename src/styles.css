@@ -1329,6 +1329,27 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+.robo-size {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  margin-top: 3px;
+}
+.robo-size-label {
+  font:
+    600 9px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.robo-size-value {
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  color: var(--foreground);
+}
 .robo-swap {
   grid-area: swap;
   display: inline-flex;
@@ -4581,6 +4602,57 @@ body {
     500 12px 'JetBrains Mono',
     monospace;
   color: var(--muted-foreground);
+}
+.backtest-risk {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.backtest-risk-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.backtest-risk-label {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.backtest-risk-value {
+  font:
+    700 20px 'JetBrains Mono',
+    monospace;
+  letter-spacing: -0.02em;
+}
+.backtest-risk-good {
+  color: var(--signal-green);
+  text-shadow: 0 0 20px color-mix(in oklch, var(--signal-green) 35%, transparent);
+}
+.backtest-risk-caution {
+  color: var(--signal-yellow);
+}
+.backtest-risk-bad {
+  color: var(--signal-red);
+  text-shadow: 0 0 20px color-mix(in oklch, var(--signal-red) 35%, transparent);
+}
+.backtest-risk-sub {
+  font:
+    500 11px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+@media (max-width: 480px) {
+  .backtest-risk {
+    grid-template-columns: 1fr;
+  }
 }
 .backtest-chart {
   position: relative;

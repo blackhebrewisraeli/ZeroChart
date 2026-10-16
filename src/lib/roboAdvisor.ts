@@ -1,103 +1,71 @@
-import { calculateSignalScore, type Asset } from '@/lib/assets';
-import { fetchHistoricalKlines, isBinanceCrypto } from '@/lib/binance';
-import { rsiAsync, smaAsync } from '@/lib/financeClient';
+import type { Asset } from '@/lib/assets';
+import { fetchHistoricalCandles, isBinanceCrypto } from '@/lib/binance';
+import { atrAsync, macdAsync, rsiAsync } from '@/lib/financeClient';
+import type { MacdResult } from '@/lib/indicators';
+import { calculateMultiFactorScore, type MultiFactorInputs } from '@/lib/multiFactor';
+import { recommendPositionSize } from '@/lib/risk';
 import {
   ASSET_COUNT_BY_RISK,
   type Allocation,
   type PortfolioPreferences,
 } from '@/lib/portfolioBuilder';
 
-export interface QuantMetrics {
-  price: number;
-  sma50: number | null;
-  sma200: number | null;
-  rsi14: number | null;
-  volatility: number;
-}
-
-export interface IndicatorBundle {
-  sma50: Float64Array;
-  sma200: Float64Array;
-  rsi14: Float64Array;
-}
-
-export interface QuantDeps {
-  fetchCloses: (ticker: string) => Promise<Float64Array>;
-  computeIndicators: (closes: Float64Array) => Promise<IndicatorBundle>;
-}
-
-const defaultDeps: QuantDeps = {
-  fetchCloses: async (ticker) => {
-    const klines = await fetchHistoricalKlines(ticker, '1d', 200);
-    return Float64Array.from(klines.map((kline) => kline.close));
-  },
-  computeIndicators: async (closes) => {
-    const values = Array.from(closes);
-    const [sma50, sma200, rsi14] = await Promise.all([
-      smaAsync(values, 50),
-      smaAsync(values, 200),
-      rsiAsync(values, 14),
-    ]);
-    return { sma50, sma200, rsi14 };
-  },
-};
-
-/** Standard deviation of period-over-period returns (a fraction). */
-export function computeVolatility(closes: Float64Array): number {
-  if (closes.length < 2) return 0;
-
-  const returns: number[] = [];
-  for (let i = 1; i < closes.length; i += 1) {
-    const previous = closes[i - 1];
-    const current = closes[i];
-    if (previous === undefined || current === undefined || previous <= 0) continue;
-    returns.push((current - previous) / previous);
-  }
-  if (returns.length === 0) return 0;
-
-  const mean = returns.reduce((sum, value) => sum + value, 0) / returns.length;
-  const variance =
-    returns.reduce((sum, value) => sum + (value - mean) * (value - mean), 0) / returns.length;
-  return Math.sqrt(variance);
+/** OHLC-derived series for one asset, fetched in a single request. */
+export interface HistoryData {
+  closes: Float64Array;
+  highs: Float64Array;
+  lows: Float64Array;
 }
 
 /**
- * Scores an asset 0-100 from trend alignment, RSI zone, and inverse volatility.
- * Higher = a larger slice of the final portfolio.
+ * Worker-backed indicator bundle for the Multi-Factor Score. `macd` and
+ * `atr14` are optional so injected test deps can supply a partial bundle —
+ * missing series fall back to the static asset-table proxies.
  */
-export function calculateAssetScore(metrics: QuantMetrics): number {
-  const { price, sma50, sma200, rsi14, volatility } = metrics;
-  let score = 0;
-
-  const validSma50 = sma50 !== null && Number.isFinite(sma50) && sma50 > 0;
-  const validSma200 = sma200 !== null && Number.isFinite(sma200) && sma200 > 0;
-  const aboveSma50 = validSma50 && price > sma50;
-  const sma50AboveSma200 = validSma50 && validSma200 && sma50 > sma200;
-
-  // Trend alignment (0..40).
-  if (aboveSma50) score += 20;
-  if (sma50AboveSma200) score += 20;
-
-  // RSI zones.
-  if (rsi14 !== null && Number.isFinite(rsi14)) {
-    if (rsi14 > 70) {
-      score -= 15; // overbought
-    } else if (rsi14 >= 40 && rsi14 <= 60) {
-      score += aboveSma50 ? 30 : 15; // healthy zone; extra reward in an uptrend
-    } else if (rsi14 < 30) {
-      score += 5; // oversold
-    }
-  }
-
-  // Inverse volatility (0..30): erratic assets are penalized.
-  if (Number.isFinite(volatility) && volatility > 0) {
-    score += 30 / (1 + volatility * 100);
-  }
-
-  return Math.min(100, Math.max(0, Math.round(score)));
+export interface IndicatorBundle {
+  rsi14: Float64Array;
+  macd?: MacdResult;
+  atr14?: Float64Array;
 }
 
-function lastFinite(series: Float64Array): number | null {
+export interface QuantDeps {
+  fetchHistory: (ticker: string) => Promise<HistoryData>;
+  computeIndicators: (history: HistoryData) => Promise<IndicatorBundle>;
+}
+
+const EMPTY_HISTORY: HistoryData = {
+  closes: new Float64Array(0),
+  highs: new Float64Array(0),
+  lows: new Float64Array(0),
+};
+
+const defaultDeps: QuantDeps = {
+  fetchHistory: async (ticker) => {
+    const candles = await fetchHistoricalCandles(ticker, '1d', 200);
+    if (candles.length === 0) return EMPTY_HISTORY;
+    return {
+      closes: Float64Array.from(candles.map((candle) => candle.close)),
+      highs: Float64Array.from(candles.map((candle) => candle.high)),
+      lows: Float64Array.from(candles.map((candle) => candle.low)),
+    };
+  },
+  computeIndicators: async (history) => {
+    const closes = Array.from(history.closes);
+    const highs = Array.from(history.highs);
+    const lows = Array.from(history.lows);
+    // All heavy math runs in the finance Web Worker (cached per input series).
+    const [rsi14, macdSeries, atrSeries] = await Promise.all([
+      rsiAsync(closes, 14),
+      macdAsync(closes, 12, 26, 9),
+      atrAsync(highs, lows, closes, 14),
+    ]);
+    return { rsi14, macd: macdSeries, atr14: atrSeries };
+  },
+};
+
+/** Last defined value of a warm-up-padded indicator series, if any. */
+function lastFinite(series: Float64Array | undefined): number | null {
+  if (!series) return null;
   for (let i = series.length - 1; i >= 0; i -= 1) {
     const value = series[i];
     if (value !== undefined && Number.isFinite(value)) return value;
@@ -105,44 +73,100 @@ function lastFinite(series: Float64Array): number | null {
   return null;
 }
 
-async function scoreAsset(asset: Asset, deps: QuantDeps): Promise<{ asset: Asset; score: number }> {
-  if (!isBinanceCrypto(asset.ticker)) {
-    // No Binance history for stocks/forex — fall back to the static signal.
-    return { asset, score: calculateSignalScore(asset) };
-  }
+/** A valid positive live price for the asset, if the provider gave us one. */
+function validPrice(asset: Asset): number | null {
+  const price = asset.current_price;
+  if (price !== null && Number.isFinite(price) && price > 0) return price;
+  return null;
+}
+
+/**
+ * Static ATR proxy when no candle history exists: price × |provider risk %|.
+ * The provider column `risk_pct` is signed in the wild (about half the live
+ * rows are negative), but volatility is a magnitude — taking the absolute
+ * value lets every priced asset with risk data still be sized. Zero (or
+ * missing) magnitude cannot size a trade, so it reports null.
+ */
+function atrProxy(asset: Asset, price: number | null): number | null {
+  const risk = asset.risk_pct;
+  if (price === null || risk === null || !Number.isFinite(risk)) return null;
+  const magnitude = Math.abs(risk);
+  return magnitude > 0 ? price * magnitude : null;
+}
+
+/** Multi-factor inputs derived from the static asset table (no history). */
+function staticInputs(asset: Asset): MultiFactorInputs {
+  const finite = (value: number | null) =>
+    value !== null && Number.isFinite(value) ? value : null;
+  return {
+    rsi: finite(asset.rsi_14),
+    momentumPercent: finite(asset.change_24h),
+    // Signed provider risk → unsigned volatility magnitude (see atrProxy).
+    volatilityPercent:
+      asset.risk_pct !== null && Number.isFinite(asset.risk_pct) ? Math.abs(asset.risk_pct) : null,
+  };
+}
+
+interface ScoredAsset {
+  asset: Asset;
+  score: number;
+  /** Resolved price (live or last close) used for sizing; null when unknown. */
+  price: number | null;
+  /** ATR(14) in price units — real for crypto, a risk-% proxy otherwise. */
+  atr: number | null;
+}
+
+function staticScore(asset: Asset): ScoredAsset {
+  const price = validPrice(asset);
+  return {
+    asset,
+    score: calculateMultiFactorScore(staticInputs(asset)),
+    price,
+    atr: atrProxy(asset, price),
+  };
+}
+
+/**
+ * Scores one asset with the Multi-Factor model (RSI · MACD · ATR regime).
+ * Crypto history is fetched once as OHLC and the indicator math runs in the
+ * finance Web Worker; stocks/forex (and fetch failures) fall back to the
+ * static asset-table proxies for the same three factors.
+ */
+async function scoreAsset(asset: Asset, deps: QuantDeps): Promise<ScoredAsset> {
+  if (!isBinanceCrypto(asset.ticker)) return staticScore(asset);
 
   try {
-    const closes = await deps.fetchCloses(asset.ticker);
-    if (closes.length < 2) return { asset, score: calculateSignalScore(asset) };
+    const history = await deps.fetchHistory(asset.ticker);
+    if (history.closes.length < 2) return staticScore(asset);
 
-    const { sma50, sma200, rsi14 } = await deps.computeIndicators(closes);
-    const lastClose = closes[closes.length - 1];
-    const price =
-      asset.current_price !== null &&
-      Number.isFinite(asset.current_price) &&
-      asset.current_price > 0
-        ? asset.current_price
-        : (lastClose ?? 0);
+    const bundle = await deps.computeIndicators(history);
+    const price = validPrice(asset) ?? lastFinite(history.closes);
+    const atr = lastFinite(bundle.atr14) ?? atrProxy(asset, price);
+    const statics = staticInputs(asset);
+    const histogram = lastFinite(bundle.macd?.histogram);
 
-    return {
-      asset,
-      score: calculateAssetScore({
-        price,
-        sma50: lastFinite(sma50),
-        sma200: lastFinite(sma200),
-        rsi14: lastFinite(rsi14),
-        volatility: computeVolatility(closes),
-      }),
+    const inputs: MultiFactorInputs = {
+      rsi: lastFinite(bundle.rsi14) ?? statics.rsi,
+      momentumPercent:
+        histogram !== null && price !== null && price > 0
+          ? histogram / price
+          : statics.momentumPercent,
+      volatilityPercent:
+        atr !== null && price !== null && price > 0 ? atr / price : statics.volatilityPercent,
     };
+
+    return { asset, score: calculateMultiFactorScore(inputs), price, atr };
   } catch {
-    return { asset, score: calculateSignalScore(asset) };
+    return staticScore(asset);
   }
 }
 
 /**
- * Builds a portfolio by fetching each crypto asset's history, computing SMA/RSI
- * in the Web Worker, scoring each asset quantitatively, and allocating capital
- * proportionally to the normalized scores.
+ * Builds a portfolio by fetching each crypto asset's OHLC history, computing
+ * RSI/MACD/ATR in the Web Worker, scoring every candidate with the
+ * Multi-Factor model, allocating capital proportionally to the normalized
+ * scores, and attaching an ATR-based suggested position size that risks
+ * exactly 2% of the requested capital.
  */
 export async function buildQuantPortfolio(
   options: {
@@ -166,10 +190,21 @@ export async function buildQuantPortfolio(
   if (qualified.length === 0) return [];
 
   const totalScore = qualified.reduce((sum, item) => sum + item.score, 0);
+  const capital = preferences.totalCapital;
 
-  return qualified.map(({ asset, score }) => {
+  return qualified.map(({ asset, score, price, atr }) => {
     const weight = score / totalScore;
-    const allocatedAmount = Number((preferences.totalCapital * weight).toFixed(2));
-    return { ticker: asset.ticker, weight, allocatedAmount };
+    const allocatedAmount = Number((capital * weight).toFixed(2));
+    const sizing =
+      price !== null && atr !== null && atr > 0
+        ? recommendPositionSize({ capital, price, atr })
+        : null;
+    return {
+      ticker: asset.ticker,
+      weight,
+      allocatedAmount,
+      score,
+      suggestedShares: sizing ? sizing.shares : null,
+    };
   });
 }

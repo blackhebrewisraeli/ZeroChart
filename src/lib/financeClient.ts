@@ -1,4 +1,5 @@
 import { computeFinance, type FinanceRequest, type FinanceResult } from './financeCompute';
+import type { MacdResult } from './indicators';
 import type { AllocationWeight, AssetPriceSeries, BacktestResult } from './backtestManager';
 
 let worker: Worker | null | undefined;
@@ -54,6 +55,26 @@ export function smaAsync(values: number[], period: number): Promise<Float64Array
 /** Async, worker-backed RSI (cached in the worker). */
 export function rsiAsync(values: number[], period = 14): Promise<Float64Array> {
   return request<Float64Array>({ kind: 'rsi', values, period });
+}
+
+/** Async, worker-backed MACD (cached in the worker). */
+export function macdAsync(
+  values: number[],
+  fast = 12,
+  slow = 26,
+  signalPeriod = 9,
+): Promise<MacdResult> {
+  return request<MacdResult>({ kind: 'macd', values, fast, slow, signalPeriod });
+}
+
+/** Async, worker-backed ATR (cached in the worker). */
+export function atrAsync(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 14,
+): Promise<Float64Array> {
+  return request<Float64Array>({ kind: 'atr', highs, lows, closes, period });
 }
 
 /** Async, worker-backed backtest (cached in the worker). */

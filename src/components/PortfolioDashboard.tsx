@@ -32,7 +32,7 @@ import {
 } from '@/lib/livePriceStore';
 import { assetFreshness } from '@/lib/freshness';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
-import { PortfolioNotHydratedError, savePortfolio } from '@/lib/db';
+import { PortfolioNotHydratedError, savePortfolioStateV3 } from '@/lib/db';
 import { useHydrationState } from '@/lib/hydrationStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { AuthModal } from '@/components/AuthModal';
@@ -369,8 +369,16 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   const [authOpen, setAuthOpen] = useState(false);
   const [cashAmount, setCashAmount] = useState('');
   const { user } = useAuth();
-  const { positions, removePosition, updatePosition, cashBalance, depositCash, withdrawCash } =
-    usePortfolio();
+  const {
+    positions,
+    removePosition,
+    updatePosition,
+    cashBalance,
+    depositCash,
+    withdrawCash,
+    activePortfolioType,
+    portfolios,
+  } = usePortfolio();
   const hydration = useHydrationState();
 
   // Cloud saves stay disabled until this user's cloud hydration settled —
@@ -455,7 +463,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       return;
     }
     try {
-      await savePortfolio(user.id, positions);
+      // Full v3 envelope: the legacy array would drop cash, ledgers and paper state.
+      await savePortfolioStateV3(user.id, { version: 3, activePortfolioType, portfolios });
       toast.success('Portfolio saved to cloud');
     } catch (error) {
       if (error instanceof PortfolioNotHydratedError) {

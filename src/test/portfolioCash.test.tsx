@@ -76,7 +76,7 @@ describe('cash ledger (M1-T3, F-1.3a)', () => {
     expect(screen.getByTestId('cash')).toHaveTextContent('0.00');
   });
 
-  it('persists the v2 scope payload and restores cash across scope switches', async () => {
+  it('persists the v3 scope payload and restores cash across scope switches', async () => {
     renderStore();
 
     act(() => {
@@ -91,7 +91,8 @@ describe('cash ledger (M1-T3, F-1.3a)', () => {
 
     await waitFor(() => expect(screen.getByTestId('cash')).toHaveTextContent('3000.00'));
     const raw = window.localStorage.getItem('zerochart:portfolio-positions');
-    expect(raw).toContain('"version":2');
+    expect(raw).toContain('"version":3');
+    expect(raw).toContain('"paper_trading"');
     expect(raw).toContain('"cashBalance":3000');
   });
 

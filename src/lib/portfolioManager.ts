@@ -1,13 +1,7 @@
 import { calculateSignalScore, type Asset } from '@/lib/assets';
+import type { Position } from '@/lib/portfolioAccounting';
 
-export interface Position {
-  id: string;
-  ticker: string;
-  buyPrice: number;
-  shares: number;
-  isSimulation: boolean;
-  dateAdded: string;
-}
+export type { Position } from '@/lib/portfolioAccounting';
 
 export interface PortfolioStats {
   totalValue: number;

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Position } from '@/lib/portfolioManager';
+import type { PortfolioStateV3 } from '@/lib/portfolioStore';
 
 const dbMocks = vi.hoisted(() => {
   const from = vi.fn();
@@ -14,7 +15,7 @@ vi.mock('@/lib/supabaseClient', () => ({
   supabase: { from: dbMocks.from },
 }));
 
-import { loadPortfolio, savePortfolio } from '@/lib/db';
+import { loadPortfolio, loadPortfolioState, savePortfolio, savePortfolioStateV3 } from '@/lib/db';
 
 const positions: Position[] = [
   {
@@ -34,6 +35,37 @@ const positions: Position[] = [
     dateAdded: '2026-01-02',
   },
 ];
+
+const stateV3: PortfolioStateV3 = {
+  version: 3,
+  activePortfolioType: 'paper_trading',
+  portfolios: {
+    real_tracking: {
+      type: 'real_tracking',
+      positions: [],
+      cashBalance: 500,
+      cashLedger: [],
+      transactions: [],
+      realizedPnl: 0,
+    },
+    long_term_sim: {
+      type: 'long_term_sim',
+      positions: [],
+      cashBalance: 0,
+      cashLedger: [],
+      transactions: [],
+      realizedPnl: 0,
+    },
+    paper_trading: {
+      type: 'paper_trading',
+      positions,
+      cashBalance: 9_000,
+      cashLedger: [],
+      transactions: [],
+      realizedPnl: 25,
+    },
+  },
+};
 
 function setupChain() {
   dbMocks.from.mockReturnValue({ upsert: dbMocks.upsert, select: dbMocks.select });
@@ -69,6 +101,17 @@ describe('savePortfolio', () => {
 
     await expect(savePortfolio('user-1', positions)).rejects.toEqual({ message: 'boom' });
   });
+
+  it('persists a v3 multi-portfolio envelope without changing the legacy array API', async () => {
+    dbMocks.upsert.mockResolvedValue({ error: null });
+
+    await savePortfolioStateV3('user-1', stateV3);
+
+    expect(dbMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'user-1', positions: stateV3 }),
+      { onConflict: 'user_id' },
+    );
+  });
 });
 
 describe('loadPortfolio', () => {
@@ -91,5 +134,12 @@ describe('loadPortfolio', () => {
     dbMocks.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } });
 
     await expect(loadPortfolio('user-1')).rejects.toEqual({ message: 'boom' });
+  });
+
+  it('loads either a legacy array or a v3 envelope through the state API', async () => {
+    dbMocks.maybeSingle.mockResolvedValue({ data: { positions: stateV3 }, error: null });
+
+    await expect(loadPortfolio('user-1')).resolves.toEqual(stateV3);
+    await expect(loadPortfolioState('user-1')).resolves.toEqual(stateV3);
   });
 });

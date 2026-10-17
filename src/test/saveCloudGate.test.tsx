@@ -6,7 +6,7 @@ const harness = vi.hoisted(() => ({
   authCallbacks: [] as Array<(event: string, session: unknown) => void>,
   getSession: vi.fn(),
   loadPortfolio: vi.fn(),
-  savePortfolio: vi.fn(),
+  savePortfolioStateV3: vi.fn(),
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
@@ -24,7 +24,7 @@ vi.mock('@/lib/supabaseClient', () => ({
 
 vi.mock('@/lib/db', () => ({
   loadPortfolio: harness.loadPortfolio,
-  savePortfolio: harness.savePortfolio,
+  savePortfolioStateV3: harness.savePortfolioStateV3,
   PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
 }));
 
@@ -62,7 +62,7 @@ describe('Save to Cloud hydration gate (M1-T1, F-4.1b)', () => {
   it('disables the save button until hydration settles, then saves', async () => {
     const load = deferred<Position[] | null>();
     harness.loadPortfolio.mockReturnValue(load.promise);
-    harness.savePortfolio.mockResolvedValue(undefined);
+    harness.savePortfolioStateV3.mockResolvedValue(undefined);
 
     render(
       <PortfolioProvider>
@@ -77,7 +77,7 @@ describe('Save to Cloud hydration gate (M1-T1, F-4.1b)', () => {
     // Hydration in flight: the button is disabled and the write is impossible.
     await waitFor(() => expect(saveButton).toBeDisabled());
     fireEvent.click(saveButton);
-    expect(harness.savePortfolio).not.toHaveBeenCalled();
+    expect(harness.savePortfolioStateV3).not.toHaveBeenCalled();
 
     // Cloud row resolves as an explicit empty portfolio — hydration settles.
     await act(async () => {
@@ -86,6 +86,16 @@ describe('Save to Cloud hydration gate (M1-T1, F-4.1b)', () => {
     await waitFor(() => expect(saveButton).toBeEnabled());
 
     fireEvent.click(saveButton);
-    await waitFor(() => expect(harness.savePortfolio).toHaveBeenCalledWith('user-a', []));
+    await waitFor(() =>
+      expect(harness.savePortfolioStateV3).toHaveBeenCalledWith(
+        'user-a',
+        expect.objectContaining({
+          version: 3,
+          portfolios: expect.objectContaining({
+            paper_trading: expect.objectContaining({ cashBalance: 10_000 }),
+          }),
+        }),
+      ),
+    );
   });
 });

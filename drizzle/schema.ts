@@ -66,6 +66,9 @@ export const userPortfolios = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').notNull(), // REFERENCES auth.users(id) — see 0002 migration
+    // Backward-compatible snapshot column: legacy Position[] rows and the
+    // M2-T1 `{ version: 3, activePortfolioType, portfolios }` envelope share
+    // this JSONB boundary until normalized portfolio tables are introduced.
     positions: jsonb('positions')
       .notNull()
       .default(sql`'[]'::jsonb`),

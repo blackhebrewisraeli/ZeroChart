@@ -1,10 +1,17 @@
 import type { Asset } from '@/lib/assets';
+import { computeBacktest, deriveWeights, type AssetPriceSeries } from '@/lib/backtestManager';
+import { fetchHistoricalKlines, isBinanceCrypto } from '@/lib/binance';
 import { computeMultiFactorBreakdown, type MarketRegime } from '@/lib/multiFactor';
 import type { Position } from '@/lib/portfolioManager';
 import { supabase } from '@/lib/supabaseClient';
 import type { Json } from '@/integrations/supabase/types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Market benchmark for shared-portfolio alpha (buy-and-hold over the same window). */
+const SHARED_BENCHMARK_TICKER = 'BTC';
+const MAX_LOOKBACK_DAYS = 365;
+const DAY_MS = 86_400_000;
 
 // Percentage-only by design: no field here may carry an absolute amount
 // (balances, cost basis, P&L in dollars, share counts). Percentages are
@@ -18,8 +25,15 @@ export interface SharedPortfolioHolding {
   regime: MarketRegime;
 }
 
-export interface SharedPortfolioSnapshot {
-  version: 2;
+export interface SharedPortfolioRisk {
+  /** Peak-to-trough decline (0–100) of the allocation-weighted curve over the lookback. */
+  maxDrawdownPercent: number | null;
+  /** Lookback return minus BTC buy-and-hold over the same window, in percentage points. */
+  alphaPercent: number | null;
+}
+
+export interface SharedPortfolioSnapshot extends SharedPortfolioRisk {
+  version: 3;
   createdAt: string;
   pnlPercent: number;
   quantScore: number;
@@ -53,17 +67,77 @@ export function createSharedPortfolioId(): string {
   return crypto.randomUUID();
 }
 
+const NO_RISK: SharedPortfolioRisk = { maxDrawdownPercent: null, alphaPercent: null };
+
+async function fetchDailySeries(ticker: string, days: number): Promise<AssetPriceSeries> {
+  const klines = await fetchHistoricalKlines(ticker, '1d', days);
+  return {
+    ticker,
+    points: klines.map((kline) => ({ timestamp: kline.timestamp, price: kline.close })),
+  };
+}
+
+/**
+ * Replays the current allocation over daily history since the earliest
+ * position (capped at a year) with the backtest engine, and reports its max
+ * drawdown and its return in excess of BTC buy-and-hold. Any missing history
+ * yields nulls rather than a curve diluted by a cash sleeve, and a failed
+ * fetch never blocks the share.
+ */
+async function computeSharedPortfolioRisk(
+  positions: Position[],
+  assets: Asset[],
+  createdAt: string,
+): Promise<SharedPortfolioRisk> {
+  const weights = deriveWeights(positions, assets);
+  if (weights.length === 0 || !weights.every((item) => isBinanceCrypto(item.ticker))) {
+    return NO_RISK;
+  }
+
+  const start = Math.min(
+    ...positions.map((position) => Date.parse(position.dateAdded)).filter(Number.isFinite),
+  );
+  const elapsedDays = Math.ceil((Date.parse(createdAt) - start) / DAY_MS) + 1;
+  const days = Number.isFinite(elapsedDays)
+    ? Math.min(MAX_LOOKBACK_DAYS, Math.max(2, elapsedDays))
+    : MAX_LOOKBACK_DAYS;
+
+  try {
+    const [series, benchmarkSeries] = await Promise.all([
+      Promise.all(weights.map((item) => fetchDailySeries(item.ticker, days))),
+      fetchDailySeries(SHARED_BENCHMARK_TICKER, days),
+    ]);
+    const portfolio = computeBacktest({ weights, series });
+    if (portfolio.coverage.some((entry) => entry.status === 'missing')) return NO_RISK;
+
+    const benchmark = computeBacktest({
+      weights: [{ ticker: SHARED_BENCHMARK_TICKER, weight: 1 }],
+      series: [benchmarkSeries],
+    });
+    return {
+      maxDrawdownPercent: portfolio.maxDrawdownPercent,
+      alphaPercent:
+        benchmark.coverageWeight > 0
+          ? portfolio.totalReturnPercent - benchmark.totalReturnPercent
+          : null,
+    };
+  } catch {
+    return NO_RISK;
+  }
+}
+
 /**
  * Creates an immutable, percentage-only public snapshot: allocation weights,
- * returns, and quant scores. Dollar values are used to compute the weights
- * and returns, then dropped — user identity, balances, cost basis, absolute
- * P&L, share counts, cash, and trades never leave the device.
+ * returns, max drawdown, alpha, and quant scores. Dollar values are used to
+ * compute the weights and returns, then dropped — user identity, balances,
+ * cost basis, absolute P&L, share counts, cash, and trades never leave the
+ * device.
  */
-export function buildSharedPortfolioSnapshot(
+export async function buildSharedPortfolioSnapshot(
   positions: Position[],
   assets: Asset[],
   createdAt = new Date().toISOString(),
-): SharedPortfolioSnapshot {
+): Promise<SharedPortfolioSnapshot> {
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker, asset]));
   const grouped = new Map<string, { value: number; invested: number }>();
 
@@ -113,10 +187,11 @@ export function buildSharedPortfolioSnapshot(
       : 0;
 
   return {
-    version: 2,
+    version: 3,
     createdAt,
     pnlPercent: totalInvested > 0 ? ((totalValue - totalInvested) / totalInvested) * 100 : 0,
     quantScore,
+    ...(await computeSharedPortfolioRisk(positions, assets, createdAt)),
     holdings,
   };
 }
@@ -142,13 +217,16 @@ export async function publishSharedPortfolio({
 /**
  * Validates a stored snapshot and rebuilds it from whitelisted fields only, so
  * nothing outside the percentage-only contract (e.g. an injected dollar field)
- * can reach the public view.
+ * can reach the public view. Version 2 snapshots predate drawdown and alpha
+ * and read back as version 3 with those fields null.
  */
 export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const candidate = value as Partial<SharedPortfolioSnapshot>;
+  const candidate = value as Partial<Omit<SharedPortfolioSnapshot, 'version'>> & {
+    version?: unknown;
+  };
   if (
-    candidate.version !== 2 ||
+    (candidate.version !== 2 && candidate.version !== 3) ||
     typeof candidate.createdAt !== 'string' ||
     !finite(candidate.pnlPercent) ||
     !finite(candidate.quantScore) ||
@@ -185,10 +263,12 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
   }
 
   return {
-    version: 2,
+    version: 3,
     createdAt: candidate.createdAt,
     pnlPercent: candidate.pnlPercent,
     quantScore: candidate.quantScore,
+    maxDrawdownPercent: finiteOrNull(candidate.maxDrawdownPercent),
+    alphaPercent: finiteOrNull(candidate.alphaPercent),
     holdings,
   };
 }

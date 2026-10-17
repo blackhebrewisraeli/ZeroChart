@@ -14,4 +14,12 @@ describe('App routing', () => {
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
+
+  it('matches the public shared portfolio route without an auth-only route wrapper', () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+
+    const matches = router.matchRoutes('/p/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
+    expect(matches.at(-1)?.routeId).toBe('/p/$portfolioId');
+  });
 });

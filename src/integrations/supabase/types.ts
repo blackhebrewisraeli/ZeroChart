@@ -59,6 +59,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      shared_portfolios: {
+        Row: {
+          created_at: string;
+          id: string;
+          snapshot: Json;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          snapshot: Json;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          snapshot?: Json;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       // M1-T1 (F-3.1b): typed tables so `db.ts` / `priceAlerts.ts` queries are
       // strictly typed instead of relying on manual row casts. Mirrors the
       // idempotent baseline migration `0002_reconcile_schema_baseline.sql`.
@@ -121,7 +142,14 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      get_shared_portfolio: {
+        Args: { share_id: string };
+        Returns: {
+          created_at: string;
+          id: string;
+          snapshot: Json;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

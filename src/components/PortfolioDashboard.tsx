@@ -17,7 +17,6 @@ import { toast } from 'sonner';
 import { calculateSignalScore, formatPrice, generateTrendData, type Asset } from '@/lib/assets';
 import {
   calculatePortfolioStats,
-  generateShareText,
   generateSuggestions,
   type Position,
   type Suggestion,
@@ -47,6 +46,11 @@ import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
 import { isBinanceCrypto, toBinanceSymbol } from '@/lib/binance';
 import { getBrokerUrl } from '@/lib/tradeRouter';
+import {
+  buildSharedPortfolioSnapshot,
+  createSharedPortfolioId,
+  publishSharedPortfolio,
+} from '@/lib/sharedPortfolio';
 
 type PortfolioMode = 'simulation' | 'live';
 
@@ -367,6 +371,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
 }) {
   const [mode, setMode] = useState<PortfolioMode>('simulation');
   const [authOpen, setAuthOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [cashAmount, setCashAmount] = useState('');
   const { user } = useAuth();
   const {
@@ -418,23 +423,38 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     : undefined;
 
   async function handleShare() {
-    const text = generateShareText(visible, assets);
-
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: 'My ZeroChart Portfolio', text });
-        return;
-      } catch (error) {
-        // The user dismissed the native share sheet — nothing to fall back to.
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-      }
+    if (!user) {
+      setAuthOpen(true);
+      toast.info('Sign in to create a public portfolio link.');
+      return;
     }
 
+    setSharing(true);
+    const id = createSharedPortfolioId();
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success('Copied to clipboard!');
+      await publishSharedPortfolio({
+        id,
+        userId: user.id,
+        snapshot: buildSharedPortfolioSnapshot(visible, assets),
+      });
     } catch {
-      toast.error("Couldn't copy to clipboard");
+      toast.error("Couldn't create a public link. Please try again.");
+      return;
+    } finally {
+      setSharing(false);
+    }
+
+    const publicUrl = new URL(`/p/${id}`, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      toast.success('Public link copied to clipboard!');
+    } catch {
+      // Safari drops clipboard access once the publish request has been awaited.
+      // The link exists, so offer it with a Copy button (a fresh user gesture).
+      toast.success('Public link created', {
+        description: publicUrl,
+        action: { label: 'Copy', onClick: () => void navigator.clipboard.writeText(publicUrl) },
+      });
     }
   }
 
@@ -486,9 +506,14 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {topAsset && <TradeTicket asset={topAsset} variant="compact" />}
-          <button type="button" className="share-portfolio-button" onClick={handleShare}>
+          <button
+            type="button"
+            className="share-portfolio-button"
+            onClick={handleShare}
+            disabled={sharing}
+          >
             <Share2 size={15} />
-            Share Portfolio
+            {sharing ? 'Creating link…' : 'Share Portfolio'}
           </button>
           <button
             type="button"

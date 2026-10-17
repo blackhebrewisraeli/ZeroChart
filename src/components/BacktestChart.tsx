@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import type { UTCTimestamp } from 'lightweight-charts';
-import { History, Loader2 } from 'lucide-react';
+import { History, Loader2, LockKeyhole } from 'lucide-react';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { ValueAreaChart, type ValuePoint } from '@/components/LightweightChart';
+import { PricingModal } from '@/components/PricingModal';
 import { fetchHistoricalCandles, isBinanceCrypto } from '@/lib/binance';
 import {
   REALISTIC_FRICTION,
@@ -12,6 +13,7 @@ import {
   type BacktestResult,
 } from '@/lib/backtestManager';
 import { computeBacktestAsync } from '@/lib/financeClient';
+import { useAuth } from '@/lib/authStore';
 import type { Position } from '@/lib/portfolioManager';
 import { cn } from '@/lib/utils';
 
@@ -54,11 +56,13 @@ function sharpeTone(sharpe: number): string {
 }
 
 export function BacktestChart({ positions, assets }: { positions: Position[]; assets: Asset[] }) {
+  const { isPro } = useAuth();
+  const [pricingOpen, setPricingOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [failedTickers, setFailedTickers] = useState<string[]>([]);
-  const [settings, setSettings] = useState<Settings>({ friction: true, stopMode: 'off' });
+  const [settings, setSettings] = useState<Settings>({ friction: isPro, stopMode: 'off' });
   // Latest settings for a fetch that finishes after the user changed a control.
   const settingsRef = useRef(settings);
   // Last fetched history, so toggling a control re-runs without refetching.
@@ -197,32 +201,60 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
       )}
 
       <div className="backtest-controls" aria-label="Simulation settings">
-        <label className="backtest-control">
-          Realistic Friction
-          <input
-            type="checkbox"
-            role="switch"
-            className="backtest-toggle"
-            checked={settings.friction}
-            onChange={(event) => changeSettings({ ...settings, friction: event.target.checked })}
-          />
-        </label>
-        <label className="backtest-control">
-          Trailing Stop
-          <select
-            className="backtest-select"
-            value={settings.stopMode}
-            onChange={(event) =>
-              changeSettings({ ...settings, stopMode: event.target.value as StopMode })
-            }
-          >
-            {(Object.keys(STOP_OPTIONS) as StopMode[]).map((mode) => (
-              <option key={mode} value={mode}>
-                {STOP_OPTIONS[mode].label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="backtest-control-row">
+          <label className={cn('backtest-control', !isPro && 'is-locked')}>
+            Realistic Friction
+            <input
+              type="checkbox"
+              role="switch"
+              className="backtest-toggle"
+              checked={settings.friction}
+              disabled={!isPro}
+              onChange={(event) => changeSettings({ ...settings, friction: event.target.checked })}
+            />
+          </label>
+          {!isPro && (
+            <button
+              type="button"
+              className="backtest-pro-lock"
+              onClick={() => setPricingOpen(true)}
+              aria-label="Unlock Realistic Friction with Pro"
+              title="Pro feature"
+            >
+              <LockKeyhole size={13} />
+            </button>
+          )}
+        </div>
+        <div className="backtest-control-row">
+          <label className={cn('backtest-control', !isPro && 'is-locked')}>
+            Trailing Stop
+            <select
+              className="backtest-select"
+              value={settings.stopMode}
+              disabled={!isPro}
+              onChange={(event) =>
+                changeSettings({ ...settings, stopMode: event.target.value as StopMode })
+              }
+            >
+              {(Object.keys(STOP_OPTIONS) as StopMode[]).map((mode) => (
+                <option key={mode} value={mode}>
+                  {STOP_OPTIONS[mode].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!isPro && (
+            <button
+              type="button"
+              className="backtest-pro-lock"
+              onClick={() => setPricingOpen(true)}
+              aria-label="Unlock Trailing Stop with Pro"
+              title="Pro feature"
+            >
+              <LockKeyhole size={13} />
+            </button>
+          )}
+        </div>
       </div>
       <p className="backtest-note">
         {settings.friction
@@ -324,6 +356,8 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
             : 'Add positions to run a historical simulation.'}
         </div>
       )}
+
+      <PricingModal open={pricingOpen} onOpenChange={setPricingOpen} />
     </div>
   );
 }

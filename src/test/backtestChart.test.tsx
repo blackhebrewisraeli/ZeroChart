@@ -7,6 +7,12 @@ import { fetchHistoricalCandles } from '@/lib/binance';
 import { computeBacktestAsync } from '@/lib/financeClient';
 import type { Position } from '@/lib/portfolioManager';
 
+const authState = vi.hoisted(() => ({ isPro: true }));
+
+vi.mock('@/lib/authStore', () => ({
+  useAuth: () => authState,
+}));
+
 // Keep the test hermetic: no canvas charts, no Binance network, no worker.
 vi.mock('@/components/LightweightChart', () => ({
   ValueAreaChart: () => <div data-testid="value-area-chart" />,
@@ -48,6 +54,7 @@ vi.mock('@/lib/financeClient', () => ({
 }));
 
 beforeEach(() => {
+  authState.isPro = true;
   vi.mocked(computeBacktestAsync).mockClear();
   vi.mocked(fetchHistoricalCandles).mockClear();
 });
@@ -179,6 +186,19 @@ describe('BacktestChart benchmark alpha and win rate', () => {
 });
 
 describe('BacktestChart friction and trailing-stop controls', () => {
+  it('locks premium simulation controls for Basic users and opens pricing', async () => {
+    authState.isPro = false;
+    render(<BacktestChart positions={positions} assets={assets} />);
+
+    expect(screen.getByRole('switch', { name: /realistic friction/i })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: /realistic friction/i })).not.toBeChecked();
+    expect(screen.getByRole('combobox', { name: /trailing stop/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /unlock realistic friction with pro/i }));
+    expect(await screen.findByText('Unlock the full quant stack')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /upgrade to pro/i })).toBeInTheDocument();
+  });
+
   it('runs with realistic friction and OHLC history by default, no stop', async () => {
     render(<BacktestChart positions={positions} assets={assets} />);
 

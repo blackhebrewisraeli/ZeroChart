@@ -7,6 +7,12 @@ const harness = vi.hoisted(() => ({
   getSession: vi.fn(),
   loadPortfolio: vi.fn(),
   savePortfolioStateV3: vi.fn(),
+  createSharedPortfolioId: vi.fn(),
+  buildSharedPortfolioSnapshot: vi.fn(),
+  publishSharedPortfolio: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  toastDismiss: vi.fn(),
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
@@ -26,6 +32,21 @@ vi.mock('@/lib/db', () => ({
   loadPortfolio: harness.loadPortfolio,
   savePortfolioStateV3: harness.savePortfolioStateV3,
   PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
+}));
+
+vi.mock('@/lib/sharedPortfolio', () => ({
+  createSharedPortfolioId: harness.createSharedPortfolioId,
+  buildSharedPortfolioSnapshot: harness.buildSharedPortfolioSnapshot,
+  publishSharedPortfolio: harness.publishSharedPortfolio,
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    dismiss: harness.toastDismiss,
+    error: harness.toastError,
+    info: vi.fn(),
+    success: harness.toastSuccess,
+  },
 }));
 
 // Keep the render hermetic: this test covers the Save-to-Cloud gate, not charts.
@@ -54,6 +75,9 @@ beforeEach(() => {
   resetHydration();
   harness.authCallbacks.length = 0;
   harness.getSession.mockResolvedValue({ data: { session: { user: { id: 'user-a' } } } });
+  harness.createSharedPortfolioId.mockReturnValue('share-id');
+  harness.buildSharedPortfolioSnapshot.mockReturnValue({ version: 2 });
+  harness.publishSharedPortfolio.mockResolvedValue(undefined);
 });
 
 afterEach(cleanup);
@@ -97,5 +121,88 @@ describe('Save to Cloud hydration gate (M1-T1, F-4.1b)', () => {
         }),
       ),
     );
+  });
+});
+
+describe('public portfolio sharing', () => {
+  it('publishes the current snapshot and copies its public route', async () => {
+    harness.loadPortfolio.mockResolvedValue([]);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <PortfolioProvider>
+        <AuthProvider>
+          <PortfolioDashboard assets={[]} />
+        </AuthProvider>
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /share portfolio/i }));
+
+    await waitFor(() =>
+      expect(harness.publishSharedPortfolio).toHaveBeenCalledWith({
+        id: 'share-id',
+        userId: 'user-a',
+        snapshot: { version: 2 },
+      }),
+    );
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\/p\/share-id$/));
+    expect(harness.toastSuccess).toHaveBeenCalledWith('Public link copied to clipboard!');
+  });
+
+  it('keeps the link on screen until a Copy retry succeeds', async () => {
+    harness.loadPortfolio.mockResolvedValue([]);
+    const writeText = vi.fn().mockRejectedValue(new DOMException('', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+    render(
+      <PortfolioProvider>
+        <AuthProvider>
+          <PortfolioDashboard assets={[]} />
+        </AuthProvider>
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /share portfolio/i }));
+
+    await waitFor(() =>
+      expect(harness.toastSuccess).toHaveBeenCalledWith(
+        'Public link created',
+        expect.objectContaining({ description: expect.stringMatching(/\/p\/share-id$/) }),
+      ),
+    );
+    expect(harness.toastError).not.toHaveBeenCalled();
+
+    const fallback = harness.toastSuccess.mock.calls.find(
+      ([title]) => title === 'Public link created',
+    )![1];
+    const clickCopy = () => {
+      const event = { preventDefault: vi.fn() };
+      fallback.action.onClick(event);
+      return event;
+    };
+
+    // Retry still blocked: the toast stays (Sonner auto-dismiss is prevented).
+    expect(clickCopy().preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(harness.toastError).toHaveBeenCalled());
+    expect(harness.toastDismiss).not.toHaveBeenCalled();
+
+    // Clipboard API missing entirely (insecure context): same error, no throw.
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    harness.toastError.mockClear();
+    expect(() => clickCopy()).not.toThrow();
+    await waitFor(() => expect(harness.toastError).toHaveBeenCalled());
+    expect(harness.toastDismiss).not.toHaveBeenCalled();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+    // Retry works: the link toast is dismissed and the copy confirmed.
+    writeText.mockResolvedValue(undefined);
+    clickCopy();
+    await waitFor(() => expect(harness.toastDismiss).toHaveBeenCalledWith(fallback.id));
+    expect(harness.toastSuccess).toHaveBeenCalledWith('Public link copied to clipboard!');
   });
 });

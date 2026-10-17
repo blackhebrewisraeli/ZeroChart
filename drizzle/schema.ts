@@ -18,10 +18,13 @@ import {
  *
  * This file was previously an intentionally blank stub while hand-written
  * migrations drifted from the live schema (`symbol` vs `ticker`, missing
- * indicator columns). It now defines `assets_status`, `user_portfolios`, and
- * `user_alerts` as the single source of truth; the idempotent reconciliation
- * migration `drizzle/migrations/0002_reconcile_schema_baseline.sql` mirrors it
- * for existing/fresh databases.
+ * indicator columns). It now defines `assets_status`, `user_portfolios`,
+ * `user_alerts`, and `shared_portfolios` as the single source of truth; the
+ * idempotent reconciliation migration
+ * `drizzle/migrations/0002_reconcile_schema_baseline.sql` mirrors the first
+ * three for existing/fresh databases, and
+ * `supabase/migrations/20261017221447_create_shared_portfolios_table.sql`
+ * creates `shared_portfolios` (plus its `get_shared_portfolio` read RPC).
  *
  * NOTE: foreign keys to `auth.users(id)` (and the owner-scoped RLS policies)
  * are defined in the SQL migration only — the auth schema is managed by
@@ -95,5 +98,29 @@ export const userAlerts = pgTable(
     userActiveIdx: index('user_alerts_user_id_active_idx').on(t.userId, t.isActive),
     targetPriceCheck: check('user_alerts_target_price_check', sql`target_price > 0`),
     conditionCheck: check('user_alerts_condition_check', sql`condition IN ('above', 'below')`),
+  }),
+);
+
+export const sharedPortfolios = pgTable(
+  'shared_portfolios',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(), // REFERENCES auth.users(id) ON DELETE CASCADE — see migration
+    snapshot: jsonb('snapshot').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userCreatedAtIdx: index('shared_portfolios_user_id_created_at_idx').on(
+      t.userId,
+      t.createdAt.desc(),
+    ),
+    snapshotObjectCheck: check(
+      'shared_portfolios_snapshot_check',
+      sql`jsonb_typeof(snapshot) = 'object'`,
+    ),
+    snapshotSizeCheck: check(
+      'shared_portfolios_snapshot_size_check',
+      sql`octet_length(snapshot::text) <= 65536`,
+    ),
   }),
 );

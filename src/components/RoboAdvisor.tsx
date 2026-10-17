@@ -6,13 +6,16 @@ import {
   Bot,
   ExternalLink,
   Gauge,
+  LockKeyhole,
   RefreshCw,
   Rocket,
   Shield,
   X,
 } from 'lucide-react';
 import { formatPrice, type Asset } from '@/lib/assets';
+import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
+import { useAuth } from '@/lib/authStore';
 import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { REGIME_LABELS } from '@/lib/multiFactor';
@@ -72,7 +75,9 @@ function scoreTone(score: number | null) {
 }
 
 export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: () => void }) {
+  const { isPro } = useAuth();
   const [open, setOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [phase, setPhase] = useState<'config' | 'results'>('config');
   const [amount, setAmount] = useState('10000');
@@ -139,7 +144,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') closeModal();
+      // A nested Radix layer (e.g. PricingModal) that handled this Escape has
+      // already called preventDefault — let it close alone.
+      if (e.key === 'Escape' && !e.defaultPrevented) closeModal();
     }
     window.addEventListener('keydown', onKey);
     const focusTimer = window.setTimeout(() => {
@@ -488,37 +495,60 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                     >
                                       {score ?? '—'}
                                     </span>
-                                    {allocation.regime && (
-                                      <span
-                                        className="regime-badge"
-                                        data-regime={allocation.regime}
-                                        title="Detected market regime"
-                                      >
-                                        {REGIME_LABELS[allocation.regime]}
-                                      </span>
-                                    )}
                                   </div>
                                   <span className="robo-name">{asset?.name ?? 'Asset'}</span>
-                                  {allocation.rationale && (
-                                    <p className="robo-rationale">{allocation.rationale}</p>
-                                  )}
-                                  {allocation.components && (
-                                    <span className="robo-factors">
-                                      {FACTOR_CHIPS.map((factor) => {
-                                        const value = allocation.components?.[factor.score] ?? null;
-                                        const weight =
-                                          allocation.components?.weights[factor.weight] ?? 0;
-                                        return (
-                                          <span
-                                            key={factor.label}
-                                            title={`${factor.name} sub-score · ${Math.round(weight * 100)}% weight`}
-                                          >
-                                            {factor.label}{' '}
-                                            <b>{value === null ? '—' : Math.round(value)}</b>
+                                  {(allocation.regime ||
+                                    allocation.rationale ||
+                                    allocation.components) && (
+                                    <div className="pro-feature-gate robo-quant-gate">
+                                      <div
+                                        className={cn('pro-feature-content', !isPro && 'is-locked')}
+                                        aria-hidden={!isPro}
+                                      >
+                                        {allocation.regime && (
+                                          <div className="robo-insight-badges">
+                                            <span
+                                              className="regime-badge"
+                                              data-regime={allocation.regime}
+                                              title="Detected market regime"
+                                            >
+                                              {REGIME_LABELS[allocation.regime]}
+                                            </span>
+                                          </div>
+                                        )}
+                                        {allocation.rationale && (
+                                          <p className="robo-rationale">{allocation.rationale}</p>
+                                        )}
+                                        {allocation.components && (
+                                          <span className="robo-factors">
+                                            {FACTOR_CHIPS.map((factor) => {
+                                              const value =
+                                                allocation.components?.[factor.score] ?? null;
+                                              const weight =
+                                                allocation.components?.weights[factor.weight] ?? 0;
+                                              return (
+                                                <span
+                                                  key={factor.label}
+                                                  title={`${factor.name} sub-score · ${Math.round(weight * 100)}% weight`}
+                                                >
+                                                  {factor.label}{' '}
+                                                  <b>{value === null ? '—' : Math.round(value)}</b>
+                                                </span>
+                                              );
+                                            })}
                                           </span>
-                                        );
-                                      })}
-                                    </span>
+                                        )}
+                                      </div>
+                                      {!isPro && (
+                                        <button
+                                          type="button"
+                                          className="pro-feature-unlock robo-quant-unlock"
+                                          onClick={() => setPricingOpen(true)}
+                                        >
+                                          <LockKeyhole size={13} /> Upgrade to unlock Quant Insights
+                                        </button>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                                 <div className="robo-metrics">
@@ -632,6 +662,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
           </div>,
           document.body,
         )}
+      <PricingModal open={pricingOpen} onOpenChange={setPricingOpen} />
     </>
   );
 }

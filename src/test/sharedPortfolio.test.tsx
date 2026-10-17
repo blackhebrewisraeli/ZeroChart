@@ -77,29 +77,47 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('shared portfolio snapshots', () => {
-  it('aggregates a privacy-minimized public snapshot with quant scores', () => {
+  it('builds a percentage-only snapshot with no absolute amounts', () => {
     const positions = [
       makePosition({ id: 'btc-1', ticker: 'BTC', buyPrice: 100, shares: 1 }),
       makePosition({ id: 'btc-2', ticker: 'BTC', buyPrice: 80, shares: 1 }),
+      makePosition({ id: 'eth-1', ticker: 'ETH', buyPrice: 50, shares: 2 }),
     ];
-    const assets = [makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 })];
+    const assets = [
+      makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 }),
+      makeAsset({ ticker: 'ETH', name: 'Ethereum', current_price: 80 }),
+    ];
 
     const snapshot = buildSharedPortfolioSnapshot(positions, assets, '2026-10-18T00:00:00.000Z');
 
-    expect(snapshot.totalValue).toBe(240);
-    expect(snapshot.totalInvested).toBe(180);
-    expect(snapshot.unrealizedPnL).toBe(60);
-    expect(snapshot.holdings).toHaveLength(1);
-    expect(snapshot.holdings[0]).toEqual(
-      expect.objectContaining({ ticker: 'BTC', name: 'Bitcoin', allocationPercent: 100 }),
-    );
-    expect(snapshot.quantScore).toBeGreaterThanOrEqual(0);
-    expect(snapshot.quantScore).toBeLessThanOrEqual(100);
+    // BTC: 240 now / 180 in · ETH: 160 now / 100 in · total: 400 now / 280 in.
+    expect(snapshot.pnlPercent).toBeCloseTo((120 / 280) * 100);
+    expect(snapshot.holdings.map((h) => [h.ticker, h.allocationPercent, h.pnlPercent])).toEqual([
+      ['BTC', expect.closeTo(60), expect.closeTo((60 / 180) * 100)],
+      ['ETH', expect.closeTo(40), expect.closeTo(60)],
+    ]);
+    const [btc, eth] = snapshot.holdings;
+    expect(snapshot.quantScore).toBeCloseTo(btc!.quantScore * 0.6 + eth!.quantScore * 0.4);
 
-    const publicJson = JSON.stringify(snapshot);
-    expect(publicJson).not.toContain('shares');
-    expect(publicJson).not.toContain('buyPrice');
-    expect(publicJson).not.toContain('userId');
+    // The privacy contract: these keys and nothing else. Adding a field here
+    // (especially an absolute amount) must be a deliberate test change.
+    expect(Object.keys(snapshot).sort()).toEqual([
+      'createdAt',
+      'holdings',
+      'pnlPercent',
+      'quantScore',
+      'version',
+    ]);
+    for (const holding of snapshot.holdings) {
+      expect(Object.keys(holding).sort()).toEqual([
+        'allocationPercent',
+        'name',
+        'pnlPercent',
+        'quantScore',
+        'regime',
+        'ticker',
+      ]);
+    }
   });
 
   it('publishes through the authenticated insert contract', async () => {
@@ -133,6 +151,28 @@ describe('shared portfolio snapshots', () => {
     expect(database.from).not.toHaveBeenCalled();
   });
 
+  it('drops any field outside the percentage-only contract when reading', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const snapshot = buildSharedPortfolioSnapshot(
+      [makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 2 })],
+      [makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 })],
+      '2026-10-18T00:00:00.000Z',
+    );
+    const tampered = {
+      ...snapshot,
+      totalValue: 1_000_000,
+      holdings: snapshot.holdings.map((holding) => ({ ...holding, value: 240, shares: 2 })),
+    };
+    database.maybeSingle.mockResolvedValue({
+      data: { id, snapshot: tampered, created_at: snapshot.createdAt },
+      error: null,
+    });
+
+    const record = await fetchSharedPortfolio(id);
+
+    expect(record?.snapshot).toEqual(snapshot);
+  });
+
   it('skips the request for ids that are not UUIDs', async () => {
     await expect(fetchSharedPortfolio('not-a-uuid')).resolves.toBeNull();
     expect(database.rpc).not.toHaveBeenCalled();
@@ -152,7 +192,7 @@ describe('public portfolio view', () => {
       snapshot,
     };
 
-    render(<SharedPortfolioView record={record} />);
+    const { container } = render(<SharedPortfolioView record={record} />);
 
     expect(screen.getByRole('heading', { name: 'Quant Portfolio Snapshot' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Asset allocation' })).toBeVisible();
@@ -165,5 +205,10 @@ describe('public portfolio view', () => {
     expect(screen.queryByRole('button', { name: /trade/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/api key/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/deposit|withdraw/i)).not.toBeInTheDocument();
+
+    // Percentage-only: returns render, dollar amounts never do.
+    expect(screen.getByText('Total return')).toBeVisible();
+    expect(screen.getAllByText('+20.00%').length).toBeGreaterThan(0);
+    expect(container.textContent).not.toMatch(/\$/);
   });
 });

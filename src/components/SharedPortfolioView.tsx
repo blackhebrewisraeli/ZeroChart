@@ -2,15 +2,9 @@ import { Link } from '@tanstack/react-router';
 import { ArrowRight, LockKeyhole, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Cell, Pie, PieChart, Tooltip } from 'recharts';
 import { ALLOCATION_PALETTE } from '@/lib/allocation';
-import { formatPrice } from '@/lib/assets';
 import { REGIME_LABELS } from '@/lib/multiFactor';
 import type { SharedPortfolioRecord, SharedPortfolioHolding } from '@/lib/sharedPortfolio';
 import { cn } from '@/lib/utils';
-
-function formatPnl(value: number): string {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
-  return `${sign}${formatPrice(Math.abs(value))}`;
-}
 
 function formatPercent(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
@@ -32,8 +26,8 @@ function AllocationTooltip({
   return (
     <div className="allocation-tooltip">
       <span className="allocation-tooltip-ticker">{holding.ticker}</span>
-      <span className="allocation-tooltip-value">{formatPrice(holding.value)}</span>
-      <span className="allocation-tooltip-pct">{holding.allocationPercent.toFixed(1)}%</span>
+      <span className="allocation-tooltip-value">{holding.allocationPercent.toFixed(1)}%</span>
+      <span className="allocation-tooltip-pct">{formatPercent(holding.pnlPercent)} return</span>
     </div>
   );
 }
@@ -49,7 +43,9 @@ function BrandCta({ compact = false }: { compact?: boolean }) {
 
 export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord }) {
   const { snapshot } = record;
-  const pnlTone = snapshot.unrealizedPnL >= 0 ? 'pnl-up' : 'pnl-down';
+  const pnlTone = snapshot.pnlPercent >= 0 ? 'pnl-up' : 'pnl-down';
+  const largest = snapshot.holdings[0];
+  const winners = snapshot.holdings.filter((holding) => holding.pnlPercent > 0).length;
   const publishedAt = new Date(snapshot.createdAt);
   const publishedLabel = Number.isNaN(publishedAt.getTime())
     ? 'Published portfolio snapshot'
@@ -90,19 +86,25 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
 
         <section className="shared-kpi-grid" aria-label="Portfolio summary">
           <div className="shared-kpi-card">
-            <span className="shared-kpi-label">Total value</span>
-            <strong>{formatPrice(snapshot.totalValue)}</strong>
-            <span>{snapshot.holdings.length} assets</span>
+            <span className="shared-kpi-label">Total return</span>
+            <strong className={pnlTone}>{formatPercent(snapshot.pnlPercent)}</strong>
+            <span>Unrealized, since entry</span>
           </div>
           <div className="shared-kpi-card">
-            <span className="shared-kpi-label">Profit / loss</span>
-            <strong className={pnlTone}>{formatPnl(snapshot.unrealizedPnL)}</strong>
-            <span className={pnlTone}>{formatPercent(snapshot.pnlPercent)}</span>
+            <span className="shared-kpi-label">Positions</span>
+            <strong>{snapshot.holdings.length}</strong>
+            <span>
+              {largest
+                ? `Largest: ${largest.ticker} ${largest.allocationPercent.toFixed(1)}%`
+                : 'No holdings'}
+            </span>
           </div>
           <div className="shared-kpi-card">
-            <span className="shared-kpi-label">Invested</span>
-            <strong>{formatPrice(snapshot.totalInvested)}</strong>
-            <span>Snapshot cost basis</span>
+            <span className="shared-kpi-label">In profit</span>
+            <strong>
+              {winners}/{snapshot.holdings.length}
+            </strong>
+            <span>Holdings with a positive return</span>
           </div>
         </section>
 
@@ -122,7 +124,7 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
                   <PieChart width={224} height={224}>
                     <Pie
                       data={snapshot.holdings}
-                      dataKey="value"
+                      dataKey="allocationPercent"
                       nameKey="ticker"
                       innerRadius={70}
                       outerRadius={104}
@@ -140,8 +142,8 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
                     <Tooltip content={<AllocationTooltip />} />
                   </PieChart>
                   <div className="shared-allocation-center">
-                    <span>TOTAL</span>
-                    <strong>{formatPrice(snapshot.totalValue)}</strong>
+                    <span>ASSETS</span>
+                    <strong>{snapshot.holdings.length}</strong>
                   </div>
                 </div>
                 <div className="shared-allocation-legend">
@@ -161,7 +163,7 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
                       </span>
                       <span className="shared-allocation-value">
                         <strong>{holding.allocationPercent.toFixed(1)}%</strong>
-                        <small>{formatPrice(holding.value)}</small>
+                        <small>{formatPercent(holding.pnlPercent)}</small>
                       </span>
                     </div>
                   ))}
@@ -182,7 +184,7 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
             </div>
             <div className="shared-score-list">
               {snapshot.holdings.map((holding) => {
-                const holdingTone = holding.pnl >= 0 ? 'pnl-up' : 'pnl-down';
+                const holdingTone = holding.pnlPercent >= 0 ? 'pnl-up' : 'pnl-down';
                 return (
                   <article key={holding.ticker} className="shared-score-row">
                     <div className="shared-score-asset">
@@ -193,7 +195,7 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
                       {Math.round(holding.quantScore)}
                     </div>
                     <div className={cn('shared-score-pnl', holdingTone)}>
-                      {holding.pnl >= 0 ? (
+                      {holding.pnlPercent >= 0 ? (
                         <TrendingUp size={14} aria-hidden="true" />
                       ) : (
                         <TrendingDown size={14} aria-hidden="true" />
@@ -220,7 +222,9 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
         </section>
 
         <footer className="shared-portfolio-footer">
-          <span>Read-only snapshot · Values may have changed since publication.</span>
+          <span>
+            Read-only snapshot · Percentages only — no balances or share counts are shared.
+          </span>
         </footer>
       </div>
     </main>

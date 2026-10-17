@@ -532,7 +532,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             className="share-portfolio-button"
             onClick={handleShare}
             disabled={sharing}
-            title="Creates a public link: anyone with it can see your holdings, their values, P&L, and cost basis."
+            title="Creates a public link with allocation %, returns %, and quant scores only. No balances or share counts are shared."
           >
             <Share2 size={15} />
             {sharing ? 'Creating link…' : 'Share Portfolio'}

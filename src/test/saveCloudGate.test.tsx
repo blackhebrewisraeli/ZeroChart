@@ -76,7 +76,7 @@ beforeEach(() => {
   harness.authCallbacks.length = 0;
   harness.getSession.mockResolvedValue({ data: { session: { user: { id: 'user-a' } } } });
   harness.createSharedPortfolioId.mockReturnValue('share-id');
-  harness.buildSharedPortfolioSnapshot.mockReturnValue({ version: 1 });
+  harness.buildSharedPortfolioSnapshot.mockReturnValue({ version: 2 });
   harness.publishSharedPortfolio.mockResolvedValue(undefined);
 });
 
@@ -147,7 +147,7 @@ describe('public portfolio sharing', () => {
       expect(harness.publishSharedPortfolio).toHaveBeenCalledWith({
         id: 'share-id',
         userId: 'user-a',
-        snapshot: { version: 1 },
+        snapshot: { version: 2 },
       }),
     );
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\/p\/share-id$/));

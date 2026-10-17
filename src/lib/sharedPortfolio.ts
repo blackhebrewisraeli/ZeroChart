@@ -6,23 +6,21 @@ import type { Json } from '@/integrations/supabase/types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Percentage-only by design: no field here may carry an absolute amount
+// (balances, cost basis, P&L in dollars, share counts). Percentages are
+// scale-invariant, so the portfolio's size cannot be recovered from them.
 export interface SharedPortfolioHolding {
   ticker: string;
   name: string;
-  value: number;
   allocationPercent: number;
-  pnl: number;
   pnlPercent: number;
   quantScore: number;
   regime: MarketRegime;
 }
 
 export interface SharedPortfolioSnapshot {
-  version: 1;
+  version: 2;
   createdAt: string;
-  totalValue: number;
-  totalInvested: number;
-  unrealizedPnL: number;
   pnlPercent: number;
   quantScore: number;
   holdings: SharedPortfolioHolding[];
@@ -56,12 +54,10 @@ export function createSharedPortfolioId(): string {
 }
 
 /**
- * Creates an immutable public snapshot. It omits user identity, cash, trade
- * history, and the raw `shares` / `buyPrice` fields — but it is NOT
- * non-inferable: per-holding `value` and `pnl` (and the totals) are public,
- * so anyone with the link can derive cost basis (`value - pnl`) and, with a
- * market price for `createdAt`, approximate share counts and average buy
- * price. The Share Portfolio button's tooltip states this.
+ * Creates an immutable, percentage-only public snapshot: allocation weights,
+ * returns, and quant scores. Dollar values are used to compute the weights
+ * and returns, then dropped — user identity, balances, cost basis, absolute
+ * P&L, share counts, cash, and trades never leave the device.
  */
 export function buildSharedPortfolioSnapshot(
   positions: Position[],
@@ -97,35 +93,29 @@ export function buildSharedPortfolioSnapshot(
           return risk === null ? null : Math.abs(risk);
         })(),
       });
-      const pnl = holding.value - holding.invested;
-
       return {
         ticker: ticker.slice(0, 24),
         name: (asset?.name || ticker).slice(0, 120),
-        value: holding.value,
         allocationPercent: totalValue > 0 ? (holding.value / totalValue) * 100 : 0,
-        pnl,
-        pnlPercent: holding.invested > 0 ? (pnl / holding.invested) * 100 : 0,
+        pnlPercent:
+          holding.invested > 0 ? ((holding.value - holding.invested) / holding.invested) * 100 : 0,
         quantScore: breakdown.score,
         regime: breakdown.regime,
       };
     })
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => b.allocationPercent - a.allocationPercent);
 
-  const quantWeight = holdings.reduce((sum, holding) => sum + holding.value, 0);
+  const quantWeight = holdings.reduce((sum, holding) => sum + holding.allocationPercent, 0);
   const quantScore =
     quantWeight > 0
-      ? holdings.reduce((sum, holding) => sum + holding.quantScore * holding.value, 0) / quantWeight
+      ? holdings.reduce((sum, holding) => sum + holding.quantScore * holding.allocationPercent, 0) /
+        quantWeight
       : 0;
-  const unrealizedPnL = totalValue - totalInvested;
 
   return {
-    version: 1,
+    version: 2,
     createdAt,
-    totalValue,
-    totalInvested,
-    unrealizedPnL,
-    pnlPercent: totalInvested > 0 ? (unrealizedPnL / totalInvested) * 100 : 0,
+    pnlPercent: totalInvested > 0 ? ((totalValue - totalInvested) / totalInvested) * 100 : 0,
     quantScore,
     holdings,
   };
@@ -149,15 +139,17 @@ export async function publishSharedPortfolio({
   if (error) throw error;
 }
 
+/**
+ * Validates a stored snapshot and rebuilds it from whitelisted fields only, so
+ * nothing outside the percentage-only contract (e.g. an injected dollar field)
+ * can reach the public view.
+ */
 export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Partial<SharedPortfolioSnapshot>;
   if (
-    candidate.version !== 1 ||
+    candidate.version !== 2 ||
     typeof candidate.createdAt !== 'string' ||
-    !finite(candidate.totalValue) ||
-    !finite(candidate.totalInvested) ||
-    !finite(candidate.unrealizedPnL) ||
     !finite(candidate.pnlPercent) ||
     !finite(candidate.quantScore) ||
     !Array.isArray(candidate.holdings)
@@ -175,19 +167,30 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
       holding.ticker.length > 24 ||
       typeof holding.name !== 'string' ||
       holding.name.length > 120 ||
-      !finite(holding.value) ||
       !finite(holding.allocationPercent) ||
-      !finite(holding.pnl) ||
       !finite(holding.pnlPercent) ||
       !finite(holding.quantScore) ||
       !isRegime(holding.regime)
     ) {
       return null;
     }
-    holdings.push(holding as SharedPortfolioHolding);
+    holdings.push({
+      ticker: holding.ticker,
+      name: holding.name,
+      allocationPercent: holding.allocationPercent,
+      pnlPercent: holding.pnlPercent,
+      quantScore: holding.quantScore,
+      regime: holding.regime,
+    });
   }
 
-  return { ...(candidate as SharedPortfolioSnapshot), holdings };
+  return {
+    version: 2,
+    createdAt: candidate.createdAt,
+    pnlPercent: candidate.pnlPercent,
+    quantScore: candidate.quantScore,
+    holdings,
+  };
 }
 
 export async function fetchSharedPortfolio(id: string): Promise<SharedPortfolioRecord | null> {

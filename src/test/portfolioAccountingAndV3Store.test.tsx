@@ -490,7 +490,7 @@ describe('portfolio store v3', () => {
     ).toBe(true);
   });
 
-  it('keeps lot history on an unchanged edit and collapses lots on a real edit', () => {
+  it('preserves lot history across unchanged and aggregate holding edits', () => {
     renderStore();
     act(() => {
       store.executeBuy('real_tracking', {
@@ -517,6 +517,38 @@ describe('portfolio store v3', () => {
 
     act(() => store.updatePosition(before!.id, { shares: 15, buyPrice: 110 }));
     expect(amd()).toMatchObject({ shares: 15, buyPrice: 110 });
-    expect(amd()?.lots).toHaveLength(1);
+    expect(amd()?.lots).toEqual([
+      expect.objectContaining({
+        id: before!.lots![0]!.id,
+        shares: 7.5,
+        buyPrice: 100,
+        feePaid: 5,
+        acquiredAt: '2026-01-01T00:00:00.000Z',
+      }),
+      expect.objectContaining({
+        id: before!.lots![1]!.id,
+        shares: 7.5,
+        buyPrice: 120,
+        acquiredAt: '2026-02-01T00:00:00.000Z',
+      }),
+    ]);
+
+    act(() => store.updatePosition(before!.id, { shares: 15, buyPrice: 132 }));
+    expect(amd()).toMatchObject({ shares: 15, buyPrice: 132 });
+    expect(amd()?.lots).toEqual([
+      expect.objectContaining({
+        id: before!.lots![0]!.id,
+        shares: 7.5,
+        buyPrice: 120,
+        feePaid: 5,
+        acquiredAt: '2026-01-01T00:00:00.000Z',
+      }),
+      expect.objectContaining({
+        id: before!.lots![1]!.id,
+        shares: 7.5,
+        buyPrice: 144,
+        acquiredAt: '2026-02-01T00:00:00.000Z',
+      }),
+    ]);
   });
 });

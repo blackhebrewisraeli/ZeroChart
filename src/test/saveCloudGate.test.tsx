@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   publishSharedPortfolio: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastDismiss: vi.fn(),
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
@@ -41,6 +42,7 @@ vi.mock('@/lib/sharedPortfolio', () => ({
 
 vi.mock('sonner', () => ({
   toast: {
+    dismiss: harness.toastDismiss,
     error: harness.toastError,
     info: vi.fn(),
     success: harness.toastSuccess,
@@ -152,12 +154,10 @@ describe('public portfolio sharing', () => {
     expect(harness.toastSuccess).toHaveBeenCalledWith('Public link copied to clipboard!');
   });
 
-  it('still hands over the link when the clipboard rejects after publishing', async () => {
+  it('keeps the link on screen until a Copy retry succeeds', async () => {
     harness.loadPortfolio.mockResolvedValue([]);
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn().mockRejectedValue(new DOMException('', 'NotAllowedError')) },
-    });
+    const writeText = vi.fn().mockRejectedValue(new DOMException('', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
 
     render(
       <PortfolioProvider>
@@ -176,5 +176,25 @@ describe('public portfolio sharing', () => {
       ),
     );
     expect(harness.toastError).not.toHaveBeenCalled();
+
+    const fallback = harness.toastSuccess.mock.calls.find(
+      ([title]) => title === 'Public link created',
+    )![1];
+    const clickCopy = () => {
+      const event = { preventDefault: vi.fn() };
+      fallback.action.onClick(event);
+      return event;
+    };
+
+    // Retry still blocked: the toast stays (Sonner auto-dismiss is prevented).
+    expect(clickCopy().preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(harness.toastError).toHaveBeenCalled());
+    expect(harness.toastDismiss).not.toHaveBeenCalled();
+
+    // Retry works: the link toast is dismissed and the copy confirmed.
+    writeText.mockResolvedValue(undefined);
+    clickCopy();
+    await waitFor(() => expect(harness.toastDismiss).toHaveBeenCalledWith(fallback.id));
+    expect(harness.toastSuccess).toHaveBeenCalledWith('Public link copied to clipboard!');
   });
 });

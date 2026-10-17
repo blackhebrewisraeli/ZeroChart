@@ -144,7 +144,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') closeModal();
+      // A nested Radix layer (e.g. PricingModal) that handled this Escape has
+      // already called preventDefault — let it close alone.
+      if (e.key === 'Escape' && !e.defaultPrevented) closeModal();
     }
     window.addEventListener('keydown', onKey);
     const focusTimer = window.setTimeout(() => {

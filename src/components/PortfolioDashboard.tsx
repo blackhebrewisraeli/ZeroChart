@@ -450,10 +450,28 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       toast.success('Public link copied to clipboard!');
     } catch {
       // Safari drops clipboard access once the publish request has been awaited.
-      // The link exists, so offer it with a Copy button (a fresh user gesture).
+      // The link exists, so keep it on screen with a Copy button (a fresh user
+      // gesture) until it is copied or closed.
       toast.success('Public link created', {
+        id: publicUrl,
         description: publicUrl,
-        action: { label: 'Copy', onClick: () => void navigator.clipboard.writeText(publicUrl) },
+        duration: Infinity,
+        closeButton: true,
+        action: {
+          label: 'Copy',
+          onClick: (event) => {
+            // Sonner dismisses on action click unless prevented; keep the link
+            // visible until the copy actually succeeds.
+            event.preventDefault();
+            navigator.clipboard.writeText(publicUrl).then(
+              () => {
+                toast.dismiss(publicUrl);
+                toast.success('Public link copied to clipboard!');
+              },
+              () => toast.error("Couldn't copy. Select the link above and copy it manually."),
+            );
+          },
+        },
       });
     }
   }
@@ -511,6 +529,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             className="share-portfolio-button"
             onClick={handleShare}
             disabled={sharing}
+            title="Creates a public link: anyone with it can see your holdings, their values, P&L, and cost basis."
           >
             <Share2 size={15} />
             {sharing ? 'Creating link…' : 'Share Portfolio'}

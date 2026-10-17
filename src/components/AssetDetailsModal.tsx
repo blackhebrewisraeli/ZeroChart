@@ -88,7 +88,9 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') close();
+      // A nested Radix layer (e.g. PricingModal) that handled this Escape has
+      // already called preventDefault — let it close alone.
+      if (e.key === 'Escape' && !e.defaultPrevented) close();
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

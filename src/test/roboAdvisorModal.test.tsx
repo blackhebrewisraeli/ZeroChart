@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import type { Asset } from '@/lib/assets';
@@ -118,5 +118,29 @@ describe('RoboAdvisor results', () => {
     fireEvent.click(unlock);
     expect(await screen.findByText('Unlock the full quant stack')).toBeInTheDocument();
     expect(screen.getByText('Market Regime Detection')).toBeInTheDocument();
+  });
+
+  it('Escape closes only the Pro offer and keeps the generated results', async () => {
+    authState.isPro = false;
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: /upgrade to unlock quant insights/i }),
+    );
+    const offer = await screen.findByText('Unlock the full quant stack');
+
+    fireEvent.keyDown(offer, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByText('Unlock the full quant stack')).toBeNull());
+    // closeModal animates out before unmounting, so assert it never started.
+    expect(document.querySelector('.robo-overlay')).not.toHaveClass('is-closing');
+    expect(screen.getAllByText('Suggested size')).toHaveLength(2);
   });
 });

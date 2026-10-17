@@ -56,8 +56,12 @@ export function createSharedPortfolioId(): string {
 }
 
 /**
- * Creates a privacy-minimized, immutable public snapshot. It intentionally
- * excludes user identity, share counts, purchase prices, cash, and trade data.
+ * Creates an immutable public snapshot. It omits user identity, cash, trade
+ * history, and the raw `shares` / `buyPrice` fields — but it is NOT
+ * non-inferable: per-holding `value` and `pnl` (and the totals) are public,
+ * so anyone with the link can derive cost basis (`value - pnl`) and, with a
+ * market price for `createdAt`, approximate share counts and average buy
+ * price. The Share Portfolio button's tooltip states this.
  */
 export function buildSharedPortfolioSnapshot(
   positions: Position[],

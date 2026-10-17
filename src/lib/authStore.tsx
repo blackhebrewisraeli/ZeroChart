@@ -22,6 +22,7 @@ import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 
 interface AuthStore {
   user: User | null;
+  isPro: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -107,7 +108,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useSessionTimeout(user?.id ?? null, signOut);
 
-  const value = useMemo(() => ({ user, loading, signOut }), [user, loading, signOut]);
+  // Temporary entitlement bridge until billing is connected. Supabase user
+  // metadata gives us a production-shaped switch while every existing account
+  // and guest remains on Basic by default.
+  const isPro = user?.app_metadata?.is_pro === true || user?.user_metadata?.is_pro === true;
+
+  const value = useMemo(() => ({ user, isPro, loading, signOut }), [user, isPro, loading, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

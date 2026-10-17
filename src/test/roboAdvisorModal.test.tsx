@@ -1,8 +1,14 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import type { Asset } from '@/lib/assets';
 import { PortfolioProvider } from '@/lib/portfolioStore';
+
+const authState = vi.hoisted(() => ({ isPro: true }));
+
+vi.mock('@/lib/authStore', () => ({
+  useAuth: () => authState,
+}));
 
 // The results phase is the unit under test — stub the quant pipeline so the
 // test proves the UI surfaces the Multi-Factor Score and the ATR sizing.
@@ -49,6 +55,10 @@ function makeAsset(ticker: string, name: string, price: number): Asset {
 
 const assets = [makeAsset('BTC', 'Bitcoin', 67000), makeAsset('ETH', 'Ethereum', 3500)];
 
+beforeEach(() => {
+  authState.isPro = true;
+});
+
 describe('RoboAdvisor results', () => {
   it('surfaces the Multi-Factor Score and ATR suggested position size', async () => {
     render(
@@ -86,5 +96,27 @@ describe('RoboAdvisor results', () => {
 
     // The results note explains the model behind the numbers.
     expect(screen.getByText(/Multi-Factor Score \(RSI · MACD · ATR\)/)).toBeInTheDocument();
+  });
+
+  it('blurs quant insights for Basic users and opens the Pro offer', async () => {
+    authState.isPro = false;
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
+
+    const unlock = await screen.findByRole('button', {
+      name: /upgrade to unlock quant insights/i,
+    });
+    expect(unlock.previousElementSibling).toHaveClass('is-locked');
+
+    fireEvent.click(unlock);
+    expect(await screen.findByText('Unlock the full quant stack')).toBeInTheDocument();
+    expect(screen.getByText('Market Regime Detection')).toBeInTheDocument();
   });
 });

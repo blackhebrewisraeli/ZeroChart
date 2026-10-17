@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UTCTimestamp } from 'lightweight-charts';
-import { ExternalLink, LineChart, X } from 'lucide-react';
+import { ExternalLink, LineChart, LockKeyhole, X } from 'lucide-react';
 import { AssetIcon } from '@/components/AssetIcon';
+import { PricingModal } from '@/components/PricingModal';
 import {
   CandlestickChart,
   type CandlePoint,
@@ -14,6 +15,7 @@ import { REGIME_LABELS } from '@/lib/multiFactor';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
 import { scoreAsset, type ScoredAsset } from '@/lib/roboAdvisor';
 import { getBrokerUrl } from '@/lib/tradeRouter';
+import { useAuth } from '@/lib/authStore';
 import { cn } from '@/lib/utils';
 
 const CLOSE_MS = 260;
@@ -39,6 +41,8 @@ const QUANT_FACTORS = [
  * chart, falling back gracefully for stocks and forex.
  */
 export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+  const { isPro } = useAuth();
+  const [pricingOpen, setPricingOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -145,150 +149,178 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
     [candles],
   );
 
-  return createPortal(
-    <div className={cn('asset-details-overlay', closing && 'is-closing')} onClick={close}>
-      <div
-        className={cn('asset-details-sheet', closing && 'is-closing')}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${asset.ticker} details`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="asset-details-header">
-          <div className="asset-details-title">
-            <AssetIcon symbol={asset.ticker} name={asset.name} size="lg" />
-            <div>
-              <span className="asset-details-eyebrow">{assetClass}</span>
-              <h3 className="asset-details-name">{asset.ticker}</h3>
-            </div>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            className="asset-details-close"
-            onClick={close}
-            aria-label="Close"
+  return (
+    <>
+      {createPortal(
+        <div className={cn('asset-details-overlay', closing && 'is-closing')} onClick={close}>
+          <div
+            className={cn('asset-details-sheet', closing && 'is-closing')}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${asset.ticker} details`}
+            onClick={(e) => e.stopPropagation()}
           >
-            <X size={18} />
-          </button>
-        </header>
-
-        <div className="asset-details-price">
-          <span className="asset-details-price-label">Current price</span>
-          <span className="asset-details-price-value">{formatPrice(asset.current_price)}</span>
-          {assetClass !== 'Forex' && (
-            <a
-              className="trade-now-button"
-              href={getBrokerUrl(asset.ticker, assetClass === 'Crypto' ? 'crypto' : 'stock')}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink size={15} /> Trade Now
-            </a>
-          )}
-        </div>
-
-        {isCrypto && status === 'success' && (
-          <div className="indicator-toggles" role="group" aria-label="Technical indicators">
-            {INDICATOR_OPTIONS.map((option) => (
+            <header className="asset-details-header">
+              <div className="asset-details-title">
+                <AssetIcon symbol={asset.ticker} name={asset.name} size="lg" />
+                <div>
+                  <span className="asset-details-eyebrow">{assetClass}</span>
+                  <h3 className="asset-details-name">{asset.ticker}</h3>
+                </div>
+              </div>
               <button
-                key={option.key}
+                ref={closeRef}
                 type="button"
-                className={cn('indicator-pill', indicators[option.key] && 'is-active')}
-                aria-pressed={indicators[option.key]}
-                onClick={() => toggleIndicator(option.key)}
+                className="asset-details-close"
+                onClick={close}
+                aria-label="Close"
               >
-                {option.label}
+                <X size={18} />
               </button>
-            ))}
-          </div>
-        )}
+            </header>
 
-        <section className="asset-details-chart" aria-label={`${asset.ticker} historical chart`}>
-          {!isCrypto ? (
-            <div className="asset-chart-fallback">
-              <LineChart size={22} />
-              <span>Historical charts are available for crypto assets.</span>
-            </div>
-          ) : status === 'loading' ? (
-            <div className="asset-chart-fallback">Loading historical data…</div>
-          ) : status === 'error' ? (
-            <div className="asset-chart-fallback">
-              <LineChart size={22} />
-              <span>Couldn't load chart data. Please try again.</span>
-            </div>
-          ) : (
-            <CandlestickChart data={candleData} height={276} indicators={indicators} />
-          )}
-        </section>
-
-        <section className="quant-breakdown" aria-labelledby="quant-breakdown-title">
-          <div className="quant-breakdown-head">
-            <h4 id="quant-breakdown-title" className="quant-breakdown-title">
-              Quant Signal Breakdown
-            </h4>
-            {quant && (
-              <>
-                <span
-                  className="regime-badge"
-                  data-regime={quant.breakdown.regime}
-                  title="Detected market regime"
+            <div className="asset-details-price">
+              <span className="asset-details-price-label">Current price</span>
+              <span className="asset-details-price-value">{formatPrice(asset.current_price)}</span>
+              {assetClass !== 'Forex' && (
+                <a
+                  className="trade-now-button"
+                  href={getBrokerUrl(asset.ticker, assetClass === 'Crypto' ? 'crypto' : 'stock')}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                  {REGIME_LABELS[quant.breakdown.regime]}
-                </span>
-                <span className="quant-breakdown-score" title="Multi-Factor Score (0–100)">
-                  {quant.breakdown.score}
-                </span>
-              </>
-            )}
-          </div>
-          {!quant ? (
-            <p className="quant-breakdown-note">Computing signal…</p>
-          ) : (
-            <>
-              <p className="quant-rationale">{quant.breakdown.rationale}</p>
-              <ul className="quant-factors">
-                {QUANT_FACTORS.map((factor) => {
-                  const value = quant.breakdown.components[factor.score];
-                  const weight = quant.breakdown.components.weights[factor.weight];
-                  return (
-                    <li key={factor.label} className="quant-factor">
-                      <span className="quant-factor-label">
-                        {factor.label} <span>({factor.source})</span>
-                      </span>
-                      <span className="quant-factor-track" aria-hidden="true">
-                        <span className="quant-factor-bar" style={{ width: `${value ?? 0}%` }} />
-                      </span>
-                      <span className="quant-factor-value">
-                        {value === null ? '—' : Math.round(value)}
-                      </span>
-                      <span className="quant-factor-weight" title="Applied weight">
-                        {Math.round(weight * 100)}%
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="quant-sizing">
-                ATR position size · ${REFERENCE_CAPITAL.toLocaleString('en-US')} account, 2% risk:{' '}
-                {sizing && sizing.shares > 0 ? (
-                  <strong>
-                    {formatShares(sizing.shares)} shares ≈ {formatPrice(sizing.notional)} · stop{' '}
-                    {formatPrice(sizing.stopPrice)}
-                  </strong>
-                ) : (
-                  <strong>— (no price/ATR data)</strong>
-                )}
-              </p>
-            </>
-          )}
-        </section>
+                  <ExternalLink size={15} /> Trade Now
+                </a>
+              )}
+            </div>
 
-        <footer className="asset-details-footer">
-          <span>Data: Binance public REST API · Daily candles (30 days)</span>
-        </footer>
-      </div>
-    </div>,
-    document.body,
+            {isCrypto && status === 'success' && (
+              <div className="indicator-toggles" role="group" aria-label="Technical indicators">
+                {INDICATOR_OPTIONS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={cn('indicator-pill', indicators[option.key] && 'is-active')}
+                    aria-pressed={indicators[option.key]}
+                    onClick={() => toggleIndicator(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <section
+              className="asset-details-chart"
+              aria-label={`${asset.ticker} historical chart`}
+            >
+              {!isCrypto ? (
+                <div className="asset-chart-fallback">
+                  <LineChart size={22} />
+                  <span>Historical charts are available for crypto assets.</span>
+                </div>
+              ) : status === 'loading' ? (
+                <div className="asset-chart-fallback">Loading historical data…</div>
+              ) : status === 'error' ? (
+                <div className="asset-chart-fallback">
+                  <LineChart size={22} />
+                  <span>Couldn't load chart data. Please try again.</span>
+                </div>
+              ) : (
+                <CandlestickChart data={candleData} height={276} indicators={indicators} />
+              )}
+            </section>
+
+            <section className="quant-breakdown" aria-labelledby="quant-breakdown-title">
+              <div className="quant-breakdown-head">
+                <h4 id="quant-breakdown-title" className="quant-breakdown-title">
+                  Quant Signal Breakdown
+                </h4>
+              </div>
+              <div className="pro-feature-gate asset-quant-gate">
+                <div
+                  className={cn('pro-feature-content', !isPro && 'is-locked')}
+                  aria-hidden={!isPro}
+                >
+                  {quant && (
+                    <div className="quant-insight-summary">
+                      <span
+                        className="regime-badge"
+                        data-regime={quant.breakdown.regime}
+                        title="Detected market regime"
+                      >
+                        {REGIME_LABELS[quant.breakdown.regime]}
+                      </span>
+                      <span className="quant-breakdown-score" title="Multi-Factor Score (0–100)">
+                        {quant.breakdown.score}
+                      </span>
+                    </div>
+                  )}
+                  {!quant ? (
+                    <p className="quant-breakdown-note">Computing signal…</p>
+                  ) : (
+                    <>
+                      <p className="quant-rationale">{quant.breakdown.rationale}</p>
+                      <ul className="quant-factors">
+                        {QUANT_FACTORS.map((factor) => {
+                          const value = quant.breakdown.components[factor.score];
+                          const weight = quant.breakdown.components.weights[factor.weight];
+                          return (
+                            <li key={factor.label} className="quant-factor">
+                              <span className="quant-factor-label">
+                                {factor.label} <span>({factor.source})</span>
+                              </span>
+                              <span className="quant-factor-track" aria-hidden="true">
+                                <span
+                                  className="quant-factor-bar"
+                                  style={{ width: `${value ?? 0}%` }}
+                                />
+                              </span>
+                              <span className="quant-factor-value">
+                                {value === null ? '—' : Math.round(value)}
+                              </span>
+                              <span className="quant-factor-weight" title="Applied weight">
+                                {Math.round(weight * 100)}%
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <p className="quant-sizing">
+                        ATR position size · ${REFERENCE_CAPITAL.toLocaleString('en-US')} account, 2%
+                        risk:{' '}
+                        {sizing && sizing.shares > 0 ? (
+                          <strong>
+                            {formatShares(sizing.shares)} shares ≈ {formatPrice(sizing.notional)} ·
+                            stop {formatPrice(sizing.stopPrice)}
+                          </strong>
+                        ) : (
+                          <strong>— (no price/ATR data)</strong>
+                        )}
+                      </p>
+                    </>
+                  )}
+                </div>
+                {!isPro && (
+                  <button
+                    type="button"
+                    className="pro-feature-unlock"
+                    onClick={() => setPricingOpen(true)}
+                  >
+                    <LockKeyhole size={14} /> Upgrade to unlock Quant Insights
+                  </button>
+                )}
+              </div>
+            </section>
+
+            <footer className="asset-details-footer">
+              <span>Data: Binance public REST API · Daily candles (30 days)</span>
+            </footer>
+          </div>
+        </div>,
+        document.body,
+      )}
+      <PricingModal open={pricingOpen} onOpenChange={setPricingOpen} />
+    </>
   );
 }

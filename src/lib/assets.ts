@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { classifyTicker, toTradingViewSymbol } from '@/lib/ticker';
 
 export type Signal = 'Green' | 'Yellow' | 'Red';
 export interface AssetStatus {
@@ -70,24 +71,21 @@ export function formatRsi(value: number | null) {
   return value === null || !Number.isFinite(value) ? '—' : value.toFixed(1);
 }
 
+/** TradingView symbol — delegated to the canonical classifier (F-3.2d). */
 export function formatTradingViewSymbol(ticker: string) {
-  const symbol = ticker.trim();
-  if (symbol.toUpperCase().endsWith('=X')) {
-    return `FX:${symbol.slice(0, -2).toUpperCase()}`;
-  }
-  if (symbol.toUpperCase().includes('-USD')) {
-    return `CRYPTO:${symbol.toUpperCase().replace('-USD', 'USD')}`;
-  }
-  return symbol;
+  return toTradingViewSymbol(ticker);
 }
 
 export type AssetClass = 'Crypto' | 'Forex' | 'Stocks';
 
+/**
+ * Legacy display-facing class labels, delegated to the canonical
+ * `classifyTicker` (M1-T4, F-3.2d) so bare crypto tickers like `BTC`
+ * classify as Crypto (they previously fell through to Stocks).
+ */
 export function getAssetClass(ticker: string): AssetClass {
-  const symbol = ticker.trim().toUpperCase();
-  if (symbol.endsWith('=X')) return 'Forex';
-  if (symbol.includes('-USD')) return 'Crypto';
-  return 'Stocks';
+  const kind = classifyTicker(ticker);
+  return kind === 'crypto' ? 'Crypto' : kind === 'forex' ? 'Forex' : 'Stocks';
 }
 
 /**
@@ -167,15 +165,22 @@ export interface BrokerRoute {
   url: string;
 }
 
+/**
+ * Broker routing keyed on the canonical `classifyTicker` (F-3.2d) — bare
+ * crypto like `BTC` now routes to Binance instead of falling through to eToro.
+ */
 export function getBrokerRoute(ticker: string): BrokerRoute {
-  const symbol = ticker.trim();
-  if (symbol.toUpperCase().includes('-USD')) {
+  const kind = classifyTicker(ticker);
+  if (kind === 'crypto') {
     return { label: 'Trade on Binance', url: 'https://www.binance.com/en/markets' };
   }
-  if (symbol.toUpperCase().endsWith('=X')) {
+  if (kind === 'forex') {
     return { label: 'Trade on OANDA', url: 'https://www.oanda.com/' };
   }
-  const clean = symbol.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean = ticker
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
   return { label: 'Trade on eToro', url: `https://www.etoro.com/markets/${clean}` };
 }
 

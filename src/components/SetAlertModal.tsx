@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { addAlert, useAlerts } from '@/lib/alertsStore';
+import { useAuth } from '@/lib/authStore';
+import { useAlertController } from '@/hooks/useAlertEngine';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { isBinanceCrypto } from '@/lib/binance';
 import { cn } from '@/lib/utils';
@@ -12,10 +13,13 @@ const CLOSE_MS = 260;
 /**
  * A compact bell that lives next to a crypto asset in the Markets table. It
  * opens a tiny dialog for entering a target price, then registers a one-shot
- * alert that is compared against the live Binance stream.
+ * alert through the SINGLE unified alert pipeline (`useAlertController`,
+ * M1-T4 F-5.1): guests get session-scoped alerts, signed-in users get cloud
+ * alerts synced to `user_alerts`.
  */
 export function SetAlertButton({ asset }: { asset: Asset }) {
-  const alerts = useAlerts();
+  const { user } = useAuth();
+  const { alerts, createAlert } = useAlertController(user);
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [target, setTarget] = useState('');
@@ -28,7 +32,6 @@ export function SetAlertButton({ asset }: { asset: Asset }) {
 
   const enabled = isBinanceCrypto(asset.ticker);
   const hasActiveAlert = alerts.some((alert) => alert.ticker === asset.ticker);
-
   const numericTarget = Number(target);
   const canSubmit = Number.isFinite(numericTarget) && numericTarget > 0;
 
@@ -82,16 +85,20 @@ export function SetAlertButton({ asset }: { asset: Asset }) {
     };
   }, [open, closeModal]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) return;
-    addAlert({ ticker: asset.ticker, targetPrice: numericTarget, direction });
-    toast.success(`Alert set for ${asset.ticker}`, {
-      description: `We'll notify you when the price goes ${
-        direction === 'above' ? 'above' : 'below'
-      } ${formatPrice(numericTarget)}.`,
-    });
-    closeModal();
+    try {
+      await createAlert({ ticker: asset.ticker, targetPrice: numericTarget, condition: direction });
+      toast.success(`Alert set for ${asset.ticker}`, {
+        description: `We'll notify you when the price goes ${
+          direction === 'above' ? 'above' : 'below'
+        } ${formatPrice(numericTarget)}.`,
+      });
+      closeModal();
+    } catch {
+      toast.error("Couldn't save alert. Please try again.");
+    }
   }
 
   if (!enabled) return null;

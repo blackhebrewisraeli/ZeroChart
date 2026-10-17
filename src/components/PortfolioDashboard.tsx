@@ -24,7 +24,14 @@ import {
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useAuth } from '@/lib/authStore';
-import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
+import {
+  mergeLivePrices,
+  useConnectionState,
+  useLivePrice,
+  useLivePrices,
+} from '@/lib/livePriceStore';
+import { assetFreshness } from '@/lib/freshness';
+import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { PortfolioNotHydratedError, savePortfolio } from '@/lib/db';
 import { useHydrationState } from '@/lib/hydrationStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
@@ -38,7 +45,7 @@ import { PriceAlerts } from '@/components/PriceAlerts';
 import { TradeTicket } from '@/components/TradeTicket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
-import { isBinanceCrypto } from '@/lib/binance';
+import { isBinanceCrypto, toBinanceSymbol } from '@/lib/binance';
 import { getBrokerUrl } from '@/lib/tradeRouter';
 
 type PortfolioMode = 'simulation' | 'live';
@@ -158,6 +165,13 @@ function HoldingRow({
   const [draftPrice, setDraftPrice] = useState(String(position.buyPrice));
 
   const asset = assets.find((a) => a.ticker === position.ticker);
+  // Explicit per-asset freshness (M1-T4, F-3.2b): `assets` is live-merged, so
+  // look up the raw tick separately to know whether the price is real-time.
+  const liveTick = useLivePrice(toBinanceSymbol(position.ticker));
+  const streamConnected = useConnectionState() === 'connected';
+  const freshness = assetFreshness(asset ?? { current_price: null }, liveTick, {
+    streamConnected,
+  });
   const livePrice = asset?.current_price;
   const hasLivePrice = typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0;
   // Without a live price the totals fall back to cost basis (no phantom P&L),
@@ -205,6 +219,7 @@ function HoldingRow({
           <div className="holding-asset-head">
             <AssetIcon symbol={position.ticker} name={asset?.name ?? null} size="md" />
             <span className="holding-ticker">{position.ticker}</span>
+            <FreshnessBadge state={freshness} />
           </div>
           <span className="holding-name">{asset?.name ?? position.ticker}</span>
         </div>

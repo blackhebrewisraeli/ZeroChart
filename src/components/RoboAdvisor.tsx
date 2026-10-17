@@ -266,7 +266,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                     <h2 id="robo-title" className="robo-title">
                       Robo-Advisor
                     </h2>
-                    <p className="robo-subtitle">Automated portfolio builder</p>
+                    <p className="robo-subtitle">Quantitative Multi-Factor Engine</p>
                   </div>
                 </div>
                 <button

@@ -1,10 +1,13 @@
 import { supabase } from '@/lib/supabaseClient';
 import type { Database } from '@/integrations/supabase/types';
+import type { AlertCondition } from '@/lib/alertsStore';
+
+// The alert CONDITION type is canonical in `@/lib/alertsStore` (unified model,
+// M1-T4); re-exported here for backward compatibility with existing imports.
+export type { AlertCondition };
 
 /** Strict row shape from the generated schema (M1-T1, F-3.1b). */
 type UserAlertRow = Database['public']['Tables']['user_alerts']['Row'];
-
-export type AlertCondition = 'above' | 'below';
 
 export interface UserAlert {
   id: string;

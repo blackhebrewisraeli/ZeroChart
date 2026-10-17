@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { toast } from 'sonner';
-import { formatPrice, type Asset } from '@/lib/assets';
-import { getAlerts, hasCrossed, removeAlert } from '@/lib/alertsStore';
+import type { Asset } from '@/lib/assets';
 import { setConnectionState, setLivePrices, type LivePrice } from '@/lib/livePriceStore';
-import { toBinanceSymbol, toDisplayTicker } from '@/lib/binance';
+import { toBinanceSymbol } from '@/lib/binance';
 
 const STREAM_URL = 'wss://stream.binance.com:9443/ws/!miniTicker@arr';
 const THROTTLE_MS = 600;
@@ -12,27 +10,16 @@ const MAX_RECONNECT_DELAY_MS = 30000;
 const BACKOFF_FACTOR = 2;
 
 /**
- * Fires any active price alerts crossed by the latest tick. Triggered alerts
- * are removed and surfaced as a toast notification.
- */
-function checkAlerts(binanceSymbol: string, price: number): void {
-  for (const alert of getAlerts()) {
-    if (toBinanceSymbol(alert.ticker) !== binanceSymbol) continue;
-    if (!hasCrossed(alert, price)) continue;
-    removeAlert(alert.id);
-    toast.success(`${toDisplayTicker(alert.ticker)} reached ${formatPrice(alert.targetPrice)}!`, {
-      description:
-        alert.direction === 'above' ? 'Price rose to your target.' : 'Price fell to your target.',
-    });
-  }
-}
-
-/**
  * Streams live crypto prices from the Binance all-market mini-ticker feed and
  * publishes them into the live-price store (one batched write per `THROTTLE_MS`).
  * Consumers subscribe to individual symbols via `useLivePrice`, so the socket
  * no longer forces a full React tree re-render on every tick. The socket
  * auto-reconnects on drop and is cleanly torn down on unmount.
+ *
+ * M1-T4 (F-5.1): this hook is PURE price streaming — alert evaluation moved to
+ * the single `useAlertEngine` pipeline, so alerts cannot go dead when the
+ * socket drops (the 60s provider refetch keeps driving evaluation) and no
+ * second, divergent evaluation loop can double-fire notifications.
  */
 export function useBinanceWebSocket(assets: Asset[]): void {
   const symbols = useRef<Set<string>>(new Set());
@@ -85,7 +72,6 @@ export function useBinanceWebSocket(assets: Asset[]): void {
             const open = Number.parseFloat(tick.o ?? '');
             if (!Number.isFinite(price) || !Number.isFinite(open) || open <= 0) continue;
             pending.current.set(symbol, { price, change: (price - open) / open });
-            checkAlerts(symbol, price);
           }
         } catch {
           // Ignore malformed or non-JSON frames.

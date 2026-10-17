@@ -122,6 +122,11 @@ describe('recommendPositionSize', () => {
     expect(size.shares * 300).toBeLessThanOrEqual(10000);
     expect(size.isCapped).toBe(true);
 
+    // 10000/562.14 = 17.78917… rounds UP to 17.7892 ($10,000.02) — must floor.
+    const roundsUp = recommendPositionSize({ capital: 10000, price: 562.14, atr: 8.4321 });
+    expect(roundsUp.shares).toBe(17.7891);
+    expect(roundsUp.notional).toBeLessThanOrEqual(10000);
+
     // An allocation larger than total capital is clamped to capital.
     const clamped = recommendPositionSize({
       capital: 1000,

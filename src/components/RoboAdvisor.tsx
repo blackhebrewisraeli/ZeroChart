@@ -15,6 +15,7 @@ import { formatPrice, type Asset } from '@/lib/assets';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
+import { REGIME_LABELS } from '@/lib/multiFactor';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
@@ -53,6 +54,13 @@ const RISK_OPTIONS: {
 ];
 
 const CLOSE_MS = 300;
+
+/** Compact sub-score chips: label, component score key, applied weight key. */
+const FACTOR_CHIPS = [
+  { label: 'RSI', name: 'Mean reversion', score: 'rsiScore', weight: 'rsi' },
+  { label: 'MACD', name: 'Momentum', score: 'momentumScore', weight: 'momentum' },
+  { label: 'ATR', name: 'Volatility regime', score: 'volatilityScore', weight: 'volatility' },
+] as const;
 
 function formatWeight(weight: number) {
   return `${(weight * 100).toFixed(1)}%`;
@@ -455,9 +463,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         </div>
 
                         <p className="robo-results-note">
-                          Multi-Factor Score (RSI · MACD · ATR) · Suggested size risks up to 2% of
-                          capital at a 1×ATR stop, capped at the allocation · Swap any holding to
-                          replace it
+                          Regime-weighted Multi-Factor Score (RSI · MACD · ATR) · Suggested size
+                          risks up to 2% of capital at a 1×ATR stop, capped at the allocation · Swap
+                          any holding to replace it
                         </p>
                         <ul className="robo-allocation-list">
                           {result.map((allocation, index) => {
@@ -480,8 +488,38 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                     >
                                       {score ?? '—'}
                                     </span>
+                                    {allocation.regime && (
+                                      <span
+                                        className="regime-badge"
+                                        data-regime={allocation.regime}
+                                        title="Detected market regime"
+                                      >
+                                        {REGIME_LABELS[allocation.regime]}
+                                      </span>
+                                    )}
                                   </div>
                                   <span className="robo-name">{asset?.name ?? 'Asset'}</span>
+                                  {allocation.rationale && (
+                                    <p className="robo-rationale">{allocation.rationale}</p>
+                                  )}
+                                  {allocation.components && (
+                                    <span className="robo-factors">
+                                      {FACTOR_CHIPS.map((factor) => {
+                                        const value = allocation.components?.[factor.score] ?? null;
+                                        const weight =
+                                          allocation.components?.weights[factor.weight] ?? 0;
+                                        return (
+                                          <span
+                                            key={factor.label}
+                                            title={`${factor.name} sub-score · ${Math.round(weight * 100)}% weight`}
+                                          >
+                                            {factor.label}{' '}
+                                            <b>{value === null ? '—' : Math.round(value)}</b>
+                                          </span>
+                                        );
+                                      })}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="robo-metrics">
                                   <span className="robo-weight">

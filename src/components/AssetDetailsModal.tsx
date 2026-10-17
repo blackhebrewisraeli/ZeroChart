@@ -10,6 +10,9 @@ import {
 } from '@/components/LightweightChart';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { fetchHistoricalCandles, isBinanceCrypto, type Candle } from '@/lib/binance';
+import { REGIME_LABELS } from '@/lib/multiFactor';
+import { formatShares, recommendPositionSize } from '@/lib/risk';
+import { scoreAsset, type ScoredAsset } from '@/lib/roboAdvisor';
 import { getBrokerUrl } from '@/lib/tradeRouter';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +22,15 @@ const INDICATOR_OPTIONS = [
   { key: 'sma50', label: 'SMA 50' },
   { key: 'sma200', label: 'SMA 200' },
   { key: 'rsi', label: 'RSI' },
+] as const;
+
+/** Reference account the ATR position size is quoted against. */
+const REFERENCE_CAPITAL = 10_000;
+
+const QUANT_FACTORS = [
+  { label: 'Mean Reversion', source: 'RSI', score: 'rsiScore', weight: 'rsi' },
+  { label: 'Momentum', source: 'MACD', score: 'momentumScore', weight: 'momentum' },
+  { label: 'Volatility Regime', source: 'ATR', score: 'volatilityScore', weight: 'volatility' },
 ] as const;
 
 /**
@@ -100,6 +112,26 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
       cancelled = true;
     };
   }, [asset.ticker, isCrypto]);
+
+  const [quant, setQuant] = useState<ScoredAsset | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setQuant(null);
+    // Same pipeline as the Robo-Advisor (worker indicators for crypto, static
+    // proxies otherwise); scoreAsset never rejects.
+    void scoreAsset(asset).then((result) => {
+      if (!cancelled) setQuant(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [asset]);
+
+  const sizing =
+    quant && quant.price !== null && quant.atr !== null
+      ? recommendPositionSize({ capital: REFERENCE_CAPITAL, price: quant.price, atr: quant.atr })
+      : null;
 
   const candleData = useMemo<CandlePoint[]>(
     () =>
@@ -187,6 +219,68 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
             </div>
           ) : (
             <CandlestickChart data={candleData} height={276} indicators={indicators} />
+          )}
+        </section>
+
+        <section className="quant-breakdown" aria-labelledby="quant-breakdown-title">
+          <div className="quant-breakdown-head">
+            <h4 id="quant-breakdown-title" className="quant-breakdown-title">
+              Quant Signal Breakdown
+            </h4>
+            {quant && (
+              <>
+                <span
+                  className="regime-badge"
+                  data-regime={quant.breakdown.regime}
+                  title="Detected market regime"
+                >
+                  {REGIME_LABELS[quant.breakdown.regime]}
+                </span>
+                <span className="quant-breakdown-score" title="Multi-Factor Score (0–100)">
+                  {quant.breakdown.score}
+                </span>
+              </>
+            )}
+          </div>
+          {!quant ? (
+            <p className="quant-breakdown-note">Computing signal…</p>
+          ) : (
+            <>
+              <p className="quant-rationale">{quant.breakdown.rationale}</p>
+              <ul className="quant-factors">
+                {QUANT_FACTORS.map((factor) => {
+                  const value = quant.breakdown.components[factor.score];
+                  const weight = quant.breakdown.components.weights[factor.weight];
+                  return (
+                    <li key={factor.label} className="quant-factor">
+                      <span className="quant-factor-label">
+                        {factor.label} <span>({factor.source})</span>
+                      </span>
+                      <span className="quant-factor-track" aria-hidden="true">
+                        <span className="quant-factor-bar" style={{ width: `${value ?? 0}%` }} />
+                      </span>
+                      <span className="quant-factor-value">
+                        {value === null ? '—' : Math.round(value)}
+                      </span>
+                      <span className="quant-factor-weight" title="Applied weight">
+                        {Math.round(weight * 100)}%
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="quant-sizing">
+                ATR position size · ${REFERENCE_CAPITAL.toLocaleString('en-US')} account, 2% risk:{' '}
+                {sizing && sizing.shares > 0 ? (
+                  <strong>
+                    {formatShares(sizing.shares)} shares ≈ {formatPrice(sizing.notional)} · stop{' '}
+                    {formatPrice(sizing.stopPrice)}
+                  </strong>
+                ) : (
+                  <strong>— (no price/ATR data)</strong>
+                )}
+              </p>
+            </>
           )}
         </section>
 

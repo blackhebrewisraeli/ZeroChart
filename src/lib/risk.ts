@@ -141,11 +141,12 @@ export function recommendPositionSize({
   const budgetShares = budget / price;
   const isCapped = riskShares > budgetShares;
 
-  let shares = Number(Math.min(riskShares, budgetShares).toFixed(4));
+  const rawShares = Math.min(riskShares, budgetShares);
+  let shares = Number(rawShares.toFixed(4));
   // Rounding to 4dp can push the notional epsilon-levels over the budget;
-  // round DOWN in that case so the invariant `shares × price ≤ budget` holds.
+  // round the raw quantity DOWN in that case so `shares × price ≤ budget` holds.
   if (shares * price > budget) {
-    shares = Math.floor(shares * 10000) / 10000;
+    shares = Math.floor(rawShares * 10000) / 10000;
   }
 
   return {

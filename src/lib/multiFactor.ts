@@ -1,10 +1,16 @@
 /**
  * Institutional-grade Multi-Factor Signal Score (0–100).
  *
- * Three normalized factors are blended with fixed weights:
+ * Three normalized factors are blended with base weights:
  *   • RSI (40%)      — mean reversion: oversold scores high, overbought low.
  *   • MACD (40%)     — trend/momentum: bullish histogram (MACD > signal) scores high.
  *   • ATR regime (20%) — volatility: quiet regimes score high, blown-out vol low.
+ *
+ * The inputs also classify a market regime (high volatility → trending →
+ * mean-reverting → neutral, first match wins) that tilts the weights by 0.1
+ * toward the factor that regime rewards. `computeMultiFactorBreakdown` exposes
+ * the sub-scores, applied weights, regime, and a one-line rationale so the
+ * score is fully explainable; `calculateMultiFactorScore` returns its number.
  *
  * The combined reading is O(1) over already-computed indicator values, so the
  * heavy indicator math stays in the finance Web Worker while this runs wherever
@@ -24,6 +30,57 @@ const MOMENTUM_SATURATION = 0.01;
 const LOW_VOLATILITY = 0.005;
 /** Daily volatility at or above 5.5% reads as maximally blown-out. */
 const HIGH_VOLATILITY = 0.055;
+
+/** ATR/price at or above 4% classifies the HIGH_VOLATILITY regime. */
+const REGIME_HIGH_VOLATILITY = 0.04;
+/** Volatility below 2% reads as "calm" in the rationale. */
+const CALM_VOLATILITY = 0.02;
+/** |MACD histogram|/price at or above 0.5% (half saturation) classifies TRENDING. */
+const REGIME_TRENDING_MOMENTUM = 0.005;
+/** Momentum inside ±0.05% reads as "flat" in the rationale. */
+const FLAT_MOMENTUM = 0.0005;
+/** RSI at or beyond 30/70 is "extreme" — MEAN_REVERTING when volatility is moderate. */
+const RSI_OVERSOLD = 30;
+const RSI_OVERBOUGHT = 70;
+
+export type MarketRegime = 'TRENDING' | 'MEAN_REVERTING' | 'HIGH_VOLATILITY' | 'NEUTRAL';
+
+export interface FactorWeights {
+  rsi: number;
+  momentum: number;
+  volatility: number;
+}
+
+/** Regime-tilted base weights — each row sums to 1.0. */
+export const REGIME_WEIGHTS: Record<MarketRegime, FactorWeights> = {
+  NEUTRAL: MULTI_FACTOR_WEIGHTS,
+  TRENDING: { rsi: 0.3, momentum: 0.5, volatility: 0.2 },
+  MEAN_REVERTING: { rsi: 0.5, momentum: 0.3, volatility: 0.2 },
+  HIGH_VOLATILITY: { rsi: 0.35, momentum: 0.35, volatility: 0.3 },
+};
+
+export const REGIME_LABELS: Record<MarketRegime, string> = {
+  TRENDING: 'Trending',
+  MEAN_REVERTING: 'Mean-reverting',
+  HIGH_VOLATILITY: 'High-volatility',
+  NEUTRAL: 'Neutral',
+};
+
+export interface MultiFactorBreakdown {
+  /** Composite 0–100 Signal Score. */
+  score: number;
+  /** Per-factor 0–100 sub-scores (null when the input is missing) and applied weights. */
+  components: {
+    rsiScore: number | null;
+    momentumScore: number | null;
+    volatilityScore: number | null;
+    /** Regime-tilted weights renormalized over the available factors (sum 1, or all 0). */
+    weights: FactorWeights;
+  };
+  regime: MarketRegime;
+  /** Deterministic one-line thesis explaining the signal. */
+  rationale: string;
+}
 
 export interface MultiFactorInputs {
   /** RSI reading (0–100). */
@@ -93,28 +150,103 @@ function isUsable(value: number | null): value is number {
 }
 
 /**
- * Blends the three factors into a single 0–100 Signal Score. The example
- * "high momentum + low volatility + oversold RSI" reads 90+, while overbought
- * assets with negative momentum in a blown-out volatility regime bottom out
- * near 0.
+ * Classifies the market regime from raw inputs, first match wins: blown-out
+ * ATR/price → HIGH_VOLATILITY; strong MACD histogram → TRENDING; extreme RSI
+ * (volatility already known to be moderate) → MEAN_REVERTING; else NEUTRAL.
  */
+export function classifyRegime(inputs: MultiFactorInputs): MarketRegime {
+  const { rsi, momentumPercent, volatilityPercent } = inputs;
+  if (isUsable(volatilityPercent) && volatilityPercent >= REGIME_HIGH_VOLATILITY) {
+    return 'HIGH_VOLATILITY';
+  }
+  if (isUsable(momentumPercent) && Math.abs(momentumPercent) >= REGIME_TRENDING_MOMENTUM) {
+    return 'TRENDING';
+  }
+  if (isUsable(rsi) && (rsi <= RSI_OVERSOLD || rsi >= RSI_OVERBOUGHT)) return 'MEAN_REVERTING';
+  return 'NEUTRAL';
+}
+
+function signedPercent(fraction: number): string {
+  // `|| 0` folds a rounded -0 into 0 so near-zero readings never print "-0.0%".
+  const pct = Number((fraction * 100).toFixed(1)) || 0;
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+}
+
+function buildRationale(inputs: MultiFactorInputs, regime: MarketRegime): string {
+  const { rsi, momentumPercent, volatilityPercent } = inputs;
+  const parts: string[] = [];
+  if (isUsable(momentumPercent)) {
+    const bias =
+      momentumPercent >= FLAT_MOMENTUM
+        ? 'Bullish'
+        : momentumPercent <= -FLAT_MOMENTUM
+          ? 'Bearish'
+          : 'Flat';
+    parts.push(`${bias} momentum (${signedPercent(momentumPercent)})`);
+  }
+  if (isUsable(volatilityPercent)) {
+    const tone =
+      volatilityPercent < CALM_VOLATILITY
+        ? 'calm'
+        : volatilityPercent < REGIME_HIGH_VOLATILITY
+          ? 'elevated'
+          : 'high';
+    parts.push(`${tone} volatility (${(volatilityPercent * 100).toFixed(1)}%)`);
+  }
+  if (isUsable(rsi)) {
+    const zone =
+      rsi <= RSI_OVERSOLD ? 'oversold' : rsi >= RSI_OVERBOUGHT ? 'overbought' : 'neutral';
+    parts.push(`${zone} RSI ${Math.round(rsi)}`);
+  }
+  const thesis = parts.length > 0 ? parts.join(' + ') : 'No factor data';
+  return `${thesis} · ${REGIME_LABELS[regime]} regime`;
+}
+
+/**
+ * White-box Multi-Factor model: classifies the regime, tilts the factor
+ * weights toward it, renormalizes across the factors that have data, and
+ * blends the sub-scores into the 0–100 Signal Score. The example "high
+ * momentum + low volatility + oversold RSI" reads 90+, while overbought
+ * assets with negative momentum in a blown-out volatility regime bottom out
+ * near 0. No usable inputs → score 0 (no signal).
+ */
+export function computeMultiFactorBreakdown(inputs: MultiFactorInputs): MultiFactorBreakdown {
+  const regime = classifyRegime(inputs);
+  const base = REGIME_WEIGHTS[regime];
+  const rsiScore = isUsable(inputs.rsi) ? rsiFactorScore(inputs.rsi) : null;
+  const momentumScore = isUsable(inputs.momentumPercent)
+    ? momentumFactorScore(inputs.momentumPercent)
+    : null;
+  const volatilityScore = isUsable(inputs.volatilityPercent)
+    ? volatilityFactorScore(inputs.volatilityPercent)
+    : null;
+
+  const activeWeight =
+    (rsiScore === null ? 0 : base.rsi) +
+    (momentumScore === null ? 0 : base.momentum) +
+    (volatilityScore === null ? 0 : base.volatility);
+  const applied = (score: number | null, weight: number) =>
+    score === null || activeWeight === 0 ? 0 : weight / activeWeight;
+  const weights: FactorWeights = {
+    rsi: applied(rsiScore, base.rsi),
+    momentum: applied(momentumScore, base.momentum),
+    volatility: applied(volatilityScore, base.volatility),
+  };
+
+  const weighted =
+    weights.rsi * (rsiScore ?? 0) +
+    weights.momentum * (momentumScore ?? 0) +
+    weights.volatility * (volatilityScore ?? 0);
+
+  return {
+    score: Math.round(clamp(weighted, 0, 100)),
+    components: { rsiScore, momentumScore, volatilityScore, weights },
+    regime,
+    rationale: buildRationale(inputs, regime),
+  };
+}
+
+/** The composite 0–100 Signal Score alone (regime-weighted, see the breakdown). */
 export function calculateMultiFactorScore(inputs: MultiFactorInputs): number {
-  let weighted = 0;
-  let activeWeight = 0;
-
-  if (isUsable(inputs.rsi)) {
-    weighted += MULTI_FACTOR_WEIGHTS.rsi * rsiFactorScore(inputs.rsi);
-    activeWeight += MULTI_FACTOR_WEIGHTS.rsi;
-  }
-  if (isUsable(inputs.momentumPercent)) {
-    weighted += MULTI_FACTOR_WEIGHTS.momentum * momentumFactorScore(inputs.momentumPercent);
-    activeWeight += MULTI_FACTOR_WEIGHTS.momentum;
-  }
-  if (isUsable(inputs.volatilityPercent)) {
-    weighted += MULTI_FACTOR_WEIGHTS.volatility * volatilityFactorScore(inputs.volatilityPercent);
-    activeWeight += MULTI_FACTOR_WEIGHTS.volatility;
-  }
-
-  if (activeWeight === 0) return 0;
-  return Math.round(clamp(weighted / activeWeight, 0, 100));
+  return computeMultiFactorBreakdown(inputs).score;
 }

@@ -489,4 +489,34 @@ describe('portfolio store v3', () => {
       store.getPortfolio('real_tracking').positions.some((position) => position.ticker === 'TSLA'),
     ).toBe(true);
   });
+
+  it('keeps lot history on an unchanged edit and collapses lots on a real edit', () => {
+    renderStore();
+    act(() => {
+      store.executeBuy('real_tracking', {
+        ticker: 'AMD',
+        shares: 10,
+        price: 100,
+        fee: 5,
+        timestamp: '2026-01-01T00:00:00.000Z',
+      });
+      store.executeBuy('real_tracking', {
+        ticker: 'AMD',
+        shares: 10,
+        price: 120,
+        timestamp: '2026-02-01T00:00:00.000Z',
+      });
+    });
+    const amd = () =>
+      store.getPortfolio('real_tracking').positions.find((position) => position.ticker === 'AMD');
+    const before = amd();
+    expect(before?.lots).toHaveLength(2);
+
+    act(() => store.updatePosition(before!.id, { shares: 20, buyPrice: 110 }));
+    expect(amd()).toEqual(before);
+
+    act(() => store.updatePosition(before!.id, { shares: 15, buyPrice: 110 }));
+    expect(amd()).toMatchObject({ shares: 15, buyPrice: 110 });
+    expect(amd()?.lots).toHaveLength(1);
+  });
 });

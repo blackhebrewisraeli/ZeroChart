@@ -82,8 +82,8 @@ beforeEach(() => {
   history.fetch.mockResolvedValue([]);
 });
 
-const klines = (closes: number[]) =>
-  closes.map((close, index) => ({ timestamp: index * 86_400_000, close }));
+const klines = (closes: number[], startDay = 0) =>
+  closes.map((close, index) => ({ timestamp: (startDay + index) * 86_400_000, close }));
 
 afterEach(cleanup);
 
@@ -162,6 +162,30 @@ describe('shared portfolio snapshots', () => {
     // 60/40 curve on 10k: 10000 → 11200 → 10200 → 12200 (+22%); BTC alone +10%.
     expect(snapshot.maxDrawdownPercent).toBeCloseTo((1000 / 11200) * 100);
     expect(snapshot.alphaPercent).toBeCloseTo(12);
+  });
+
+  it('measures alpha over the portfolio window and keeps drawdown without a benchmark', async () => {
+    const eth = [makePosition({ id: 'eth', ticker: 'ETH', buyPrice: 50, shares: 1 })];
+    const assets = [makeAsset({ ticker: 'ETH', current_price: 60 })];
+    // ETH lists two days into the lookback; BTC's earlier crash is outside its window.
+    history.fetch.mockImplementation(async (ticker: string) =>
+      ticker === 'ETH' ? klines([50, 60], 2) : klines([200, 100, 100, 110]),
+    );
+
+    const aligned = await buildSharedPortfolioSnapshot(eth, assets, '2026-10-18T00:00:00.000Z');
+
+    expect(aligned.maxDrawdownPercent).toBeCloseTo(0);
+    expect(aligned.alphaPercent).toBeCloseTo(20 - 10);
+
+    history.fetch.mockImplementation(async (ticker: string) => {
+      if (ticker === 'ETH') return klines([50, 40, 60]);
+      throw new Error('benchmark down');
+    });
+
+    const noBenchmark = await buildSharedPortfolioSnapshot(eth, assets, '2026-10-18T00:00:00.000Z');
+
+    expect(noBenchmark.maxDrawdownPercent).toBeCloseTo(20);
+    expect(noBenchmark.alphaPercent).toBeNull();
   });
 
   it('still builds the snapshot, without drawdown and alpha, when history is unavailable', async () => {

@@ -105,14 +105,28 @@ async function computeSharedPortfolioRisk(
   try {
     const [series, benchmarkSeries] = await Promise.all([
       Promise.all(weights.map((item) => fetchDailySeries(item.ticker, days))),
-      fetchDailySeries(SHARED_BENCHMARK_TICKER, days),
+      // A missing benchmark only costs alpha; drawdown stands on its own.
+      fetchDailySeries(SHARED_BENCHMARK_TICKER, days).catch((): AssetPriceSeries => ({
+        ticker: SHARED_BENCHMARK_TICKER,
+        points: [],
+      })),
     ]);
     const portfolio = computeBacktest({ weights, series });
     if (portfolio.coverage.some((entry) => entry.status === 'missing')) return NO_RISK;
 
+    // Same window: holdings listed after the lookback start shorten the curve.
+    const first = portfolio.points[0]?.timestamp ?? Number.POSITIVE_INFINITY;
+    const last = portfolio.points.at(-1)?.timestamp ?? Number.NEGATIVE_INFINITY;
     const benchmark = computeBacktest({
       weights: [{ ticker: SHARED_BENCHMARK_TICKER, weight: 1 }],
-      series: [benchmarkSeries],
+      series: [
+        {
+          ticker: SHARED_BENCHMARK_TICKER,
+          points: benchmarkSeries.points.filter(
+            (point) => point.timestamp >= first && point.timestamp <= last,
+          ),
+        },
+      ],
     });
     return {
       maxDrawdownPercent: portfolio.maxDrawdownPercent,

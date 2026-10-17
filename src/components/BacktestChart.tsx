@@ -19,6 +19,11 @@ const INITIAL_INVESTMENT = 10000;
 
 type StopMode = 'off' | 'atr' | 'pct';
 
+interface Settings {
+  friction: boolean;
+  stopMode: StopMode;
+}
+
 const STOP_OPTIONS: Record<
   StopMode,
   { label: string; options: Pick<BacktestOptions, 'trailingStopAtrMultiplier' | 'trailingStopPct'> }
@@ -53,8 +58,9 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [failedTickers, setFailedTickers] = useState<string[]>([]);
-  const [friction, setFriction] = useState(true);
-  const [stopMode, setStopMode] = useState<StopMode>('off');
+  const [settings, setSettings] = useState<Settings>({ friction: true, stopMode: 'off' });
+  // Latest settings for a fetch that finishes after the user changed a control.
+  const settingsRef = useRef(settings);
   // Last fetched history, so toggling a control re-runs without refetching.
   const seriesRef = useRef<AssetPriceSeries[] | null>(null);
 
@@ -80,28 +86,34 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
     }));
   }, [result]);
 
-  async function compute(series: AssetPriceSeries[], withFriction: boolean, stop: StopMode) {
+  async function compute(series: AssetPriceSeries[], { friction, stopMode }: Settings) {
     const computed = await computeBacktestAsync({
       weights,
       series,
       initialValue: INITIAL_INVESTMENT,
-      ...(withFriction ? REALISTIC_FRICTION : {}),
-      ...STOP_OPTIONS[stop].options,
+      ...(friction ? REALISTIC_FRICTION : {}),
+      ...STOP_OPTIONS[stopMode].options,
     });
     setResult(computed);
     setStatus('success');
   }
 
-  function rerun(withFriction: boolean, stop: StopMode) {
+  function changeSettings(next: Settings) {
+    settingsRef.current = next;
+    setSettings(next);
+    // Mid-fetch changes are picked up by `runSimulation` through the ref; a
+    // previous compute error can still be recovered from cached history.
     const series = seriesRef.current;
-    if (!series || status !== 'success') return;
-    compute(series, withFriction, stop).catch(() => {
+    if (!series || status === 'loading') return;
+    compute(series, next).catch(() => {
       setStatus('error');
       setErrorMessage("Couldn't run the simulation. Please try again.");
     });
   }
 
   async function runSimulation() {
+    // A failed refetch must not leave stale history for later reruns.
+    seriesRef.current = null;
     setStatus('loading');
     setErrorMessage(null);
     setFailedTickers([]);
@@ -140,7 +152,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
       }
 
       seriesRef.current = series;
-      await compute(series, friction, stopMode);
+      await compute(series, settingsRef.current);
     } catch {
       setStatus('error');
       setErrorMessage("Couldn't load historical data. Please try again.");
@@ -191,23 +203,18 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
             type="checkbox"
             role="switch"
             className="backtest-toggle"
-            checked={friction}
-            onChange={(event) => {
-              setFriction(event.target.checked);
-              rerun(event.target.checked, stopMode);
-            }}
+            checked={settings.friction}
+            onChange={(event) => changeSettings({ ...settings, friction: event.target.checked })}
           />
         </label>
         <label className="backtest-control">
           Trailing Stop
           <select
             className="backtest-select"
-            value={stopMode}
-            onChange={(event) => {
-              const next = event.target.value as StopMode;
-              setStopMode(next);
-              rerun(friction, next);
-            }}
+            value={settings.stopMode}
+            onChange={(event) =>
+              changeSettings({ ...settings, stopMode: event.target.value as StopMode })
+            }
           >
             {(Object.keys(STOP_OPTIONS) as StopMode[]).map((mode) => (
               <option key={mode} value={mode}>
@@ -218,7 +225,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
         </label>
       </div>
       <p className="backtest-note">
-        {friction
+        {settings.friction
           ? `Net of ${REALISTIC_FRICTION.feeBps} bps fee + ${REALISTIC_FRICTION.slippageBps} bps slippage on every fill.`
           : 'Gross of fees and slippage.'}
       </p>

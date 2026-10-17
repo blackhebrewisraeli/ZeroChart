@@ -235,13 +235,50 @@ describe('BacktestChart friction and trailing-stop controls', () => {
     expect(fetchHistoricalCandles).toHaveBeenCalledTimes(1);
   });
 
-  it('applies settings chosen before the first run without fetching early', () => {
+  it('applies a setting changed while the history fetch is still pending', async () => {
+    let release: (candles: Awaited<ReturnType<typeof fetchHistoricalCandles>>) => void = () => {};
+    vi.mocked(fetchHistoricalCandles).mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve)),
+    );
     render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+
+    // Changing a control mid-fetch doesn't compute early…
     fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
       target: { value: 'pct' },
     });
-
     expect(computeBacktestAsync).not.toHaveBeenCalled();
-    expect(fetchHistoricalCandles).not.toHaveBeenCalled();
+
+    // …but the run that finishes uses it, so the result matches the controls.
+    release([{ timestamp: 1_700_000_000_000, open: 99, high: 102, low: 98, close: 100 }]);
+    await screen.findByText('Alpha vs. Hold');
+    expect(computeBacktestAsync).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(computeBacktestAsync).mock.calls[0]?.[0]).toMatchObject({
+      feeBps: 10,
+      trailingStopPct: 5,
+    });
+  });
+
+  it('recovers from a failed rerun on the next setting change without refetching', async () => {
+    render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+    await screen.findByText('Alpha vs. Hold');
+
+    vi.mocked(computeBacktestAsync).mockRejectedValueOnce(new Error('worker crashed'));
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'atr' },
+    });
+    expect(
+      await screen.findByText("Couldn't run the simulation. Please try again."),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'pct' },
+    });
+    expect(await screen.findByText('Alpha vs. Hold')).toBeInTheDocument();
+    expect(vi.mocked(computeBacktestAsync).mock.calls[2]?.[0]).toMatchObject({
+      trailingStopPct: 5,
+    });
+    expect(fetchHistoricalCandles).toHaveBeenCalledTimes(1);
   });
 });

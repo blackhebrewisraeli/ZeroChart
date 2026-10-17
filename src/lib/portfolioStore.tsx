@@ -669,14 +669,27 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       const updatePositions = (positions: Position[]): Position[] =>
         positions.map((position) => {
           if (position.id !== id) return position;
-          const next = { ...position, ...updates };
-          // An unchanged save keeps lot history (fees, dates, FIFO order).
-          if (next.shares === position.shares && next.buyPrice === position.buyPrice) {
+          const normalized = normalizePositionLots(position);
+          const nextShares = updates.shares ?? normalized.shares;
+          const nextBuyPrice = updates.buyPrice ?? normalized.buyPrice;
+          if (nextShares === normalized.shares && nextBuyPrice === normalized.buyPrice) {
             return position;
           }
-          // A real edit is a manual basis correction: collapse to one opening lot.
-          const { lots: _lots, ...withoutLots } = next;
-          return normalizePositionLots(withoutLots);
+
+          const shareScale = normalized.shares > 0 ? nextShares / normalized.shares : 0;
+          const priceScale = normalized.buyPrice > 0 ? nextBuyPrice / normalized.buyPrice : 0;
+          const lots = (normalized.lots ?? []).map((lot) => ({
+            ...lot,
+            shares: lot.shares * shareScale,
+            buyPrice: normalized.buyPrice > 0 ? lot.buyPrice * priceScale : nextBuyPrice,
+          }));
+
+          return normalizePositionLots({
+            ...normalized,
+            shares: nextShares,
+            buyPrice: nextBuyPrice,
+            lots,
+          });
         });
       const current = scopeRef.current;
       commit({

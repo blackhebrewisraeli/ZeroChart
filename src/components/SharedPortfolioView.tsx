@@ -10,6 +10,11 @@ function formatPercent(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+function pnlTone(value: number | null): string | undefined {
+  if (value === null) return undefined;
+  return value >= 0 ? 'pnl-up' : 'pnl-down';
+}
+
 function scoreTone(score: number): string {
   return score >= 80 ? 'shared-score-high' : score >= 60 ? 'shared-score-mid' : 'shared-score-low';
 }
@@ -43,9 +48,8 @@ function BrandCta({ compact = false }: { compact?: boolean }) {
 
 export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord }) {
   const { snapshot } = record;
-  const pnlTone = snapshot.pnlPercent >= 0 ? 'pnl-up' : 'pnl-down';
   const largest = snapshot.holdings[0];
-  const winners = snapshot.holdings.filter((holding) => holding.pnlPercent > 0).length;
+  const { maxDrawdownPercent: drawdown, alphaPercent: alpha } = snapshot;
   const publishedAt = new Date(snapshot.createdAt);
   const publishedLabel = Number.isNaN(publishedAt.getTime())
     ? 'Published portfolio snapshot'
@@ -87,8 +91,24 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
         <section className="shared-kpi-grid" aria-label="Portfolio summary">
           <div className="shared-kpi-card">
             <span className="shared-kpi-label">Total return</span>
-            <strong className={pnlTone}>{formatPercent(snapshot.pnlPercent)}</strong>
+            <strong className={pnlTone(snapshot.pnlPercent)}>
+              {formatPercent(snapshot.pnlPercent)}
+            </strong>
             <span>Unrealized, since entry</span>
+          </div>
+          <div className="shared-kpi-card">
+            <span className="shared-kpi-label">Max drawdown</span>
+            <strong className={pnlTone(drawdown === null ? null : -drawdown)}>
+              {drawdown === null ? '—' : formatPercent(-drawdown)}
+            </strong>
+            <span>Peak to trough, up to 1 year</span>
+          </div>
+          <div className="shared-kpi-card">
+            <span className="shared-kpi-label">Alpha</span>
+            <strong className={pnlTone(alpha)}>
+              {alpha === null ? '—' : formatPercent(alpha)}
+            </strong>
+            <span>vs BTC buy &amp; hold, same window</span>
           </div>
           <div className="shared-kpi-card">
             <span className="shared-kpi-label">Positions</span>
@@ -98,13 +118,6 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
                 ? `Largest: ${largest.ticker} ${largest.allocationPercent.toFixed(1)}%`
                 : 'No holdings'}
             </span>
-          </div>
-          <div className="shared-kpi-card">
-            <span className="shared-kpi-label">In profit</span>
-            <strong>
-              {winners}/{snapshot.holdings.length}
-            </strong>
-            <span>Holdings with a positive return</span>
           </div>
         </section>
 

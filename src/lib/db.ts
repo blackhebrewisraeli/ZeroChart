@@ -1,4 +1,5 @@
 import type { Position } from '@/lib/portfolioManager';
+import type { PortfolioPersistedState, PortfolioStateV3 } from '@/lib/portfolioStore';
 import { isCloudWriteAllowed } from '@/lib/hydrationStore';
 import { supabase } from '@/lib/supabaseClient';
 import type { Json } from '@/integrations/supabase/types';
@@ -25,7 +26,9 @@ export class PortfolioNotHydratedError extends Error {
  * while this user's `loadPortfolio` is still in flight, so a slow hydration
  * can never be clobbered by (or clobber) another session's state.
  */
-export async function savePortfolio(userId: string, positions: Position[]): Promise<void> {
+type PortfolioCloudPayload = PortfolioPersistedState;
+
+async function savePortfolioPayload(userId: string, payload: PortfolioCloudPayload): Promise<void> {
   if (!isCloudWriteAllowed(userId)) throw new PortfolioNotHydratedError(userId);
 
   const { error } = await supabase.from('user_portfolios').upsert(
@@ -34,7 +37,7 @@ export async function savePortfolio(userId: string, positions: Position[]): Prom
       // `Position` is an interface, so it has no implicit index signature to
       // satisfy the recursive `Json` type — one documented cast at the
       // persistence boundary (values are plain string/number/booleans).
-      positions: positions as unknown as Json,
+      positions: payload as unknown as Json,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id' },
@@ -43,12 +46,16 @@ export async function savePortfolio(userId: string, positions: Position[]): Prom
   if (error) throw error;
 }
 
-/**
- * Fetches the user's saved portfolio, or `null` when they have not saved one
- * yet (an explicit empty `[]` row comes back as `[]`, distinct from `null`).
- * Row Level Security restricts the query to the caller's own row.
- */
-export async function loadPortfolio(userId: string): Promise<Position[] | null> {
+export async function savePortfolio(userId: string, positions: Position[]): Promise<void> {
+  await savePortfolioPayload(userId, positions);
+}
+
+/** Persists the complete v3 envelope while the legacy array API stays intact. */
+export async function savePortfolioStateV3(userId: string, state: PortfolioStateV3): Promise<void> {
+  await savePortfolioPayload(userId, state);
+}
+
+async function loadPortfolioPayload(userId: string): Promise<unknown | null> {
   const { data, error } = await supabase
     .from('user_portfolios')
     .select('positions')
@@ -56,10 +63,31 @@ export async function loadPortfolio(userId: string): Promise<Position[] | null> 
     .maybeSingle();
 
   if (error) throw error;
+  return data?.positions ?? null;
+}
 
-  const positions = data?.positions;
-  if (!Array.isArray(positions)) return null;
-  // Runtime shape is array-validated here; element-level validation is deferred
-  // to the schema migration layer (M2 lot/transaction model).
-  return positions as unknown as Position[];
+/**
+ * Fetches the user's saved portfolio, or `null` when they have not saved one
+ * yet (an explicit empty `[]` row comes back as `[]`, distinct from `null`).
+ * Row Level Security restricts the query to the caller's own row.
+ */
+export async function loadPortfolio(userId: string): Promise<PortfolioCloudPayload | null> {
+  const payload = await loadPortfolioPayload(userId);
+  if (Array.isArray(payload)) return payload as unknown as Position[];
+  if (payload === null || typeof payload !== 'object') return null;
+  if ('version' in payload && payload.version === 3 && 'portfolios' in payload) {
+    return payload as unknown as PortfolioStateV3;
+  }
+  if ('positions' in payload && Array.isArray(payload.positions)) {
+    return payload as unknown as PortfolioCloudPayload;
+  }
+  return null;
+}
+
+/**
+ * Loads either the legacy position array or the v3 multi-portfolio envelope.
+ * Shape normalization and v1/v2 migration remain owned by `portfolioStore`.
+ */
+export async function loadPortfolioState(userId: string): Promise<PortfolioCloudPayload | null> {
+  return loadPortfolio(userId);
 }

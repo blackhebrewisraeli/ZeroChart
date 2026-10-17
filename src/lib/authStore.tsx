@@ -31,7 +31,7 @@ const AuthContext = createContext<AuthStore | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const { switchScope, replacePositions } = usePortfolio();
+  const { switchScope, replacePortfolioState } = usePortfolio();
   /** The user the currently-executing auth/hydration flow belongs to. */
   const activeUserIdRef = useRef<string | null>(null);
 
@@ -86,14 +86,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (activeUserIdRef.current !== userId) return; // stale — user changed/signed out
         // An existing cloud row always wins, including an explicit empty `[]`,
         // which must replace demo seeds rather than coexist with them.
-        if (saved !== null) replacePositions(saved);
+        if (saved !== null) replacePortfolioState(saved);
         completeHydration(userId, 'ready');
       })
       .catch(() => {
         if (activeUserIdRef.current !== userId) return; // stale — user changed/signed out
         completeHydration(userId, 'error');
       });
-  }, [user, switchScope, replacePositions]);
+  }, [user, switchScope, replacePortfolioState]);
 
   const signOut = useCallback(async () => {
     // Clear the signed-in user's in-memory portfolio and re-scope to guest

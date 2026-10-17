@@ -1,3 +1,5 @@
+import type { MultiFactorBreakdown } from '@/lib/multiFactor';
+
 export type RiskProfile = 'conservative' | 'moderate' | 'aggressive';
 
 export interface PortfolioPreferences {
@@ -17,6 +19,12 @@ export interface Allocation {
    * allocated amount; `null` when the asset has no usable price/ATR data.
    */
   suggestedShares?: number | null;
+  /** Factor sub-scores (0–100) and the regime-tilted weights applied to them. */
+  components?: MultiFactorBreakdown['components'];
+  /** Market regime detected from the factor inputs. */
+  regime?: MultiFactorBreakdown['regime'];
+  /** One-line quant thesis explaining the score. */
+  rationale?: string;
 }
 
 /** Number of holdings per risk profile. */

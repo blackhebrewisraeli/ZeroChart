@@ -8,7 +8,21 @@ import { PortfolioProvider } from '@/lib/portfolioStore';
 // test proves the UI surfaces the Multi-Factor Score and the ATR sizing.
 vi.mock('@/lib/roboAdvisor', () => ({
   buildQuantPortfolio: vi.fn(async () => [
-    { ticker: 'BTC', weight: 0.6, allocatedAmount: 6000, score: 92, suggestedShares: 12.5 },
+    {
+      ticker: 'BTC',
+      weight: 0.6,
+      allocatedAmount: 6000,
+      score: 92,
+      suggestedShares: 12.5,
+      regime: 'TRENDING',
+      rationale: 'Bullish momentum (+0.8%) + calm volatility (1.2%) · Trending regime',
+      components: {
+        rsiScore: 80,
+        momentumScore: 100,
+        volatilityScore: 94,
+        weights: { rsi: 0.3, momentum: 0.5, volatility: 0.2 },
+      },
+    },
     { ticker: 'ETH', weight: 0.4, allocatedAmount: 4000, score: 78, suggestedShares: 40 },
   ]),
 }));
@@ -62,6 +76,13 @@ describe('RoboAdvisor results', () => {
     expect(sizeTooltips).toHaveLength(2);
     expect(sizeTooltips[0]).toHaveTextContent('12.5 shares');
     expect(sizeTooltips[1]).toHaveTextContent('40 shares');
+
+    // White-box breakdown: regime badge, one-line thesis, and factor sub-scores.
+    expect(screen.getByText('Trending')).toHaveAttribute('data-regime', 'TRENDING');
+    expect(
+      screen.getByText('Bullish momentum (+0.8%) + calm volatility (1.2%) · Trending regime'),
+    ).toBeInTheDocument();
+    expect(screen.getByTitle('Momentum sub-score · 50% weight')).toHaveTextContent('MACD 100');
 
     // The results note explains the model behind the numbers.
     expect(screen.getByText(/Multi-Factor Score \(RSI · MACD · ATR\)/)).toBeInTheDocument();

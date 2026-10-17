@@ -2,7 +2,11 @@ import type { Asset } from '@/lib/assets';
 import { fetchHistoricalCandles, isBinanceCrypto } from '@/lib/binance';
 import { atrAsync, macdAsync, rsiAsync } from '@/lib/financeClient';
 import type { MacdResult } from '@/lib/indicators';
-import { calculateMultiFactorScore, type MultiFactorInputs } from '@/lib/multiFactor';
+import {
+  computeMultiFactorBreakdown,
+  type MultiFactorBreakdown,
+  type MultiFactorInputs,
+} from '@/lib/multiFactor';
 import { recommendPositionSize } from '@/lib/risk';
 import {
   ASSET_COUNT_BY_RISK,
@@ -107,9 +111,10 @@ function staticInputs(asset: Asset): MultiFactorInputs {
   };
 }
 
-interface ScoredAsset {
+export interface ScoredAsset {
   asset: Asset;
-  score: number;
+  /** White-box Multi-Factor result: score, sub-scores, weights, regime, rationale. */
+  breakdown: MultiFactorBreakdown;
   /** Resolved price (live or last close) used for sizing; null when unknown. */
   price: number | null;
   /** ATR(14) in price units — real for crypto, a risk-% proxy otherwise. */
@@ -120,7 +125,7 @@ function staticScore(asset: Asset): ScoredAsset {
   const price = validPrice(asset);
   return {
     asset,
-    score: calculateMultiFactorScore(staticInputs(asset)),
+    breakdown: computeMultiFactorBreakdown(staticInputs(asset)),
     price,
     atr: atrProxy(asset, price),
   };
@@ -130,9 +135,12 @@ function staticScore(asset: Asset): ScoredAsset {
  * Scores one asset with the Multi-Factor model (RSI · MACD · ATR regime).
  * Crypto history is fetched once as OHLC and the indicator math runs in the
  * finance Web Worker; stocks/forex (and fetch failures) fall back to the
- * static asset-table proxies for the same three factors.
+ * static asset-table proxies for the same three factors. Never rejects.
  */
-async function scoreAsset(asset: Asset, deps: QuantDeps): Promise<ScoredAsset> {
+export async function scoreAsset(
+  asset: Asset,
+  deps: QuantDeps = defaultDeps,
+): Promise<ScoredAsset> {
   if (!isBinanceCrypto(asset.ticker)) return staticScore(asset);
 
   try {
@@ -155,7 +163,7 @@ async function scoreAsset(asset: Asset, deps: QuantDeps): Promise<ScoredAsset> {
         atr !== null && price !== null && price > 0 ? atr / price : statics.volatilityPercent,
     };
 
-    return { asset, score: calculateMultiFactorScore(inputs), price, atr };
+    return { asset, breakdown: computeMultiFactorBreakdown(inputs), price, atr };
   } catch {
     return staticScore(asset);
   }
@@ -183,16 +191,17 @@ export async function buildQuantPortfolio(
 
   const scored = await Promise.all(candidates.map((asset) => scoreAsset(asset, deps)));
   const qualified = scored
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter((item) => item.breakdown.score > 0)
+    .sort((a, b) => b.breakdown.score - a.breakdown.score)
     .slice(0, ASSET_COUNT_BY_RISK[preferences.riskProfile]);
 
   if (qualified.length === 0) return [];
 
-  const totalScore = qualified.reduce((sum, item) => sum + item.score, 0);
+  const totalScore = qualified.reduce((sum, item) => sum + item.breakdown.score, 0);
   const capital = preferences.totalCapital;
 
-  return qualified.map(({ asset, score, price, atr }) => {
+  return qualified.map(({ asset, breakdown, price, atr }) => {
+    const { score, components, regime, rationale } = breakdown;
     const weight = score / totalScore;
     const allocatedAmount = Number((capital * weight).toFixed(2));
     // The suggested size is bounded by this asset's allocation so the risk
@@ -207,6 +216,9 @@ export async function buildQuantPortfolio(
       weight,
       allocatedAmount,
       score,
+      components,
+      regime,
+      rationale,
       suggestedShares: sizing ? sizing.shares : null,
     };
   });

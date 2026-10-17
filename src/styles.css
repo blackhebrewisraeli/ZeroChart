@@ -1332,6 +1332,7 @@ body {
 }
 .robo-asset-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -1400,6 +1401,51 @@ body {
     600 12px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
+}
+.robo-rationale {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--foreground);
+}
+.robo-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font:
+    600 10.5px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.robo-factors b {
+  color: var(--foreground);
+}
+/* Market regime pill — brand blue for trends, semantic signals otherwise. */
+.regime-badge {
+  --regime: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font:
+    600 9.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--regime);
+  background: color-mix(in oklch, var(--regime) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--regime) 35%, transparent);
+}
+.regime-badge[data-regime='TRENDING'] {
+  --regime: var(--brand-blue);
+}
+.regime-badge[data-regime='MEAN_REVERTING'] {
+  --regime: var(--signal-yellow);
+}
+.regime-badge[data-regime='HIGH_VOLATILITY'] {
+  --regime: var(--signal-red);
 }
 .robo-swap {
   grid-area: swap;
@@ -4266,6 +4312,104 @@ body {
   padding: 14px 24px 22px;
   font-size: 11.5px;
   color: var(--muted-foreground);
+}
+.quant-breakdown {
+  margin: 16px 24px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.quant-breakdown-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.quant-breakdown-title {
+  margin-right: auto;
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.quant-breakdown-score {
+  font:
+    700 18px 'JetBrains Mono',
+    monospace;
+  color: var(--foreground);
+}
+.quant-breakdown-note,
+.quant-sizing {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.quant-sizing strong {
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  color: var(--foreground);
+}
+.quant-rationale {
+  margin: 10px 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+.quant-factors {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.quant-factor {
+  display: grid;
+  grid-template-columns: 11rem 1fr 2rem 2.5rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.quant-factor-label span {
+  color: var(--muted-foreground);
+}
+.quant-factor-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--muted);
+}
+.quant-factor-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand-blue);
+}
+.quant-factor-value,
+.quant-factor-weight {
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  text-align: right;
+}
+.quant-factor-weight {
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+}
+@media (max-width: 500px) {
+  .quant-breakdown {
+    margin: 16px 16px 0;
+  }
+  .quant-factor {
+    grid-template-columns: 1fr 2rem 2.5rem;
+    row-gap: 4px;
+  }
+  .quant-factor-label {
+    grid-column: 1 / -1;
+  }
 }
 @keyframes asset-details-overlay-in {
   from {

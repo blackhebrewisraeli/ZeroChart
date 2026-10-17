@@ -1,24 +1,12 @@
 import { atr, macd, rsi, sma, type MacdResult } from './indicators';
-import {
-  computeBacktest,
-  type AllocationWeight,
-  type AssetPriceSeries,
-  type BacktestCostModel,
-  type BacktestResult,
-} from './backtestManager';
+import { computeBacktest, type BacktestOptions, type BacktestResult } from './backtestManager';
 
 export type FinanceRequest =
   | { kind: 'sma'; values: number[]; period: number }
   | { kind: 'rsi'; values: number[]; period: number }
   | { kind: 'macd'; values: number[]; fast: number; slow: number; signalPeriod: number }
   | { kind: 'atr'; highs: number[]; lows: number[]; closes: number[]; period: number }
-  | {
-      kind: 'backtest';
-      weights: AllocationWeight[];
-      series: AssetPriceSeries[];
-      initialValue: number | undefined;
-      costModel: BacktestCostModel | undefined;
-    };
+  | ({ kind: 'backtest' } & BacktestOptions);
 
 export type FinanceResult = Float64Array | MacdResult | BacktestResult;
 
@@ -33,17 +21,8 @@ export function computeFinance(request: FinanceRequest): FinanceResult {
       return macd(request.values, request.fast, request.slow, request.signalPeriod);
     case 'atr':
       return atr(request.highs, request.lows, request.closes, request.period);
-    case 'backtest': {
-      const options: {
-        weights: AllocationWeight[];
-        series: AssetPriceSeries[];
-        initialValue?: number;
-        costModel?: BacktestCostModel;
-      } = { weights: request.weights, series: request.series };
-      if (request.initialValue !== undefined) options.initialValue = request.initialValue;
-      if (request.costModel !== undefined) options.costModel = request.costModel;
-      return computeBacktest(options);
-    }
+    case 'backtest':
+      return computeBacktest(request);
   }
 }
 

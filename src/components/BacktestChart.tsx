@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { UTCTimestamp } from 'lightweight-charts';
 import { History, Loader2 } from 'lucide-react';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { ValueAreaChart, type ValuePoint } from '@/components/LightweightChart';
-import { fetchYearlyKlines, isBinanceCrypto } from '@/lib/binance';
+import { fetchHistoricalCandles, isBinanceCrypto } from '@/lib/binance';
 import {
-  DEFAULT_BACKTEST_COST_MODEL,
+  REALISTIC_FRICTION,
   deriveWeights,
   type AssetPriceSeries,
+  type BacktestOptions,
   type BacktestResult,
 } from '@/lib/backtestManager';
 import { computeBacktestAsync } from '@/lib/financeClient';
@@ -16,9 +17,34 @@ import { cn } from '@/lib/utils';
 
 const INITIAL_INVESTMENT = 10000;
 
-// Display labels for the entry-cost model applied by the engine (M1-T3, F-2.1c).
-const FEE_BPS = Math.round(DEFAULT_BACKTEST_COST_MODEL.feeRate * 10000);
-const SLIPPAGE_BPS = Math.round(DEFAULT_BACKTEST_COST_MODEL.slippageRate * 10000);
+type StopMode = 'off' | 'atr' | 'pct';
+
+interface Settings {
+  friction: boolean;
+  stopMode: StopMode;
+}
+
+const STOP_OPTIONS: Record<
+  StopMode,
+  { label: string; options: Pick<BacktestOptions, 'trailingStopAtrMultiplier' | 'trailingStopPct'> }
+> = {
+  off: { label: 'Off', options: {} },
+  atr: { label: '2× ATR', options: { trailingStopAtrMultiplier: 2 } },
+  pct: { label: '5% Trailing', options: { trailingStopPct: 5 } },
+};
+
+/** Signed percent rounded to cents, so "+0.00%" never shows up as a win. */
+function signedPercent(value: number): string {
+  const rounded = Number(value.toFixed(2));
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}%`;
+}
+
+function alphaTone(alpha: number): string | undefined {
+  const rounded = Number(alpha.toFixed(2));
+  if (rounded > 0) return 'backtest-risk-good';
+  if (rounded < 0) return 'backtest-risk-bad';
+  return undefined;
+}
 
 /** Tones the simplified Sharpe ratio: ≥1 solid, 0–1 caution, ≤0 poor. */
 function sharpeTone(sharpe: number): string {
@@ -32,6 +58,11 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [failedTickers, setFailedTickers] = useState<string[]>([]);
+  const [settings, setSettings] = useState<Settings>({ friction: true, stopMode: 'off' });
+  // Latest settings for a fetch that finishes after the user changed a control.
+  const settingsRef = useRef(settings);
+  // Last fetched history, so toggling a control re-runs without refetching.
+  const seriesRef = useRef<AssetPriceSeries[] | null>(null);
 
   const weights = deriveWeights(positions, assets);
   const tickers = [...new Set(positions.map((position) => position.ticker))];
@@ -47,7 +78,42 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
     }));
   }, [result]);
 
+  const benchmarkData = useMemo<ValuePoint[]>(() => {
+    if (!result) return [];
+    return result.benchmarkCurve.map((point) => ({
+      time: Math.floor(point.timestamp / 1000) as UTCTimestamp,
+      value: point.value,
+    }));
+  }, [result]);
+
+  async function compute(series: AssetPriceSeries[], { friction, stopMode }: Settings) {
+    const computed = await computeBacktestAsync({
+      weights,
+      series,
+      initialValue: INITIAL_INVESTMENT,
+      ...(friction ? REALISTIC_FRICTION : {}),
+      ...STOP_OPTIONS[stopMode].options,
+    });
+    setResult(computed);
+    setStatus('success');
+  }
+
+  function changeSettings(next: Settings) {
+    settingsRef.current = next;
+    setSettings(next);
+    // Mid-fetch changes are picked up by `runSimulation` through the ref; a
+    // previous compute error can still be recovered from cached history.
+    const series = seriesRef.current;
+    if (!series || status === 'loading') return;
+    compute(series, next).catch(() => {
+      setStatus('error');
+      setErrorMessage("Couldn't run the simulation. Please try again.");
+    });
+  }
+
   async function runSimulation() {
+    // A failed refetch must not leave stale history for later reruns.
+    seriesRef.current = null;
     setStatus('loading');
     setErrorMessage(null);
     setFailedTickers([]);
@@ -55,10 +121,16 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
     try {
       const settled = await Promise.allSettled(
         cryptoTickers.map(async (ticker): Promise<AssetPriceSeries> => {
-          const klines = await fetchYearlyKlines(ticker);
+          // Full OHLC so the trailing stop can size itself off ATR(14).
+          const candles = await fetchHistoricalCandles(ticker, '1d', 365);
           return {
             ticker,
-            points: klines.map((kline) => ({ timestamp: kline.timestamp, price: kline.close })),
+            points: candles.map((candle) => ({
+              timestamp: candle.timestamp,
+              price: candle.close,
+              high: candle.high,
+              low: candle.low,
+            })),
           };
         }),
       );
@@ -79,14 +151,8 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
         return;
       }
 
-      const computed = await computeBacktestAsync({
-        weights,
-        series,
-        initialValue: INITIAL_INVESTMENT,
-        costModel: DEFAULT_BACKTEST_COST_MODEL,
-      });
-      setResult(computed);
-      setStatus('success');
+      seriesRef.current = series;
+      await compute(series, settingsRef.current);
     } catch {
       setStatus('error');
       setErrorMessage("Couldn't load historical data. Please try again.");
@@ -129,8 +195,39 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
           held as cash in the simulation.
         </p>
       )}
+
+      <div className="backtest-controls" aria-label="Simulation settings">
+        <label className="backtest-control">
+          Realistic Friction
+          <input
+            type="checkbox"
+            role="switch"
+            className="backtest-toggle"
+            checked={settings.friction}
+            onChange={(event) => changeSettings({ ...settings, friction: event.target.checked })}
+          />
+        </label>
+        <label className="backtest-control">
+          Trailing Stop
+          <select
+            className="backtest-select"
+            value={settings.stopMode}
+            onChange={(event) =>
+              changeSettings({ ...settings, stopMode: event.target.value as StopMode })
+            }
+          >
+            {(Object.keys(STOP_OPTIONS) as StopMode[]).map((mode) => (
+              <option key={mode} value={mode}>
+                {STOP_OPTIONS[mode].label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <p className="backtest-note">
-        Net of {FEE_BPS} bps entry fee + {SLIPPAGE_BPS} bps slippage on invested capital.
+        {settings.friction
+          ? `Net of ${REALISTIC_FRICTION.feeBps} bps fee + ${REALISTIC_FRICTION.slippageBps} bps slippage on every fill.`
+          : 'Gross of fees and slippage.'}
       </p>
 
       {status === 'success' && result && (
@@ -183,14 +280,37 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
                 Annualized, risk-free = 0{hasPartialData ? ' · partial data' : ''}
               </span>
             </div>
+            <div className="backtest-risk-item">
+              <span className="backtest-risk-label">Alpha vs. Hold</span>
+              <span className={cn('backtest-risk-value', alphaTone(result.alphaPct))}>
+                {signedPercent(result.alphaPct)}
+              </span>
+              <span className="backtest-risk-sub">
+                Buy &amp; Hold {signedPercent(result.benchmarkReturnPct)}
+              </span>
+            </div>
+            <div className="backtest-risk-item">
+              <span className="backtest-risk-label">Win Rate</span>
+              <span className="backtest-risk-value">
+                {result.winRatePct.toFixed(0)}%
+                <span className="backtest-risk-unit">
+                  {' '}
+                  · {result.totalTrades} {result.totalTrades === 1 ? 'trade' : 'trades'}
+                </span>
+              </span>
+              <span className="backtest-risk-sub">Closed round trips, net of friction</span>
+            </div>
           </div>
 
           {result.points.length > 0 ? (
             <div className="backtest-chart">
-              <ValueAreaChart data={valueData} height={276} />
+              <ValueAreaChart data={valueData} compareData={benchmarkData} height={276} />
             </div>
           ) : (
             <div className="backtest-empty">No historical data available for this portfolio.</div>
+          )}
+          {result.points.length > 0 && (
+            <p className="backtest-note">Solid: strategy · Dashed: Buy &amp; Hold benchmark</p>
           )}
         </>
       )}

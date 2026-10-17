@@ -1,7 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BacktestChart } from '@/components/BacktestChart';
 import type { Asset } from '@/lib/assets';
+import type { BacktestResult } from '@/lib/backtestManager';
+import { fetchHistoricalCandles } from '@/lib/binance';
+import { computeBacktestAsync } from '@/lib/financeClient';
 import type { Position } from '@/lib/portfolioManager';
 
 // Keep the test hermetic: no canvas charts, no Binance network, no worker.
@@ -10,19 +13,20 @@ vi.mock('@/components/LightweightChart', () => ({
 }));
 
 vi.mock('@/lib/binance', () => ({
-  fetchYearlyKlines: vi.fn(async () => [
-    { timestamp: 1_700_000_000_000, close: 100 },
-    { timestamp: 1_700_086_400_000, close: 110 },
+  fetchHistoricalCandles: vi.fn(async () => [
+    { timestamp: 1_700_000_000_000, open: 99, high: 102, low: 98, close: 100 },
+    { timestamp: 1_700_086_400_000, open: 100, high: 112, low: 99, close: 110 },
   ]),
   isBinanceCrypto: (ticker: string) => ticker === 'BTC-USD',
 }));
 
-vi.mock('@/lib/financeClient', () => ({
-  computeBacktestAsync: vi.fn(async () => ({
-    points: [
-      { timestamp: 1_700_000_000_000, value: 10000 },
-      { timestamp: 1_700_086_400_000, value: 11500 },
-    ],
+function makeResult(overrides: Partial<BacktestResult> = {}): BacktestResult {
+  const points = [
+    { timestamp: 1_700_000_000_000, value: 10000 },
+    { timestamp: 1_700_086_400_000, value: 11500 },
+  ];
+  return {
+    points,
     initialValue: 10000,
     finalValue: 11500,
     totalReturnPercent: 15,
@@ -30,8 +34,23 @@ vi.mock('@/lib/financeClient', () => ({
     sharpeRatio: 1.87,
     coverageWeight: 1,
     coverage: [{ ticker: 'BTC-USD', weight: 1, status: 'covered' }],
-  })),
+    benchmarkReturnPct: 11.2,
+    alphaPct: 3.8,
+    winRatePct: 64,
+    totalTrades: 11,
+    benchmarkCurve: points,
+    ...overrides,
+  };
+}
+
+vi.mock('@/lib/financeClient', () => ({
+  computeBacktestAsync: vi.fn(async () => makeResult()),
 }));
+
+beforeEach(() => {
+  vi.mocked(computeBacktestAsync).mockClear();
+  vi.mocked(fetchHistoricalCandles).mockClear();
+});
 
 const positions: Position[] = [
   {
@@ -82,7 +101,9 @@ describe('BacktestChart risk metrics', () => {
     expect(screen.getByText('1.87')).toBeInTheDocument();
 
     // Full coverage: cost disclosure shown, no partial-data banner (M1-T3).
-    expect(screen.getByText(/Net of 25 bps entry fee \+ 10 bps slippage/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Net of 10 bps fee + 5 bps slippage on every fill.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Partial data/)).toBeNull();
     expect(screen.getByText(/Annualized, risk-free = 0$/)).toBeInTheDocument();
   });
@@ -103,23 +124,15 @@ describe('BacktestChart risk metrics', () => {
       dateAdded: '2026-01-01',
     };
     // Simulate the engine reporting AAPL as uncovered (no Binance history).
-    const { computeBacktestAsync } = await import('@/lib/financeClient');
-    vi.mocked(computeBacktestAsync).mockResolvedValueOnce({
-      points: [
-        { timestamp: 1_700_000_000_000, value: 10000 },
-        { timestamp: 1_700_086_400_000, value: 11500 },
-      ],
-      initialValue: 10000,
-      finalValue: 11500,
-      totalReturnPercent: 15,
-      maxDrawdownPercent: 18.4,
-      sharpeRatio: 1.87,
-      coverageWeight: 0.79,
-      coverage: [
-        { ticker: 'BTC-USD', weight: 0.79, status: 'covered' },
-        { ticker: 'AAPL', weight: 0.21, status: 'missing' },
-      ],
-    });
+    vi.mocked(computeBacktestAsync).mockResolvedValueOnce(
+      makeResult({
+        coverageWeight: 0.79,
+        coverage: [
+          { ticker: 'BTC-USD', weight: 0.79, status: 'covered' },
+          { ticker: 'AAPL', weight: 0.21, status: 'missing' },
+        ],
+      }),
+    );
 
     render(
       <BacktestChart positions={[...positions, aaplPosition]} assets={[...assets, aaplAsset]} />,
@@ -133,5 +146,139 @@ describe('BacktestChart risk metrics', () => {
     expect(screen.getByText(/Annualized, risk-free = 0 · partial data/)).toBeInTheDocument();
     // Non-crypto exclusion is disclosed up front too.
     expect(screen.getByText(/AAPL will be excluded and/)).toBeInTheDocument();
+  });
+});
+
+describe('BacktestChart benchmark alpha and win rate', () => {
+  it('shows positive alpha in green with a + and the Buy & Hold return', async () => {
+    render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+
+    expect(await screen.findByText('Alpha vs. Hold')).toBeInTheDocument();
+    expect(screen.getByText('+3.80%')).toHaveClass('backtest-risk-good');
+    expect(screen.getByText('Buy & Hold +11.20%')).toBeInTheDocument();
+    expect(screen.getByText('Win Rate')).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => element?.textContent === '64% · 11 trades'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows underperformance in red without a + sign', async () => {
+    vi.mocked(computeBacktestAsync).mockResolvedValueOnce(
+      makeResult({ alphaPct: -4.5, benchmarkReturnPct: 19.5, winRatePct: 0, totalTrades: 1 }),
+    );
+    render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+
+    expect(await screen.findByText('-4.50%')).toHaveClass('backtest-risk-bad');
+    expect(screen.getByText('Buy & Hold +19.50%')).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => element?.textContent === '0% · 1 trade'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('BacktestChart friction and trailing-stop controls', () => {
+  it('runs with realistic friction and OHLC history by default, no stop', async () => {
+    render(<BacktestChart positions={positions} assets={assets} />);
+
+    expect(screen.getByRole('switch', { name: /realistic friction/i })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: /trailing stop/i })).toHaveValue('off');
+
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+    await screen.findByText('Alpha vs. Hold');
+
+    expect(fetchHistoricalCandles).toHaveBeenCalledWith('BTC-USD', '1d', 365);
+    const options = vi.mocked(computeBacktestAsync).mock.calls[0]?.[0];
+    expect(options).toMatchObject({ feeBps: 10, slippageBps: 5, initialValue: 10000 });
+    expect(options).not.toHaveProperty('trailingStopAtrMultiplier');
+    expect(options).not.toHaveProperty('trailingStopPct');
+    // High/low ride along so the engine can compute ATR(14).
+    expect(options?.series[0]?.points[1]).toEqual({
+      timestamp: 1_700_086_400_000,
+      price: 110,
+      high: 112,
+      low: 99,
+    });
+  });
+
+  it('re-runs from cached history when the stop or friction setting changes', async () => {
+    render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+    await screen.findByText('Alpha vs. Hold');
+
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'atr' },
+    });
+    await waitFor(() => expect(computeBacktestAsync).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(computeBacktestAsync).mock.calls[1]?.[0]).toMatchObject({
+      feeBps: 10,
+      trailingStopAtrMultiplier: 2,
+    });
+
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'pct' },
+    });
+    await waitFor(() => expect(computeBacktestAsync).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(computeBacktestAsync).mock.calls[2]?.[0]).toMatchObject({
+      trailingStopPct: 5,
+    });
+
+    fireEvent.click(screen.getByRole('switch', { name: /realistic friction/i }));
+    await waitFor(() => expect(computeBacktestAsync).toHaveBeenCalledTimes(4));
+    const gross = vi.mocked(computeBacktestAsync).mock.calls[3]?.[0];
+    expect(gross).not.toHaveProperty('feeBps');
+    expect(gross).toMatchObject({ trailingStopPct: 5 });
+    expect(await screen.findByText('Gross of fees and slippage.')).toBeInTheDocument();
+
+    // History was fetched once; every setting change reused it.
+    expect(fetchHistoricalCandles).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies a setting changed while the history fetch is still pending', async () => {
+    let release: (candles: Awaited<ReturnType<typeof fetchHistoricalCandles>>) => void = () => {};
+    vi.mocked(fetchHistoricalCandles).mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve)),
+    );
+    render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+
+    // Changing a control mid-fetch doesn't compute early…
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'pct' },
+    });
+    expect(computeBacktestAsync).not.toHaveBeenCalled();
+
+    // …but the run that finishes uses it, so the result matches the controls.
+    release([{ timestamp: 1_700_000_000_000, open: 99, high: 102, low: 98, close: 100 }]);
+    await screen.findByText('Alpha vs. Hold');
+    expect(computeBacktestAsync).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(computeBacktestAsync).mock.calls[0]?.[0]).toMatchObject({
+      feeBps: 10,
+      trailingStopPct: 5,
+    });
+  });
+
+  it('recovers from a failed rerun on the next setting change without refetching', async () => {
+    render(<BacktestChart positions={positions} assets={assets} />);
+    fireEvent.click(screen.getByRole('button', { name: /simulate past year/i }));
+    await screen.findByText('Alpha vs. Hold');
+
+    vi.mocked(computeBacktestAsync).mockRejectedValueOnce(new Error('worker crashed'));
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'atr' },
+    });
+    expect(
+      await screen.findByText("Couldn't run the simulation. Please try again."),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /trailing stop/i }), {
+      target: { value: 'pct' },
+    });
+    expect(await screen.findByText('Alpha vs. Hold')).toBeInTheDocument();
+    expect(vi.mocked(computeBacktestAsync).mock.calls[2]?.[0]).toMatchObject({
+      trailingStopPct: 5,
+    });
+    expect(fetchHistoricalCandles).toHaveBeenCalledTimes(1);
   });
 });

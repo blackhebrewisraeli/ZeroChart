@@ -191,6 +191,14 @@ describe('public portfolio sharing', () => {
     await waitFor(() => expect(harness.toastError).toHaveBeenCalled());
     expect(harness.toastDismiss).not.toHaveBeenCalled();
 
+    // Clipboard API missing entirely (insecure context): same error, no throw.
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    harness.toastError.mockClear();
+    expect(() => clickCopy()).not.toThrow();
+    await waitFor(() => expect(harness.toastError).toHaveBeenCalled());
+    expect(harness.toastDismiss).not.toHaveBeenCalled();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
     // Retry works: the link toast is dismissed and the copy confirmed.
     writeText.mockResolvedValue(undefined);
     clickCopy();

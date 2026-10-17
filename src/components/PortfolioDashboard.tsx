@@ -463,7 +463,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             // Sonner dismisses on action click unless prevented; keep the link
             // visible until the copy actually succeeds.
             event.preventDefault();
-            navigator.clipboard.writeText(publicUrl).then(
+            // The async wrapper still calls writeText synchronously (keeping the
+            // click's user activation) but turns a missing Clipboard API — a
+            // sync TypeError in insecure contexts — into a handled rejection.
+            (async () => navigator.clipboard.writeText(publicUrl))().then(
               () => {
                 toast.dismiss(publicUrl);
                 toast.success('Public link copied to clipboard!');

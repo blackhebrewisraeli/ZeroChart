@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeBacktest, deriveWeights } from '@/lib/backtestManager';
+import { computeBacktest, deriveWeights, type PricePoint } from '@/lib/backtestManager';
+import { computeFinance } from '@/lib/financeCompute';
 import type { Asset } from '@/lib/assets';
 import type { Position } from '@/lib/portfolioManager';
 
@@ -190,6 +191,12 @@ describe('computeBacktest', () => {
     // Full data gap, fully flagged.
     expect(result.coverageWeight).toBe(0);
     expect(result.coverage).toEqual([{ ticker: 'A', weight: 1, status: 'missing' }]);
+    // No trades, no benchmark, no alpha.
+    expect(result.benchmarkCurve).toEqual([]);
+    expect(result.benchmarkReturnPct).toBe(0);
+    expect(result.alphaPct).toBe(0);
+    expect(result.totalTrades).toBe(0);
+    expect(result.winRatePct).toBe(0);
   });
 
   it('applies the entry-cost model as a one-time drag on invested capital (F-2.1c)', () => {
@@ -280,5 +287,142 @@ describe('computeBacktest', () => {
     expect(result.maxDrawdownPercent).toBeCloseTo(50, 5);
     // Returns +20%, −50%, +50% → mean 6.67%, σ 41.9%, annualized ≈ 3.04.
     expect(result.sharpeRatio).toBeCloseTo(3.04, 2);
+  });
+});
+
+const closes = (prices: number[]): PricePoint[] =>
+  prices.map((price, timestamp) => ({ timestamp, price }));
+
+describe('computeBacktest friction, trailing stops and benchmark alpha', () => {
+  it('charges fee + slippage bps on entry and on the final liquidation', () => {
+    const series = [{ ticker: 'A', points: closes([100, 100]) }];
+    const weights = [{ ticker: 'A', weight: 1 }];
+
+    const net = computeBacktest({ weights, series, feeBps: 10, slippageBps: 5 });
+
+    // 15 bps in, 15 bps out on a flat market; the curve is marked at liquidation value.
+    const expected = 10000 * 0.9985 * 0.9985;
+    expect(net.points.map((point) => point.value)).toEqual([expected, expected]);
+    expect(net.finalValue).toBeCloseTo(9970.0225, 6);
+    expect(net.totalReturnPercent).toBeCloseTo(-0.299775, 6);
+    // Benchmark pays the same friction, so buy-and-hold alpha is zero.
+    expect(net.benchmarkReturnPct).toBeCloseTo(net.totalReturnPercent, 10);
+    expect(net.alphaPct).toBeCloseTo(0, 10);
+    // One round trip that lost money to costs.
+    expect(net.totalTrades).toBe(1);
+    expect(net.winRatePct).toBe(0);
+
+    // Omitted (legacy) or invalid bps are frictionless.
+    const gross = computeBacktest({ weights, series });
+    const invalid = computeBacktest({ weights, series, feeBps: -10, slippageBps: Number.NaN });
+    expect(gross.finalValue).toBe(10000);
+    expect(invalid.finalValue).toBe(10000);
+  });
+
+  it('exits on a percent trailing stop, re-enters on recovery, and scores each round trip', () => {
+    const result = computeBacktest({
+      weights: [{ ticker: 'A', weight: 1 }],
+      series: [{ ticker: 'A', points: closes([100, 120, 110, 100, 106, 95]) }],
+      trailingStopPct: 5,
+    });
+
+    // 120 peak → stop 114 → out at 110 (win). Trough 100 → back in above 105 at
+    // 106. Peak 106 → stop 100.7 → out at 95 (loss). Flat into the close.
+    const values = result.points.map((point) => point.value);
+    const expected = [10000, 12000, 11000, 11000, 11000, (11000 / 106) * 95];
+    expected.forEach((value, index) => expect(values[index]).toBeCloseTo(value, 6));
+
+    expect(result.totalTrades).toBe(2);
+    expect(result.winRatePct).toBe(50);
+    // Buy-and-hold rides the same closes: 100 → 95.
+    expect(result.benchmarkCurve.map((point) => point.value)).toEqual([
+      10000, 12000, 11000, 10000, 10600, 9500,
+    ]);
+    expect(result.benchmarkReturnPct).toBeCloseTo(-5, 10);
+    expect(result.totalReturnPercent).toBeCloseTo(((11000 / 106) * 95) / 100 - 100, 6);
+    expect(result.alphaPct).toBeCloseTo(result.totalReturnPercent + 5, 10);
+  });
+
+  it('charges friction on stop exits as well as entries', () => {
+    const result = computeBacktest({
+      weights: [{ ticker: 'A', weight: 1 }],
+      series: [{ ticker: 'A', points: closes([100, 120, 110, 100]) }],
+      trailingStopPct: 5,
+      feeBps: 10,
+      slippageBps: 5,
+    });
+
+    // Bought at 100 net of 15 bps, sold at 110 net of 15 bps, then held as cash.
+    expect(result.finalValue).toBeCloseTo(10000 * 0.9985 * 1.1 * 0.9985, 6);
+    expect(result.totalTrades).toBe(1);
+    expect(result.winRatePct).toBe(100);
+    // Hold pays the same entry/exit friction on 100 → 100.
+    expect(result.benchmarkReturnPct).toBeCloseTo((0.9985 * 0.9985 - 1) * 100, 6);
+  });
+
+  it('sizes the stop off ATR(14) when HLC is provided, else falls back to the percent stop', () => {
+    const prices = [...Array<number>(14).fill(100), 97, 95.5, 90];
+    const withHlc = prices.map((price, timestamp) => ({
+      timestamp,
+      price,
+      high: price + 1,
+      low: price - 1,
+    }));
+    const weights = [{ ticker: 'A', weight: 1 }];
+
+    // ATR seeds at 2, then widens: by the 95.5 close the 2×ATR stop sits at
+    // ≈ 95.66 and fires — a 5% stop (95) would not.
+    const atrRun = computeBacktest({
+      weights,
+      series: [{ ticker: 'A', points: withHlc }],
+      trailingStopAtrMultiplier: 2,
+    });
+    expect(atrRun.finalValue).toBeCloseTo(9550, 6);
+    expect(atrRun.totalTrades).toBe(1);
+    expect(atrRun.benchmarkReturnPct).toBeCloseTo(-10, 10);
+    expect(atrRun.alphaPct).toBeCloseTo(5.5, 6);
+
+    // Same closes without high/low: the 5% fallback only trips at 90.
+    const fallback = computeBacktest({
+      weights,
+      series: [{ ticker: 'A', points: closes(prices) }],
+      trailingStopAtrMultiplier: 2,
+    });
+    expect(fallback.finalValue).toBeCloseTo(9000, 6);
+    expect(fallback.alphaPct).toBeCloseTo(0, 10);
+  });
+
+  it('without a stop the strategy is buy-and-hold: zero alpha and per-sleeve win rate', () => {
+    const result = computeBacktest({
+      weights: [
+        { ticker: 'A', weight: 0.5 },
+        { ticker: 'B', weight: 0.5 },
+      ],
+      series: [
+        { ticker: 'A', points: closes([100, 120]) },
+        { ticker: 'B', points: closes([100, 90]) },
+      ],
+      trailingStopPct: 0, // non-positive = disabled
+    });
+
+    expect(result.benchmarkCurve).toEqual(result.points);
+    expect(result.benchmarkCurve.map((point) => point.timestamp)).toEqual([0, 1]);
+    expect(result.benchmarkReturnPct).toBeCloseTo(5, 10);
+    expect(result.alphaPct).toBe(0);
+    // A won, B lost: each sleeve is one round trip closed at the end.
+    expect(result.totalTrades).toBe(2);
+    expect(result.winRatePct).toBe(50);
+  });
+
+  it('passes friction and stop options through the worker dispatcher unchanged', () => {
+    const options = {
+      weights: [{ ticker: 'A', weight: 1 }],
+      series: [{ ticker: 'A', points: closes([100, 120, 110, 100]) }],
+      feeBps: 10,
+      slippageBps: 5,
+      trailingStopPct: 5,
+    };
+
+    expect(computeFinance({ kind: 'backtest', ...options })).toEqual(computeBacktest(options));
   });
 });

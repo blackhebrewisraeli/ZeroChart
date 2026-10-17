@@ -4880,6 +4880,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -4916,9 +4917,97 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+.backtest-risk-unit {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted-foreground);
+}
+/* Friction + trailing-stop controls. */
+.backtest-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 14px;
+}
+.backtest-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.backtest-toggle {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--secondary);
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    border-color 0.15s ease-out;
+}
+.backtest-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  transition:
+    transform 0.15s ease-out,
+    background 0.15s ease-out;
+}
+.backtest-toggle:checked {
+  border-color: color-mix(in oklch, var(--brand-blue) 60%, transparent);
+  background: color-mix(in oklch, var(--brand-blue) 22%, transparent);
+}
+.backtest-toggle:checked::after {
+  transform: translateX(12px);
+  background: var(--brand-blue);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--brand-blue) 60%, transparent);
+}
+.backtest-select {
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--secondary);
+  color: var(--foreground);
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  cursor: pointer;
+}
+.backtest-toggle:focus-visible,
+.backtest-select:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
 @media (max-width: 480px) {
   .backtest-risk {
     grid-template-columns: 1fr;
+  }
+  .backtest-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .backtest-control {
+    justify-content: space-between;
   }
 }
 .backtest-chart {

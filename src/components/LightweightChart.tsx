@@ -300,10 +300,20 @@ export function CandlestickChart({
 /**
  * Canvas area/line chart used for the portfolio backtest value curve.
  */
-export function ValueAreaChart({ data, height = 300 }: { data: ValuePoint[]; height?: number }) {
+export function ValueAreaChart({
+  data,
+  compareData,
+  height = 300,
+}: {
+  data: ValuePoint[];
+  /** Optional dashed overlay, e.g. a buy-and-hold benchmark. */
+  compareData?: ValuePoint[];
+  height?: number;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Area'> | null>(null);
+  const compareRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -317,14 +327,23 @@ export function ValueAreaChart({ data, height = 300 }: { data: ValuePoint[]; hei
       lineWidth: 2,
       priceLineVisible: false,
     });
+    const compare = chart.addSeries(LineSeries, {
+      color: TEXT_COLOR,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
 
     chartRef.current = chart;
     seriesRef.current = series;
+    compareRef.current = compare;
 
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      compareRef.current = null;
     };
   }, []);
 
@@ -333,8 +352,9 @@ export function ValueAreaChart({ data, height = 300 }: { data: ValuePoint[]; hei
     const series = seriesRef.current;
     if (!chart || !series) return;
     series.setData(data);
+    compareRef.current?.setData(compareData ?? []);
     chart.timeScale().fitContent();
-  }, [data]);
+  }, [data, compareData]);
 
   return <div ref={containerRef} className="lwc-chart" style={{ height }} />;
 }

@@ -1,5 +1,6 @@
 import type { Asset } from '@/lib/assets';
 import type { Position } from '@/lib/portfolioManager';
+import { atr } from '@/lib/indicators';
 import { maxDrawdown, sharpeRatio } from '@/lib/risk';
 
 /**
@@ -13,6 +14,9 @@ export interface PricePoint {
   timestamp: number;
   /** Closing price for the day. */
   price: number;
+  /** Bar high/low — when every point has both, trailing stops can use ATR(14). */
+  high?: number;
+  low?: number;
 }
 
 export interface AssetPriceSeries {
@@ -46,10 +50,9 @@ export interface TickerCoverage {
 }
 
 /**
- * Basic transaction-cost model applied as a one-time entry drag on invested
+ * Legacy transaction-cost model applied as a one-time entry drag on invested
  * capital (M1-T3, F-2.1c): shares bought at `price × (1 − fee − slippage)`.
- * Defaults match the app's display fee (25 bps, cf. TradeTicket) plus a 10 bps
- * slippage assumption; pass `{ feeRate: 0, slippageRate: 0 }` for gross curves.
+ * Prefer `feeBps` / `slippageBps`, which charge every fill (entry and exit).
  */
 export interface BacktestCostModel {
   /** Fraction of notional charged by the venue (0.0025 = 25 bps). */
@@ -58,10 +61,33 @@ export interface BacktestCostModel {
   slippageRate: number;
 }
 
-export const DEFAULT_BACKTEST_COST_MODEL: BacktestCostModel = {
-  feeRate: 0.0025,
-  slippageRate: 0.001,
-};
+/** "Realistic Friction" preset: 10 bps venue fee + 5 bps slippage per fill. */
+export const REALISTIC_FRICTION = { feeBps: 10, slippageBps: 5 } as const;
+
+/** Percent trailing stop used when ATR can't be computed (no HLC, or warm-up). */
+export const DEFAULT_TRAILING_STOP_PCT = 5;
+
+const ATR_PERIOD = 14;
+
+export interface BacktestOptions {
+  weights: AllocationWeight[];
+  series: AssetPriceSeries[];
+  initialValue?: number;
+  /** Legacy entry-only drag; stacks with `feeBps` / `slippageBps` on the first fill. */
+  costModel?: BacktestCostModel;
+  /** Venue fee on every fill — entry, stop exit, re-entry, final liquidation. Default 0. */
+  feeBps?: number;
+  /** Slippage on every fill, in bps. Default 0. */
+  slippageBps?: number;
+  /**
+   * Trailing stop `multiplier × ATR(14)` below the peak close since entry.
+   * Bars without ATR (series lacking high/low, or warm-up) fall back to
+   * `trailingStopPct ?? DEFAULT_TRAILING_STOP_PCT`.
+   */
+  trailingStopAtrMultiplier?: number;
+  /** Trailing stop as a percent of the peak close since entry (5 = 5%). */
+  trailingStopPct?: number;
+}
 
 export interface BacktestResult {
   points: BacktestPoint[];
@@ -84,6 +110,16 @@ export interface BacktestResult {
   coverageWeight: number;
   /** Per-ticker coverage of every positive-weight ticker in the run. */
   coverage: TickerCoverage[];
+  /** Buy-and-hold return of the same weights and timeline, same friction, no stop. */
+  benchmarkReturnPct: number;
+  /** Excess return over buy-and-hold: `totalReturnPercent − benchmarkReturnPct`. */
+  alphaPct: number;
+  /** Share (0–100) of closed round trips that were profitable net of friction. */
+  winRatePct: number;
+  /** Round trips closed by a stop exit or by the end-of-period liquidation. */
+  totalTrades: number;
+  /** Buy-and-hold equity on the same timestamps and principal as `points`. */
+  benchmarkCurve: BacktestPoint[];
 }
 
 const DEFAULT_INITIAL_VALUE = 10000;
@@ -121,27 +157,92 @@ export function deriveWeights(positions: Position[], assets: Asset[]): Allocatio
   }));
 }
 
+interface TrailingStop {
+  /** Per-bar `multiplier × ATR` on the timeline; NaN where ATR is unavailable. */
+  atrDistance: Float64Array | null;
+  /** Fallback stop distance as a fraction of the reference close. */
+  fraction: number;
+}
+
 /**
- * Simulates a buy-and-hold portfolio over a shared timeline of historical
- * daily prices. Each covered asset grows by `price(t) / price(first)`, scaled
- * by its weight and the initial investment. Assets with weight but no usable
- * history are EXCLUDED and their weight is held as cash, with per-ticker
- * coverage reported on the result — never silently modeled at flat prices
- * (M1-T3, F-2.1a/b). Optional transaction costs and slippage are applied as a
- * one-time entry drag on the invested sleeve (M1-T3, F-2.1c). The compounding
- * loops run over `Float64Array` for predictable, allocation-light execution.
+ * Runs one asset sleeve over its forward-filled timeline closes. Without a
+ * stop it is plain buy-and-hold. With one, the sleeve goes to cash when the
+ * close breaks `peak − distance` and re-enters when it recovers to
+ * `trough + distance` (symmetric trailing re-entry), so a single dip doesn't
+ * park the sleeve in cash for the rest of the period. Holdings are marked at
+ * liquidation value (net of exit friction), so the last point is the
+ * realized final value and an open trade is closed there.
+ */
+function simulateSleeve(
+  closes: Float64Array,
+  capital: number,
+  entryFactor: number,
+  fillFactor: number,
+  stop: TrailingStop | null,
+): { values: Float64Array; trades: number; wins: number } {
+  const values = new Float64Array(closes.length);
+  let long = true;
+  let shares = (capital * entryFactor) / (closes[0] ?? 1);
+  let cash = 0;
+  let committed = capital; // cash put into the open trade, before costs
+  let ref = closes[0] ?? 0; // peak close while long, trough close while flat
+  let trades = 0;
+  let wins = 0;
+
+  for (let i = 0; i < closes.length; i += 1) {
+    const price = closes[i] ?? 0;
+    if (stop) {
+      ref = long ? Math.max(ref, price) : Math.min(ref, price);
+      const atrDistance = stop.atrDistance?.[i] ?? Number.NaN;
+      const distance = Number.isFinite(atrDistance) ? atrDistance : ref * stop.fraction;
+      if (long && price < ref - distance) {
+        cash = shares * price * fillFactor;
+        trades += 1;
+        if (cash > committed) wins += 1;
+        long = false;
+        shares = 0;
+        ref = price;
+      } else if (!long && price > ref + distance) {
+        committed = cash;
+        shares = (cash * fillFactor) / price;
+        cash = 0;
+        long = true;
+        ref = price;
+      }
+    }
+    values[i] = long ? shares * price * fillFactor : cash;
+  }
+
+  if (long && closes.length > 0) {
+    trades += 1;
+    if ((values[closes.length - 1] ?? 0) > committed) wins += 1;
+  }
+  return { values, trades, wins };
+}
+
+/**
+ * Simulates the current allocation over a shared timeline of historical daily
+ * prices. Each covered asset is bought at its first close with its weight of
+ * the initial investment. Assets with weight but no usable history are
+ * EXCLUDED and their weight is held as cash, with per-ticker coverage
+ * reported on the result — never silently modeled at flat prices (M1-T3,
+ * F-2.1a/b). Friction (`feeBps` + `slippageBps`) is charged on every fill;
+ * the legacy `costModel` adds a one-time entry drag (F-2.1c). An optional
+ * trailing stop (ATR or percent) turns the run into an active strategy that
+ * is compared against plain buy-and-hold of the same weights with the same
+ * friction (`benchmarkCurve`, `alphaPct`). The loops run over `Float64Array`
+ * for predictable, allocation-light execution inside the finance worker.
  */
 export function computeBacktest({
   weights,
   series,
   initialValue = DEFAULT_INITIAL_VALUE,
   costModel,
-}: {
-  weights: AllocationWeight[];
-  series: AssetPriceSeries[];
-  initialValue?: number;
-  costModel?: BacktestCostModel;
-}): BacktestResult {
+  feeBps,
+  slippageBps,
+  trailingStopAtrMultiplier,
+  trailingStopPct,
+}: BacktestOptions): BacktestResult {
   const weightByTicker = new Map<string, number>();
   for (const item of weights) {
     if (!Number.isFinite(item.weight) || item.weight <= 0) continue;
@@ -167,11 +268,23 @@ export function computeBacktest({
   }
   const cashWeight = Math.max(0, 1 - coveredWeight);
 
-  // Entry costs: buying costs shares, so the invested sleeve starts at
-  // (1 − fee − slippage) of its notional. Invalid rates are ignored.
+  // Friction: every fill pays (fee + slippage) bps; the legacy cost model adds
+  // a one-time drag on the first entry. Invalid inputs are ignored.
   const rate = (value: number | undefined) =>
     value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;
-  const costFactor = Math.max(0, 1 - rate(costModel?.feeRate) - rate(costModel?.slippageRate));
+  const perFill = (rate(feeBps) + rate(slippageBps)) / 10000;
+  const fillFactor = Math.max(0, 1 - perFill);
+  const entryFactor = Math.max(
+    0,
+    1 - rate(costModel?.feeRate) - rate(costModel?.slippageRate) - perFill,
+  );
+
+  const positive = (value: number | undefined) =>
+    value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
+  const atrMultiplier = positive(trailingStopAtrMultiplier);
+  const stopPct = positive(trailingStopPct);
+  const stopEnabled = atrMultiplier > 0 || stopPct > 0;
+  const stopFraction = (stopPct || DEFAULT_TRAILING_STOP_PCT) / 100;
 
   const timestamps = new Set<number>();
   for (const [ticker, points] of seriesByTicker) {
@@ -181,22 +294,38 @@ export function computeBacktest({
   }
   const timeline = [...timestamps].sort((a, b) => a - b);
 
+  // Strategy and buy-and-hold benchmark share the cash sleeve for missing weight.
+  const cash = cashWeight * initialValue;
+  const values = new Float64Array(timeline.length).fill(cash);
+  const benchmark = new Float64Array(timeline.length).fill(cash);
+  let totalTrades = 0;
+  let wins = 0;
+
   // Covered tickers only — missing weight already lives in `cashWeight`.
-  const tickers = coverage
-    .filter((entry) => entry.status === 'covered')
-    .map((entry) => entry.ticker);
-  const weightValues = Float64Array.from(tickers.map((ticker) => weightByTicker.get(ticker) ?? 0));
+  for (const entry of coverage) {
+    if (entry.status !== 'covered') continue;
+    const points = seriesByTicker.get(entry.ticker) ?? [];
 
-  // Precompute each covered asset's forward-filled growth factors on the timeline.
-  const factorSeries = tickers.map((ticker) => {
-    const factors = new Float64Array(timeline.length).fill(1);
-    const points = seriesByTicker.get(ticker);
-    if (!points || points.length === 0) return factors;
+    // ATR needs a full HLC series; otherwise the stop uses the percent fallback.
+    const hasHlc =
+      atrMultiplier > 0 &&
+      points.every((point) => Number.isFinite(point.high) && Number.isFinite(point.low));
+    const atrValues = hasHlc
+      ? atr(
+          points.map((point) => point.high ?? point.price),
+          points.map((point) => point.low ?? point.price),
+          points.map((point) => point.price),
+          ATR_PERIOD,
+        )
+      : null;
 
-    const first = points[0];
-    const base = first && first.price > 0 ? first.price : 1;
+    // Forward-fill closes (and ATR) onto the shared timeline; before its first
+    // print the sleeve sits at its entry close, i.e. flat at notional.
+    const closes = new Float64Array(timeline.length);
+    const atrDistance = atrValues ? new Float64Array(timeline.length) : null;
     let cursor = 0;
-    let lastClose = base;
+    let lastClose = points[0]?.price ?? 1;
+    let lastAtr = Number.NaN;
     for (let i = 0; i < timeline.length; i += 1) {
       const time = timeline[i] ?? 0;
       while (
@@ -204,32 +333,39 @@ export function computeBacktest({
         (points[cursor]?.timestamp ?? Number.POSITIVE_INFINITY) <= time
       ) {
         lastClose = points[cursor]?.price ?? lastClose;
+        lastAtr = atrValues?.[cursor] ?? Number.NaN;
         cursor += 1;
       }
-      factors[i] = lastClose / base;
+      closes[i] = lastClose;
+      if (atrDistance) atrDistance[i] = lastAtr * atrMultiplier;
     }
-    return factors;
-  });
 
-  const values = new Float64Array(timeline.length);
-  for (let i = 0; i < timeline.length; i += 1) {
-    let value = cashWeight * initialValue;
-    for (let j = 0; j < tickers.length; j += 1) {
-      const factors = factorSeries[j];
-      value +=
-        (weightValues[j] ?? 0) * initialValue * costFactor * (factors ? (factors[i] ?? 1) : 1);
+    const capital = entry.weight * initialValue;
+    const held = simulateSleeve(closes, capital, entryFactor, fillFactor, null);
+    const run = stopEnabled
+      ? simulateSleeve(closes, capital, entryFactor, fillFactor, {
+          atrDistance,
+          fraction: stopFraction,
+        })
+      : held;
+    for (let i = 0; i < timeline.length; i += 1) {
+      values[i] = (values[i] ?? 0) + (run.values[i] ?? 0);
+      benchmark[i] = (benchmark[i] ?? 0) + (held.values[i] ?? 0);
     }
-    values[i] = value;
+    totalTrades += run.trades;
+    wins += run.wins;
   }
 
-  const points: BacktestPoint[] = timeline.map((timestamp, index) => ({
-    timestamp,
-    value: values[index] ?? initialValue,
-  }));
+  const toPoints = (curve: Float64Array): BacktestPoint[] =>
+    timeline.map((timestamp, index) => ({ timestamp, value: curve[index] ?? initialValue }));
+  const finalOf = (curve: Float64Array) =>
+    curve.length > 0 ? (curve[curve.length - 1] ?? initialValue) : initialValue;
+  const returnOf = (final: number) => (initialValue > 0 ? (final / initialValue - 1) * 100 : 0);
 
-  const lastPoint = points[points.length - 1];
-  const finalValue = lastPoint ? lastPoint.value : initialValue;
-  const totalReturnPercent = initialValue > 0 ? (finalValue / initialValue - 1) * 100 : 0;
+  const points = toPoints(values);
+  const finalValue = finalOf(values);
+  const totalReturnPercent = returnOf(finalValue);
+  const benchmarkReturnPct = returnOf(finalOf(benchmark));
 
   // Risk metrics over the equity curve — computed here so they ride the same
   // worker-backed `computeBacktest` request instead of a main-thread pass.
@@ -245,5 +381,10 @@ export function computeBacktest({
     sharpeRatio: sharpe,
     coverageWeight: coveredWeight,
     coverage,
+    benchmarkReturnPct,
+    alphaPct: totalReturnPercent - benchmarkReturnPct,
+    winRatePct: totalTrades > 0 ? (wins / totalTrades) * 100 : 0,
+    totalTrades,
+    benchmarkCurve: toPoints(benchmark),
   };
 }

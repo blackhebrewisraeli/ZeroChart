@@ -186,6 +186,16 @@ describe('shared portfolio snapshots', () => {
 
     expect(noBenchmark.maxDrawdownPercent).toBeCloseTo(20);
     expect(noBenchmark.alphaPercent).toBeNull();
+
+    // BTC missing the curve's first day: no like-for-like window, so no alpha.
+    history.fetch.mockImplementation(async (ticker: string) =>
+      ticker === 'ETH' ? klines([50, 40, 60]) : klines([100, 110], 1),
+    );
+
+    const partial = await buildSharedPortfolioSnapshot(eth, assets, '2026-10-18T00:00:00.000Z');
+
+    expect(partial.maxDrawdownPercent).toBeCloseTo(20);
+    expect(partial.alphaPercent).toBeNull();
   });
 
   it('still builds the snapshot, without drawdown and alpha, when history is unavailable', async () => {

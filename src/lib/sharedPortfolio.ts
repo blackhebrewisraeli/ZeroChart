@@ -114,26 +114,23 @@ async function computeSharedPortfolioRisk(
     const portfolio = computeBacktest({ weights, series });
     if (portfolio.coverage.some((entry) => entry.status === 'missing')) return NO_RISK;
 
-    // Same window: holdings listed after the lookback start shorten the curve.
-    const first = portfolio.points[0]?.timestamp ?? Number.POSITIVE_INFINITY;
-    const last = portfolio.points.at(-1)?.timestamp ?? Number.NEGATIVE_INFINITY;
-    const benchmark = computeBacktest({
-      weights: [{ ticker: SHARED_BENCHMARK_TICKER, weight: 1 }],
-      series: [
-        {
-          ticker: SHARED_BENCHMARK_TICKER,
-          points: benchmarkSeries.points.filter(
-            (point) => point.timestamp >= first && point.timestamp <= last,
-          ),
-        },
-      ],
-    });
+    // Same window: holdings listed after the lookback start shorten the curve,
+    // and BTC must print on both ends or the two returns span different periods.
+    const first = portfolio.points[0]?.timestamp ?? Number.NaN;
+    const last = portfolio.points.at(-1)?.timestamp ?? Number.NaN;
+    const points = benchmarkSeries.points.filter(
+      (point) => point.timestamp >= first && point.timestamp <= last,
+    );
+    const sameWindow = points[0]?.timestamp === first && points.at(-1)?.timestamp === last;
     return {
       maxDrawdownPercent: portfolio.maxDrawdownPercent,
-      alphaPercent:
-        benchmark.coverageWeight > 0
-          ? portfolio.totalReturnPercent - benchmark.totalReturnPercent
-          : null,
+      alphaPercent: sameWindow
+        ? portfolio.totalReturnPercent -
+          computeBacktest({
+            weights: [{ ticker: SHARED_BENCHMARK_TICKER, weight: 1 }],
+            series: [{ ticker: SHARED_BENCHMARK_TICKER, points }],
+          }).totalReturnPercent
+        : null,
     };
   } catch {
     return NO_RISK;

@@ -21,7 +21,7 @@ ZeroChart turns raw market data into one high-signal trading terminal: determini
 
 ## Overview
 
-ZeroChart is a premium cyber-finance terminal that combines a real-time market scanner, an AI Robo-Advisor, and portfolio analytics into a single high-signal workspace — built for people who want algorithmic-grade tooling without a quant background.
+ZeroChart is a premium cyber-finance terminal that combines a real-time market scanner, a Quantitative Multi-Factor Robo-Advisor, and portfolio analytics into a single high-signal workspace — built for people who want algorithmic-grade tooling without a quant background.
 
 - **Research** — scan crypto, stocks, and forex, sorted by signal score, top gainers, or top losers.
 - **Build** — let the Robo-Advisor construct a signal-ranked portfolio from your capital and risk profile.
@@ -35,9 +35,9 @@ ZeroChart is a premium cyber-finance terminal that combines a real-time market s
 | 🔴 **Live Binance WebSockets** | Real-time crypto prices via the Binance all-market mini-ticker stream, with neon green/red price flashes on every tick. |
 | 🕯️ **Canvas Candlestick Charts** | Hardware-accelerated `lightweight-charts` candlesticks with **SMA 50/200** and **RSI (14)** overlays, a synchronized RSI sub-chart, and pan/zoom — all toggleable without re-rendering the base chart. |
 | 🧪 **1-Year Backtesting engine** | A pure, unit-tested engine that replays your current allocation against 365 days of daily Binance candles and reports the total return. |
-| 🔔 **Real-time Price Alerts** | Cloud-synced alerts that evaluate the live stream, fire neon in-app toasts, and auto-deactivate in Supabase (RLS-protected). |
+| 🔔 **Real-time Price Alerts** | One unified pipeline: cloud-synced alerts for signed-in users (auto-deactivated in Supabase, RLS-protected), session-only alerts for guests; fires exactly once, never on stale or simulated prices. |
 | 🔐 **Supabase Auth + RLS** | Email/password authentication with row-level security — portfolios and alerts are persisted per user. |
-| 🤖 **AI Robo-Advisor** | Signal-ranked, risk-weighted portfolio construction from user capital and a risk profile. |
+| 🤖 **Quant Robo-Advisor** | Deterministic multi-factor engine (RSI · MACD · ATR): signal-ranked, risk-weighted portfolio construction from user capital and a risk profile. |
 | 📊 **Portfolio dashboard** | KPI cards, per-holding sparklines, allocation donut, and smart buy/sell suggestions. |
 
 ![Candlestick Chart Screenshot](link-here)

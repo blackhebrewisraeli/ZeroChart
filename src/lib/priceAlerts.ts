@@ -1,6 +1,13 @@
 import { supabase } from '@/lib/supabaseClient';
+import type { Database } from '@/integrations/supabase/types';
+import type { AlertCondition } from '@/lib/alertsStore';
 
-export type AlertCondition = 'above' | 'below';
+// The alert CONDITION type is canonical in `@/lib/alertsStore` (unified model,
+// M1-T4); re-exported here for backward compatibility with existing imports.
+export type { AlertCondition };
+
+/** Strict row shape from the generated schema (M1-T1, F-3.1b). */
+type UserAlertRow = Database['public']['Tables']['user_alerts']['Row'];
 
 export interface UserAlert {
   id: string;
@@ -32,15 +39,15 @@ export function hasTriggered(
 }
 
 /** Coerces a raw PostgREST row into the app's `UserAlert` shape. */
-function mapAlert(row: Record<string, unknown>): UserAlert {
+function mapAlert(row: UserAlertRow): UserAlert {
   return {
-    id: String(row['id']),
-    user_id: String(row['user_id'] ?? ''),
-    ticker: String(row['ticker']),
-    target_price: Number(row['target_price']),
-    condition: row['condition'] === 'below' ? 'below' : 'above',
-    is_active: row['is_active'] !== false,
-    created_at: String(row['created_at'] ?? ''),
+    id: row.id,
+    user_id: row.user_id,
+    ticker: row.ticker,
+    target_price: row.target_price,
+    condition: row.condition === 'below' ? 'below' : 'above',
+    is_active: row.is_active !== false,
+    created_at: row.created_at,
   };
 }
 
@@ -54,7 +61,7 @@ export async function fetchActiveAlerts(userId: string): Promise<UserAlert[]> {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return ((data ?? []) as Array<Record<string, unknown>>).map(mapAlert);
+  return (data ?? []).map(mapAlert);
 }
 
 /** Inserts a new active alert and returns the persisted row. */
@@ -72,7 +79,8 @@ export async function createAlert(userId: string, input: NewAlertInput): Promise
     .single();
 
   if (error) throw error;
-  return mapAlert(data as Record<string, unknown>);
+  if (!data) throw new Error('Created alert row missing from response');
+  return mapAlert(data);
 }
 
 /** Marks an alert as inactive so it stops firing. */

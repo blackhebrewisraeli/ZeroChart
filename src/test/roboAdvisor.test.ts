@@ -61,11 +61,40 @@ describe('buildQuantPortfolio', () => {
       // Static path: RSI 50 → 55, +1% momentum → 100, 2% risk → 70;
       // 0.4×55 + 0.4×100 + 0.2×70 = 76.
       expect(allocation.score).toBe(76);
-      // ATR proxy = 100 × 0.02 = 2 → risk 2% × 30,000 = 600 → 300 shares.
-      expect(allocation.suggestedShares).toBe(300);
+      // ATR proxy = 100 × 0.02 = 2 → risk 2% × 30,000 = 600 → 300 risk-optimal
+      // shares ($30,000 notional!) — capped at the $10,000 allocation → 100
+      // shares (M1-T2, F-1.2a). Notional must never exceed the allocation.
+      expect(allocation.suggestedShares).toBe(100);
+      expect((allocation.suggestedShares ?? 0) * 100).toBeLessThanOrEqual(
+        allocation.allocatedAmount,
+      );
     }
     expect(deps.fetchHistory).not.toHaveBeenCalled();
     expect(deps.computeIndicators).not.toHaveBeenCalled();
+  });
+
+  it('caps the suggested size at the per-asset allocation when volatility is low', async () => {
+    const deps = makeDeps();
+    // 0.5% daily risk → ATR proxy 0.5 on a $100 price: risk-optimal shares
+    // = 200/0.5 = 400 ($40,000 notional on a $10,000 allocation) — must cap.
+    const assets = [
+      { ...makeAsset('LOWVOL'), risk_pct: 0.005 },
+      { ...makeAsset('LOWVOL2'), risk_pct: 0.005 },
+      { ...makeAsset('LOWVOL3'), risk_pct: 0.005 },
+    ];
+
+    const result = await buildQuantPortfolio(
+      { preferences: { totalCapital: 30000, riskProfile: 'aggressive' }, availableAssets: assets },
+      deps,
+    );
+
+    expect(result).toHaveLength(3);
+    for (const allocation of result) {
+      expect(allocation.suggestedShares).toBe(100); // 10,000 / 100
+      expect((allocation.suggestedShares ?? 0) * 100).toBeLessThanOrEqual(
+        allocation.allocatedAmount,
+      );
+    }
   });
 
   it('respects excluded tickers', async () => {

@@ -19,9 +19,9 @@ interface Feature {
 const FEATURES: Feature[] = [
   {
     icon: Bot,
-    title: 'AI Robo-Advisor',
+    title: 'Quant Robo-Advisor',
     description:
-      'Turn a risk profile and capital into a balanced, signal-ranked portfolio in one click.',
+      'A deterministic multi-factor engine turns a risk profile and capital into a balanced, signal-ranked portfolio in one click.',
   },
   {
     icon: Activity,
@@ -106,9 +106,9 @@ export function LandingPage({
               <span className="landing-headline-accent"> Zero Knowledge Required.</span>
             </h1>
             <p className="landing-subheadline">
-              ZeroChart turns raw market data into one high-signal workspace — AI portfolios, live
-              Binance prices, and one-year backtests, wrapped in a terminal you&apos;ll actually
-              enjoy using.
+              ZeroChart turns raw market data into one high-signal workspace — multi-factor quant
+              portfolios, live Binance prices, and one-year backtests, wrapped in a terminal
+              you&apos;ll actually enjoy using.
             </p>
             <div className="landing-cta">
               <button
@@ -182,7 +182,7 @@ export function LandingPage({
             <Zap size={13} />
             <span>Algorithmic signals. Live charts. Zero noise.</span>
           </div>
-          <span>AI analysis is informational. Not financial advice.</span>
+          <span>Quantitative analysis is informational. Not financial advice.</span>
           <span className="font-mono text-[10px]">ZEROCHART</span>
         </div>
       </footer>

@@ -4,12 +4,21 @@ import { History, Loader2 } from 'lucide-react';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { ValueAreaChart, type ValuePoint } from '@/components/LightweightChart';
 import { fetchYearlyKlines, isBinanceCrypto } from '@/lib/binance';
-import { deriveWeights, type AssetPriceSeries, type BacktestResult } from '@/lib/backtestManager';
+import {
+  DEFAULT_BACKTEST_COST_MODEL,
+  deriveWeights,
+  type AssetPriceSeries,
+  type BacktestResult,
+} from '@/lib/backtestManager';
 import { computeBacktestAsync } from '@/lib/financeClient';
 import type { Position } from '@/lib/portfolioManager';
 import { cn } from '@/lib/utils';
 
 const INITIAL_INVESTMENT = 10000;
+
+// Display labels for the entry-cost model applied by the engine (M1-T3, F-2.1c).
+const FEE_BPS = Math.round(DEFAULT_BACKTEST_COST_MODEL.feeRate * 10000);
+const SLIPPAGE_BPS = Math.round(DEFAULT_BACKTEST_COST_MODEL.slippageRate * 10000);
 
 /** Tones the simplified Sharpe ratio: ≥1 solid, 0–1 caution, ≤0 poor. */
 function sharpeTone(sharpe: number): string {
@@ -22,6 +31,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [failedTickers, setFailedTickers] = useState<string[]>([]);
 
   const weights = deriveWeights(positions, assets);
   const tickers = [...new Set(positions.map((position) => position.ticker))];
@@ -40,6 +50,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   async function runSimulation() {
     setStatus('loading');
     setErrorMessage(null);
+    setFailedTickers([]);
 
     try {
       const settled = await Promise.allSettled(
@@ -52,10 +63,15 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
         }),
       );
 
+      // Failed fetches are surfaced (M1-T3, F-2.1b), never silently dropped:
+      // the engine marks them `missing` and holds their weight as cash.
       const series: AssetPriceSeries[] = [];
-      for (const item of settled) {
+      const failed: string[] = [];
+      settled.forEach((item, index) => {
         if (item.status === 'fulfilled') series.push(item.value);
-      }
+        else failed.push(cryptoTickers[index] ?? 'unknown');
+      });
+      setFailedTickers(failed);
 
       if (cryptoTickers.length > 0 && series.length === 0) {
         setStatus('error');
@@ -67,6 +83,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
         weights,
         series,
         initialValue: INITIAL_INVESTMENT,
+        costModel: DEFAULT_BACKTEST_COST_MODEL,
       });
       setResult(computed);
       setStatus('success');
@@ -77,6 +94,10 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   }
 
   const returnTone = result && result.totalReturnPercent >= 0 ? 'up' : 'down';
+  // Weighted tickers the engine could not back (no usable history) — flagged
+  // explicitly instead of silently simulated at flat prices (F-2.1a/b).
+  const missingCoverage = result?.coverage.filter((entry) => entry.status === 'missing') ?? [];
+  const hasPartialData = missingCoverage.length > 0;
 
   return (
     <div className="backtest-card">
@@ -104,10 +125,13 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
 
       {nonCryptoTickers.length > 0 && (
         <p className="backtest-note">
-          Binance history only covers crypto. {nonCryptoTickers.join(', ')} will be held flat in the
-          simulation.
+          Binance history only covers crypto. {nonCryptoTickers.join(', ')} will be excluded and
+          held as cash in the simulation.
         </p>
       )}
+      <p className="backtest-note">
+        Net of {FEE_BPS} bps entry fee + {SLIPPAGE_BPS} bps slippage on invested capital.
+      </p>
 
       {status === 'success' && result && (
         <>
@@ -127,6 +151,20 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
             </span>
           </div>
 
+          {hasPartialData && (
+            <div className="backtest-coverage-warning" role="alert">
+              <strong>Partial data:</strong>{' '}
+              {missingCoverage
+                .map(
+                  (entry) =>
+                    `${entry.ticker}${failedTickers.includes(entry.ticker) ? ' (fetch failed)' : ''}`,
+                )
+                .join(', ')}{' '}
+              had no usable history — excluded and held as cash. Risk stats reflect the covered
+              sleeve plus cash, not the missing holdings.
+            </div>
+          )}
+
           <div className="backtest-risk" aria-label="Risk metrics">
             <div className="backtest-risk-item">
               <span className="backtest-risk-label">Max Drawdown</span>
@@ -141,7 +179,9 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
               <span className={cn('backtest-risk-value', sharpeTone(result.sharpeRatio))}>
                 {result.sharpeRatio.toFixed(2)}
               </span>
-              <span className="backtest-risk-sub">Annualized, risk-free = 0</span>
+              <span className="backtest-risk-sub">
+                Annualized, risk-free = 0{hasPartialData ? ' · partial data' : ''}
+              </span>
             </div>
           </div>
 

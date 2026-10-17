@@ -27,6 +27,7 @@ import { TourGuide } from '@/components/TourGuide';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { SetAlertButton } from '@/components/SetAlertModal';
+import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
 import {
@@ -45,9 +46,11 @@ import {
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { toBinanceSymbol } from '@/lib/binance';
+import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import { useAuth } from '@/lib/authStore';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
+import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
@@ -198,6 +201,8 @@ const MarketRow = memo(function MarketRow({
   const change = live?.change ?? asset.change_24h ?? null;
   const score = calculateSignalScore(asset);
   const priceFlash = usePriceFlash(currentPrice);
+  const streamConnected = useConnectionState() === 'connected';
+  const freshness = assetFreshness(asset, live, { streamConnected });
   return (
     <div
       className="markets-row markets-row-clickable"
@@ -219,7 +224,10 @@ const MarketRow = memo(function MarketRow({
         <span className="markets-ticker-label">{asset.ticker}</span>
         <SetAlertButton asset={asset} />
       </span>
-      <span className={cn('markets-price', priceFlash)}>{formatPrice(currentPrice)}</span>
+      <span className="markets-price-cell">
+        <span className={cn('markets-price', priceFlash)}>{formatPrice(currentPrice)}</span>
+        <FreshnessBadge state={freshness} />
+      </span>
       <Sparkline data={generateTrendData(currentPrice, change)} change={change} />
       <span
         className={cn(
@@ -259,6 +267,8 @@ function Terminal() {
     source === 'sample' || (source === 'auto' && query.isSuccess && query.data.length === 0);
   const baseAssets = preview ? sampleAssets : query.data || [];
   useBinanceWebSocket(baseAssets);
+  // Single unified alert pipeline (M1-T4, F-5.1) — session + cloud alerts.
+  useAlertEngine(baseAssets, user);
   const connectionState = useConnectionState();
   const reconnecting = connectionState === 'reconnecting';
   const topPick = [...baseAssets].sort(
@@ -507,7 +517,7 @@ function Terminal() {
           <Zap size={13} />
           <span>Algorithmic signals. Live charts. Zero noise.</span>
         </div>
-        <span>AI analysis is informational. Not financial advice.</span>
+        <span>Quantitative analysis is informational. Not financial advice.</span>
         <span className="font-mono text-[10px]">
           ZEROCHART
           <ArrowDown size={10} className="ml-1 inline" />

@@ -79,31 +79,48 @@ export interface PositionSizeInput {
   atr: number;
   /** Fraction of capital to risk on the trade (default 2%). */
   riskPercent?: number;
+  /**
+   * Optional per-asset capital budget (e.g. the allocation amount from the
+   * portfolio builder). When provided, the suggested notional never exceeds
+   * `min(capital, allocatedCapital)` — the risk model can only shrink the
+   * position below the budget, never grow it past it (M1-T2, F-1.2a).
+   */
+  allocatedCapital?: number;
 }
 
 export interface PositionSize {
-  /** Share quantity that risks exactly `capital × riskPercent` on a 1×ATR stop. */
+  /** Share quantity that risks exactly `capital × riskPercent` on a 1×ATR stop, budget-capped. */
   shares: number;
   /** Dollar amount at risk (capital × riskPercent). */
   riskAmount: number;
-  /** Stop price one ATR below the entry price. */
+  /** Stop price one ATR below the entry price, floored at 0. */
   stopPrice: number;
-  /** Dollar notional of the position (shares × price). */
+  /** Dollar notional of the position (shares × price) — always ≤ the effective budget. */
   notional: number;
+  /** True when the capital budget (not the risk model) bounded the size. */
+  isCapped: boolean;
 }
 
 /**
  * ATR-based position sizing: a move of one ATR against the trade must lose
- * exactly `riskPercent` of capital, so shares = (capital × riskPercent) / ATR.
- * The result is rounded to 4 decimals (the app's share precision); invalid
- * inputs (non-positive capital, price, or ATR) size to zero instead of
- * oversizing the trade.
+ * `riskPercent` of capital, so the risk-optimal quantity is
+ * `shares = (capital × riskPercent) / ATR`. Two hard constraints (M1-T2,
+ * F-1.2a) bound the result:
+ *   1. `shares × price` (notional) never exceeds `min(capital, allocatedCapital)`
+ *      — low-volatility assets (ATR/price < riskPercent) would otherwise
+ *      recommend positions worth multiples of the available budget;
+ *   2. the stop price is floored at 0 (ATR ≥ price can no longer produce a
+ *      negative stop).
+ * Shares round to 4 decimals (fractional-friendly app-wide precision); when
+ * rounding would breach the budget invariant the quantity rounds DOWN instead.
+ * Invalid inputs (non-positive capital, price, or ATR) size to zero.
  */
 export function recommendPositionSize({
   capital,
   price,
   atr,
   riskPercent = DEFAULT_RISK_PERCENT,
+  allocatedCapital,
 }: PositionSizeInput): PositionSize {
   const validCapital =
     Number.isFinite(capital) && capital > 0 && Number.isFinite(riskPercent) && riskPercent > 0;
@@ -111,12 +128,32 @@ export function recommendPositionSize({
   const validMarket =
     Number.isFinite(price) && price > 0 && Number.isFinite(atr) && atr > 0 && riskAmount > 0;
 
-  const shares = validMarket ? Number((riskAmount / atr).toFixed(4)) : 0;
+  if (!validMarket) {
+    return { shares: 0, riskAmount, stopPrice: 0, notional: 0, isCapped: false };
+  }
+
+  const budget =
+    allocatedCapital !== undefined && Number.isFinite(allocatedCapital) && allocatedCapital > 0
+      ? Math.min(capital, allocatedCapital)
+      : capital;
+
+  const riskShares = riskAmount / atr;
+  const budgetShares = budget / price;
+  const isCapped = riskShares > budgetShares;
+
+  let shares = Number(Math.min(riskShares, budgetShares).toFixed(4));
+  // Rounding to 4dp can push the notional epsilon-levels over the budget;
+  // round DOWN in that case so the invariant `shares × price ≤ budget` holds.
+  if (shares * price > budget) {
+    shares = Math.floor(shares * 10000) / 10000;
+  }
+
   return {
     shares,
     riskAmount,
-    stopPrice: validMarket ? Number((price - atr).toFixed(6)) : 0,
-    notional: validMarket ? Number((shares * price).toFixed(2)) : 0,
+    stopPrice: Math.max(0, Number((price - atr).toFixed(6))),
+    notional: Number((shares * price).toFixed(2)),
+    isCapped,
   };
 }
 

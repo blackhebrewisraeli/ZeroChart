@@ -45,6 +45,8 @@ describe('RoboAdvisor results', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
     const dialog = await screen.findByRole('dialog');
+    // F-6.1c: the engine is branded as what it is — deterministic, not "AI".
+    expect(within(dialog).getByText('Quantitative Multi-Factor Engine')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
 
     // Multi-Factor score pills carry the model tooltip instead of the old

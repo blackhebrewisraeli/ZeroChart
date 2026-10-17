@@ -1,6 +1,11 @@
 import { computeFinance, type FinanceRequest, type FinanceResult } from './financeCompute';
 import type { MacdResult } from './indicators';
-import type { AllocationWeight, AssetPriceSeries, BacktestResult } from './backtestManager';
+import type {
+  AllocationWeight,
+  AssetPriceSeries,
+  BacktestCostModel,
+  BacktestResult,
+} from './backtestManager';
 
 let worker: Worker | null | undefined;
 let nextId = 0;
@@ -82,11 +87,14 @@ export function computeBacktestAsync(options: {
   weights: AllocationWeight[];
   series: AssetPriceSeries[];
   initialValue?: number;
+  /** Fee + slippage model applied as an entry-cost drag; omitted = gross. */
+  costModel?: BacktestCostModel;
 }): Promise<BacktestResult> {
   return request<BacktestResult>({
     kind: 'backtest',
     weights: options.weights,
     series: options.series,
     initialValue: options.initialValue,
+    costModel: options.costModel,
   });
 }

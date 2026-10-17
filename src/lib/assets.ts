@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { classifyTicker, toTradingViewSymbol } from '@/lib/ticker';
 
 export type Signal = 'Green' | 'Yellow' | 'Red';
 export interface AssetStatus {
@@ -70,31 +71,31 @@ export function formatRsi(value: number | null) {
   return value === null || !Number.isFinite(value) ? '—' : value.toFixed(1);
 }
 
+/** TradingView symbol — delegated to the canonical classifier (F-3.2d). */
 export function formatTradingViewSymbol(ticker: string) {
-  const symbol = ticker.trim();
-  if (symbol.toUpperCase().endsWith('=X')) {
-    return `FX:${symbol.slice(0, -2).toUpperCase()}`;
-  }
-  if (symbol.toUpperCase().includes('-USD')) {
-    return `CRYPTO:${symbol.toUpperCase().replace('-USD', 'USD')}`;
-  }
-  return symbol;
+  return toTradingViewSymbol(ticker);
 }
 
 export type AssetClass = 'Crypto' | 'Forex' | 'Stocks';
 
+/**
+ * Legacy display-facing class labels, delegated to the canonical
+ * `classifyTicker` (M1-T4, F-3.2d) so bare crypto tickers like `BTC`
+ * classify as Crypto (they previously fell through to Stocks).
+ */
 export function getAssetClass(ticker: string): AssetClass {
-  const symbol = ticker.trim().toUpperCase();
-  if (symbol.endsWith('=X')) return 'Forex';
-  if (symbol.includes('-USD')) return 'Crypto';
-  return 'Stocks';
+  const kind = classifyTicker(ticker);
+  return kind === 'crypto' ? 'Crypto' : kind === 'forex' ? 'Forex' : 'Stocks';
 }
 
 /**
- * Builds a small series of mock price points for a sparkline. The series ends
- * exactly at `currentPrice`, and its first point is derived from the 24h change
- * so the overall direction matches the change (start < end for gains, start > end
- * for losses). Intermediate points add randomized volatility.
+ * Builds a deterministic series of trend points for a sparkline. The series
+ * ends exactly at `currentPrice`, and its first point is derived from the 24h
+ * change (start < end for gains, start > end for losses). Interior points are
+ * a plain linear interpolation between the two anchors — NO randomness: the
+ * line is a derived visualization of the reported change, never fabricated
+ * market history (M1-T2, F-3.3a). Missing price returns a zero series, and a
+ * missing/invalid change falls back to a flat line at the current price.
  */
 export function generateTrendData(
   currentPrice: number | null,
@@ -115,30 +116,37 @@ export function generateTrendData(
   const start = end / denominator;
   const series: number[] = new Array(points);
   for (let i = 0; i < points; i++) {
-    if (i === 0) {
-      series[i] = start;
-    } else if (i === points - 1) {
+    if (i === points - 1) {
+      // Anchor the final point exactly (float-safety).
       series[i] = end;
     } else {
-      const t = i / (points - 1);
-      const base = start + (end - start) * t;
-      const jitter = (Math.random() - 0.5) * 0.02 * base;
-      series[i] = base + jitter;
+      series[i] = start + (end - start) * (i / (points - 1));
     }
   }
   return series;
 }
 
+/**
+ * Deterministic 0–100 Signal Score from the provider's reward/risk ratio plus
+ * two optional bonuses (volume surge +15, price above SMA-50 +10).
+ *
+ * Missing-data policy (M1-T2, F-1.1b) — aligned with the Multi-Factor model's
+ * weight re-normalization: an asset whose `risk_pct`/`reward_pct` the provider
+ * omitted scores a NEUTRAL midpoint (50) instead of the old penalized floor of
+ * 20. Previously such assets could never exceed 45 (< the 50 SELL threshold),
+ * so every held asset lacking those two columns drew a permanent false
+ * "cut losses" suggestion. Missing data is now silence, never a sell signal.
+ */
 export function calculateSignalScore(asset: Asset): number {
-  const ratio =
+  const usableRatio =
     asset.reward_pct !== null &&
     asset.risk_pct !== null &&
     asset.risk_pct > 0 &&
     Number.isFinite(asset.reward_pct) &&
-    Number.isFinite(asset.risk_pct)
-      ? asset.reward_pct / asset.risk_pct
-      : 0;
-  let score = 20 * ratio + 20;
+    Number.isFinite(asset.risk_pct);
+  const ratio = usableRatio ? asset.reward_pct! / asset.risk_pct! : 0;
+  // Neutral midpoint when the ratio inputs are missing (never a penalty).
+  let score = usableRatio ? 20 * ratio + 20 : 50;
   if (asset.volume_spike !== null && asset.volume_spike > 1) score += 15;
   if (
     asset.current_price !== null &&
@@ -157,15 +165,22 @@ export interface BrokerRoute {
   url: string;
 }
 
+/**
+ * Broker routing keyed on the canonical `classifyTicker` (F-3.2d) — bare
+ * crypto like `BTC` now routes to Binance instead of falling through to eToro.
+ */
 export function getBrokerRoute(ticker: string): BrokerRoute {
-  const symbol = ticker.trim();
-  if (symbol.toUpperCase().includes('-USD')) {
+  const kind = classifyTicker(ticker);
+  if (kind === 'crypto') {
     return { label: 'Trade on Binance', url: 'https://www.binance.com/en/markets' };
   }
-  if (symbol.toUpperCase().endsWith('=X')) {
+  if (kind === 'forex') {
     return { label: 'Trade on OANDA', url: 'https://www.oanda.com/' };
   }
-  const clean = symbol.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean = ticker
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
   return { label: 'Trade on eToro', url: `https://www.etoro.com/markets/${clean}` };
 }
 

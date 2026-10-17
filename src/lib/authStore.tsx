@@ -11,6 +11,12 @@ import {
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { loadPortfolio } from '@/lib/db';
+import {
+  beginHydration,
+  completeHydration,
+  getHydrationState,
+  resetHydration,
+} from '@/lib/hydrationStore';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 
@@ -25,8 +31,9 @@ const AuthContext = createContext<AuthStore | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const { replacePositions } = usePortfolio();
-  const loadedUserIdRef = useRef<string | null>(null);
+  const { switchScope, replacePositions } = usePortfolio();
+  /** The user the currently-executing auth/hydration flow belongs to. */
+  const activeUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -48,29 +55,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // When a user logs in (or returns with a persisted session), hydrate the
-  // global store from their cloud portfolio. This lives at the provider level
-  // (mounted once) so it runs on login rather than on every dashboard remount.
+  // Re-scope the portfolio store and hydrate the cloud row whenever the
+  // signed-in user changes (M1-T1, F-4.1a / F-4.1b):
+  //  1. `switchScope` FIRST so the session reflects only this owner's state —
+  //     never a pre-login or previous-user leftover;
+  //  2. `beginHydration` opens the cloud-write barrier until `loadPortfolio`
+  //     settles for this exact user;
+  //  3. stale in-flight responses (user changed or signed out mid-flight) are
+  //     ignored via the `activeUserIdRef` guard;
+  //  4. same-session auth events (token refresh, StrictMode re-runs) skip
+  //     re-hydration while a flow for this user is already active or settled.
   useEffect(() => {
-    if (!user) {
-      loadedUserIdRef.current = null;
+    const userId = user?.id ?? null;
+    activeUserIdRef.current = userId;
+
+    if (userId === null) {
+      switchScope(null);
+      resetHydration();
       return;
     }
-    if (loadedUserIdRef.current === user.id) return;
-    loadedUserIdRef.current = user.id;
 
-    loadPortfolio(user.id)
+    const hydration = getHydrationState();
+    if (hydration.userId === userId && hydration.status !== 'idle') return;
+
+    switchScope(userId);
+    beginHydration(userId);
+
+    loadPortfolio(userId)
       .then((saved) => {
-        if (saved && saved.length > 0) replacePositions(saved);
+        if (activeUserIdRef.current !== userId) return; // stale — user changed/signed out
+        // An existing cloud row always wins, including an explicit empty `[]`,
+        // which must replace demo seeds rather than coexist with them.
+        if (saved !== null) replacePositions(saved);
+        completeHydration(userId, 'ready');
       })
       .catch(() => {
-        // Offline or no saved row — keep the current local positions.
+        if (activeUserIdRef.current !== userId) return; // stale — user changed/signed out
+        completeHydration(userId, 'error');
       });
-  }, [user, replacePositions]);
+  }, [user, switchScope, replacePositions]);
 
   const signOut = useCallback(async () => {
+    // Clear the signed-in user's in-memory portfolio and re-scope to guest
+    // IMMEDIATELY — before the network sign-out resolves — so a subsequent
+    // account can never observe the previous user's positions (F-4.1a).
+    activeUserIdRef.current = null;
+    switchScope(null);
+    resetHydration();
     await supabase.auth.signOut();
-  }, []);
+  }, [switchScope]);
 
   useSessionTimeout(user?.id ?? null, signOut);
 

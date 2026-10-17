@@ -1,22 +1,27 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, Trash2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { formatPrice, type Asset } from '@/lib/assets';
-import { isBinanceCrypto, toDisplayTicker } from '@/lib/binance';
-import { usePriceAlerts } from '@/hooks/usePriceAlerts';
-import type { AlertCondition } from '@/lib/priceAlerts';
+import { toBinanceSymbol, toDisplayTicker } from '@/lib/binance';
+import { useAlertController } from '@/hooks/useAlertEngine';
+import type { AlertCondition } from '@/lib/alertsStore';
 import { cn } from '@/lib/utils';
 
+/**
+ * Price-alert panel backed by the SINGLE unified alert pipeline
+ * (`useAlertEngine` + `alertsStore`, M1-T4 F-5.1). Guests create session-scoped
+ * alerts (in-memory, cleared on refresh); signed-in users create cloud alerts
+ * synced to `user_alerts`. Notifications come exclusively from the engine's
+ * toast channel — this panel only renders the list and creation form.
+ */
 export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | null }) {
-  const { alerts, loading, notifications, createAlert, deleteAlert, dismissNotification } =
-    usePriceAlerts(assets, user);
+  const { alerts, sync, createAlert, deleteAlert } = useAlertController(user);
 
-  const cryptoAssets = useMemo(
+  const tradableAssets = useMemo(
     () =>
       assets
-        .filter((asset) => isBinanceCrypto(asset.ticker))
+        .filter((asset) => toBinanceSymbol(asset.ticker))
         .sort((a, b) => a.ticker.localeCompare(b.ticker)),
     [assets],
   );
@@ -27,14 +32,14 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (ticker === '' && cryptoAssets.length > 0) {
-      setTicker(cryptoAssets[0]?.ticker ?? '');
+    if (ticker === '' && tradableAssets.length > 0) {
+      setTicker(tradableAssets[0]?.ticker ?? '');
     }
-  }, [cryptoAssets, ticker]);
+  }, [tradableAssets, ticker]);
 
   const numericTarget = Number(target);
   const canSubmit =
-    !!user && ticker !== '' && Number.isFinite(numericTarget) && numericTarget > 0 && !submitting;
+    ticker !== '' && Number.isFinite(numericTarget) && numericTarget > 0 && !submitting;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,7 +48,9 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
     try {
       await createAlert({ ticker, targetPrice: numericTarget, condition });
       setTarget('');
-      toast.success(`Alert set for ${ticker}`);
+      toast.success(`Alert set for ${ticker}`, {
+        description: user ? 'Synced to your account.' : 'Session-only — sign in to keep it.',
+      });
     } catch {
       toast.error("Couldn't save alert. Please try again.");
     } finally {
@@ -71,9 +78,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
         <Bell size={18} className="price-alerts-icon" />
       </div>
 
-      {!user ? (
-        <div className="price-alerts-empty">Sign in to create cloud-synced price alerts.</div>
-      ) : cryptoAssets.length === 0 ? (
+      {tradableAssets.length === 0 ? (
         <div className="price-alerts-empty">No crypto assets available to track right now.</div>
       ) : (
         <form className="price-alerts-form" onSubmit={handleSubmit}>
@@ -84,7 +89,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
             >
-              {cryptoAssets.map((asset) => (
+              {tradableAssets.map((asset) => (
                 <option key={asset.ticker} value={asset.ticker}>
                   {toDisplayTicker(asset.ticker)}
                 </option>
@@ -134,67 +139,46 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
         </form>
       )}
 
-      {user && (
-        <div className="price-alerts-list">
-          {loading ? (
-            <div className="price-alerts-empty">Loading alerts…</div>
-          ) : alerts.length === 0 ? (
-            <div className="price-alerts-empty">No active alerts yet.</div>
-          ) : (
-            alerts.map((alert) => (
-              <div key={alert.id} className="price-alert-item">
-                <span className="price-alert-ticker">{toDisplayTicker(alert.ticker)}</span>
-                <span className="price-alert-cond">
-                  {alert.condition === 'above' ? '↑ above' : '↓ below'}
-                </span>
-                <span className="price-alert-target">{formatPrice(alert.target_price)}</span>
-                <button
-                  type="button"
-                  className="price-alert-delete"
-                  onClick={() => handleDelete(alert.id)}
-                  aria-label={`Delete ${alert.ticker} alert`}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+      {!user && (
+        <p className="price-alerts-sub">
+          Signed out — alerts are session-only and clear when you refresh.
+        </p>
       )}
 
-      <div className="price-alerts-toasts" role="region" aria-label="Price alert notifications">
-        <AnimatePresence initial={false}>
-          {notifications.map((notification) => (
-            <motion.div
-              key={notification.id}
-              className="price-alert-toast"
-              layout
-              initial={{ opacity: 0, x: 24, scale: 0.96 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 24, scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            >
-              <div className="price-alert-toast-body">
-                <span className="price-alert-toast-title">
-                  {toDisplayTicker(notification.ticker)} target hit
-                </span>
-                <span className="price-alert-toast-desc">
-                  {toDisplayTicker(notification.ticker)}{' '}
-                  {notification.condition === 'above' ? 'rose above' : 'fell below'}{' '}
-                  {formatPrice(notification.targetPrice)} (now {formatPrice(notification.price)})
-                </span>
-              </div>
+      <div className="price-alerts-list">
+        {sync.status === 'loading' ? (
+          <div className="price-alerts-empty">Loading alerts…</div>
+        ) : alerts.length === 0 ? (
+          <div className="price-alerts-empty">No active alerts yet.</div>
+        ) : (
+          alerts.map((alert) => (
+            <div key={alert.id} className="price-alert-item">
+              <span className="price-alert-ticker">{toDisplayTicker(alert.ticker)}</span>
+              <span className="price-alert-cond">
+                {alert.condition === 'above' ? '↑ above' : '↓ below'}
+              </span>
+              <span className="price-alert-target">{formatPrice(alert.targetPrice)}</span>
+              <span
+                className={cn('price-alert-scope', alert.scope === 'session' && 'is-session')}
+                title={
+                  alert.scope === 'cloud'
+                    ? 'Synced to your account'
+                    : 'Session-only — cleared on refresh'
+                }
+              >
+                {alert.scope === 'cloud' ? 'cloud' : 'session'}
+              </span>
               <button
                 type="button"
-                className="price-alert-toast-close"
-                onClick={() => dismissNotification(notification.id)}
-                aria-label="Dismiss notification"
+                className="price-alert-delete"
+                onClick={() => handleDelete(alert.id)}
+                aria-label={`Delete ${alert.ticker} alert`}
               >
-                ×
+                <Trash2 size={14} />
               </button>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

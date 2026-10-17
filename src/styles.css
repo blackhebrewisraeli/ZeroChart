@@ -553,7 +553,10 @@ body {
 }
 .markets-row {
   display: grid;
-  grid-template-columns: 44px minmax(120px, 1.3fr) minmax(110px, 1fr) 88px minmax(88px, 1fr) 56px 34px;
+  grid-template-columns: 44px minmax(120px, 1.3fr) minmax(110px, 1fr) 88px minmax(
+      88px,
+      1fr
+    ) 56px 34px;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
@@ -618,6 +621,54 @@ body {
     500 14px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
+}
+.markets-price-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Per-asset freshness chips (M1-T4, F-3.2b). Deterministic, high-contrast
+ * tones: only Live uses the signal-green; degraded states step down to
+ * yellow/red/muted so stale data can never read as real-time. */
+.freshness-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font:
+    600 9.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.freshness-live {
+  color: var(--signal-green);
+  background: color-mix(in oklch, var(--signal-green) 10%, transparent);
+}
+.freshness-delayed {
+  color: var(--brand-blue);
+  background: color-mix(in oklch, var(--brand-blue) 8%, transparent);
+}
+.freshness-stale {
+  color: var(--signal-yellow);
+  background: color-mix(in oklch, var(--signal-yellow) 10%, transparent);
+}
+.freshness-unavailable {
+  color: var(--signal-red);
+  background: color-mix(in oklch, var(--signal-red) 8%, transparent);
+}
+.freshness-simulated {
+  color: var(--muted-foreground);
+  border-style: dashed;
+  background: transparent;
 }
 .markets-change {
   display: inline-flex;
@@ -1884,6 +1935,49 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+/* Cash ledger controls (M1-T3, F-1.3a). */
+.portfolio-cash-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.portfolio-cash-input {
+  width: 92px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+}
+.portfolio-cash-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.portfolio-cash-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition:
+    border-color 0.15s ease-out,
+    background 0.15s ease-out;
+}
+.portfolio-cash-btn:hover {
+  border-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+}
 .portfolio-count {
   font:
     600 11px 'JetBrains Mono',
@@ -2034,7 +2128,10 @@ body {
 }
 .holding-summary {
   display: grid;
-  grid-template-columns: minmax(120px, 1.4fr) minmax(72px, 1fr) minmax(72px, 1fr) 88px minmax(72px, 1fr) 28px;
+  grid-template-columns: minmax(120px, 1.4fr) minmax(72px, 1fr) minmax(72px, 1fr) 88px minmax(
+      72px,
+      1fr
+    ) 28px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -2629,6 +2726,16 @@ body {
 .save-cloud-button:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+/* Hydration barrier (M1-T1): saves are disabled until the cloud row settled. */
+.save-cloud-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.save-cloud-button:disabled:hover {
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-color: color-mix(in oklch, var(--primary) 45%, transparent);
+  box-shadow: none;
 }
 
 /* ===== Authentication modal ===== */
@@ -4511,6 +4618,22 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+/* Partial-data coverage warning (M1-T3, F-2.1a/b). */
+.backtest-coverage-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklch, var(--signal-yellow) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--signal-yellow) 10%, transparent);
+  color: var(--foreground);
+  font:
+    500 11.5px 'JetBrains Mono',
+    monospace;
+  line-height: 1.5;
+}
+.backtest-coverage-warning strong {
+  color: var(--signal-yellow);
+}
 .backtest-button {
   display: inline-flex;
   align-items: center;
@@ -5232,6 +5355,22 @@ body {
     monospace;
   color: var(--brand-blue);
 }
+.price-alert-scope {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 40%, transparent);
+  border-radius: 999px;
+  font:
+    600 9.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-blue);
+}
+.price-alert-scope.is-session {
+  border-style: dashed;
+  border-color: var(--border);
+  color: var(--muted-foreground);
+}
 .price-alert-delete {
   display: inline-flex;
   align-items: center;
@@ -5259,67 +5398,9 @@ body {
   font-size: 13px;
   color: var(--muted-foreground);
 }
-.price-alerts-toasts {
-  position: fixed;
-  top: 88px;
-  right: 20px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 360px;
-}
-.price-alert-toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 45%, transparent);
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--background) 92%, transparent);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 25%, transparent);
-}
-.price-alert-toast-body {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.price-alert-toast-title {
-  font:
-    700 14px 'JetBrains Mono',
-    monospace;
-  color: var(--brand-blue);
-}
-.price-alert-toast-desc {
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
-.price-alert-toast-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: 16px;
-  cursor: pointer;
-}
-.price-alert-toast-close:hover {
-  color: var(--foreground);
-}
 @media (max-width: 760px) {
   .price-alerts-form {
     grid-template-columns: 1fr 1fr;
-  }
-  .price-alerts-toasts {
-    left: 20px;
-    right: 20px;
-    max-width: none;
   }
 }
 

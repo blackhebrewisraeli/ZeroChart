@@ -111,7 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Temporary entitlement bridge until billing is connected. Supabase user
   // metadata gives us a production-shaped switch while every existing account
   // and guest remains on Basic by default.
-  const isPro = user?.app_metadata?.is_pro === true || user?.user_metadata?.is_pro === true;
+  const isPro = user?.app_metadata?.['is_pro'] === true || user?.user_metadata?.['is_pro'] === true;
 
   const value = useMemo(() => ({ user, isPro, loading, signOut }), [user, isPro, loading, signOut]);
 

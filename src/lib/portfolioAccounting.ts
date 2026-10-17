@@ -3,7 +3,12 @@ export type PortfolioType = 'real_tracking' | 'long_term_sim' | 'paper_trading';
 export interface PositionLot {
   id: string;
   shares: number;
+  /** Execution price per share, excluding acquisition costs. */
   buyPrice: number;
+  /**
+   * Acquisition costs (fee + slippage) still attached to this lot. Part of
+   * its cost basis; allocated pro rata when the lot is partially sold.
+   */
   feePaid?: number;
   acquiredAt: string;
 }
@@ -137,6 +142,10 @@ function weightedAverageBuyPrice(lots: PositionLot[]): number {
   return lots.reduce((sum, lot) => sum + lot.shares * lot.buyPrice, 0) / totalShares;
 }
 
+function lotCostBasis(lot: PositionLot): number {
+  return lot.shares * lot.buyPrice + (lot.feePaid ?? 0);
+}
+
 /** Creates a canonical lot representation without mutating the input. */
 export function normalizePositionLots(position: Position): Position {
   const ticker = normalizeTicker(position.ticker);
@@ -211,7 +220,7 @@ export function applyBuyTransaction(
       deterministicId('lot', ticker, timestamp, normalizedExisting?.lots?.length ?? 0),
     shares: input.shares,
     buyPrice: input.price,
-    ...(fee > 0 ? { feePaid: fee } : {}),
+    ...(fee + slippage > 0 ? { feePaid: fee + slippage } : {}),
     acquiredAt: timestamp,
   };
   const lots = [...(normalizedExisting?.lots ?? []), lot];
@@ -300,11 +309,16 @@ export function applySellTransaction(
 
   for (const { lot } of orderedLots) {
     const consumed = Math.min(lot.shares, sharesToSell);
-    costBasisSold += consumed * lot.buyPrice;
+    const feeSold = lot.feePaid ? (lot.feePaid * consumed) / lot.shares : 0;
+    costBasisSold += consumed * lot.buyPrice + feeSold;
     sharesToSell -= consumed;
     const remainingShares = lot.shares - consumed;
     if (remainingShares > ZERO_SHARE_EPSILON) {
-      remainingLots.push({ ...lot, shares: remainingShares });
+      remainingLots.push({
+        ...lot,
+        shares: remainingShares,
+        ...(lot.feePaid ? { feePaid: lot.feePaid - feeSold } : {}),
+      });
     }
   }
 
@@ -366,10 +380,7 @@ export function computePortfolioValuation(
 
   for (const rawPosition of container.positions) {
     const position = normalizePositionLots(rawPosition);
-    const costBasis = (position.lots ?? []).reduce(
-      (sum, lot) => sum + lot.shares * lot.buyPrice,
-      0,
-    );
+    const costBasis = (position.lots ?? []).reduce((sum, lot) => sum + lotCostBasis(lot), 0);
     const livePrice = livePrices[normalizeTicker(position.ticker)];
     const hasLivePrice =
       typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0;

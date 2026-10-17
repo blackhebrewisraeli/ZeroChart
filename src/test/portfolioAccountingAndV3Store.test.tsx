@@ -62,7 +62,7 @@ describe('portfolio accounting', () => {
         id: 'lot-1',
         shares: 10,
         buyPrice: 100,
-        feePaid: 2,
+        feePaid: 5,
         acquiredAt: '2026-01-01T00:00:00.000Z',
       },
       {
@@ -147,6 +147,46 @@ describe('portfolio accounting', () => {
     expect(full.container.realizedPnl).toBe(504);
     expect(full.container.positions).toEqual([]);
     expect(full.container.cashBalance).toBe(2_154);
+  });
+
+  it('carries buy fees and slippage in cost basis, allocated pro rata on sells', () => {
+    const buy = applyBuyTransaction(emptyContainer('paper_trading', 2_000), {
+      ticker: 'AAPL',
+      shares: 10,
+      price: 100,
+      fee: 2,
+      slippage: 3,
+      timestamp: '2026-01-01T00:00:00.000Z',
+    });
+    expect(buy.ok).toBe(true);
+    if (!buy.ok) return;
+    expect(buy.container.cashBalance).toBe(995);
+
+    const partial = applySellTransaction(buy.container, {
+      ticker: 'AAPL',
+      shares: 4,
+      price: 100,
+      timestamp: '2026-02-01T00:00:00.000Z',
+    });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) return;
+    expect(partial.costBasisSold).toBe(402);
+    expect(partial.realizedPnl).toBe(-2);
+    expect(computePortfolioValuation(partial.container, { AAPL: 100 })).toMatchObject({
+      investedCostBasis: 603,
+      unrealizedPnl: -3,
+    });
+
+    const full = applySellTransaction(partial.container, {
+      ticker: 'AAPL',
+      shares: 6,
+      price: 100,
+      timestamp: '2026-03-01T00:00:00.000Z',
+    });
+    expect(full.ok).toBe(true);
+    if (!full.ok) return;
+    expect(full.container.realizedPnl).toBe(-5);
+    expect(full.container.cashBalance).toBe(1_995);
   });
 
   it('rejects unfunded buys and oversells without changing the container', () => {

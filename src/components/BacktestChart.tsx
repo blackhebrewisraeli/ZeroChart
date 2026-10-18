@@ -14,6 +14,7 @@ import {
 } from '@/lib/backtestManager';
 import { computeBacktestAsync } from '@/lib/financeClient';
 import { useAuth } from '@/lib/authStore';
+import { recordHeavyAction } from '@/lib/adManager';
 import type { Position } from '@/lib/portfolioManager';
 import { cn } from '@/lib/utils';
 
@@ -116,6 +117,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
   }
 
   async function runSimulation() {
+    recordHeavyAction(isPro);
     // A failed refetch must not leave stale history for later reruns.
     seriesRef.current = null;
     setStatus('loading');

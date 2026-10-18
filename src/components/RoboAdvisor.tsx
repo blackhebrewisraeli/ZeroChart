@@ -17,6 +17,7 @@ import { formatPrice, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { useAuth } from '@/lib/authStore';
+import { recordHeavyAction } from '@/lib/adManager';
 import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { REGIME_LABELS } from '@/lib/multiFactor';
@@ -161,6 +162,8 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   }, [open, phase, closeModal]);
 
   async function handleSubmit() {
+    // Enter in either input bypasses the disabled button; one build at a time.
+    if (building) return;
     const value = Number(amount.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(value) || value <= 0) {
       setError('Enter an investment amount greater than $0.');
@@ -173,6 +176,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
       return;
     }
     setError(null);
+    recordHeavyAction(isPro);
     setTotal(value);
     setMonthly(monthlyValue);
     setRejectedTickers(new Set());

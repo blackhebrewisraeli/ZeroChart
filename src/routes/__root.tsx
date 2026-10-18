@@ -15,6 +15,7 @@ import { reportLovableError } from '../lib/lovable-error-reporting';
 import { Toaster } from '../components/ui/sonner';
 import { PortfolioProvider } from '../lib/portfolioStore';
 import { AuthProvider } from '../lib/authStore';
+import { AdInterstitialModal } from '../components/AdInterstitialModal';
 import { ThemeProvider } from 'next-themes';
 
 function NotFoundComponent() {
@@ -136,6 +137,7 @@ function RootComponent() {
           <AuthProvider>
             {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
             <Outlet />
+            <AdInterstitialModal />
           </AuthProvider>
         </PortfolioProvider>
         <Toaster />

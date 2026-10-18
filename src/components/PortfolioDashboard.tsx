@@ -17,11 +17,18 @@ import {
   Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { calculateSignalScore, formatPrice, generateTrendData, type Asset } from '@/lib/assets';
+import {
+  calculateSignalScore,
+  formatPnl,
+  formatPrice,
+  formatSignedPercent,
+  generateTrendData,
+  pnlTone,
+  type Asset,
+} from '@/lib/assets';
 import { calculatePortfolioStats, type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import {
-  activeLedgerType,
   computePortfolioValuation,
   positionCostBasis,
   type PortfolioTransaction,
@@ -70,19 +77,6 @@ import {
 type PortfolioMode = 'simulation' | 'live';
 
 const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
-
-function formatPnl(value: number) {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
-  return `${sign}${formatPrice(Math.abs(value))}`;
-}
-
-function formatSignedPercent(value: number) {
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
-}
-
-function pnlTone(value: number): 'pnl-up' | 'pnl-down' | undefined {
-  return value > 0 ? 'pnl-up' : value < 0 ? 'pnl-down' : undefined;
-}
 
 function KpiCard({
   label,
@@ -366,18 +360,22 @@ function formatLedgerTime(timestamp: string) {
     : date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function TradeLedger({
+export function TradeLedger({
   transactions,
   filename,
+  title = 'Trade Ledger',
+  defaultOpen = false,
 }: {
   transactions: PortfolioTransaction[];
   filename: string;
+  title?: string;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const newestFirst = [...transactions].reverse();
 
   return (
-    <section className="portfolio-section" aria-label="Trade ledger">
+    <section className="portfolio-section" aria-label={title}>
       <div className="portfolio-section-head">
         <h3 className="portfolio-section-title">
           <button
@@ -387,7 +385,7 @@ function TradeLedger({
             aria-controls="trade-ledger-panel"
             onClick={() => setOpen((value) => !value)}
           >
-            Trade Ledger
+            {title}
             <ChevronDown size={18} className={cn('holding-chevron', open && 'is-open')} />
           </button>
         </h3>
@@ -502,8 +500,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     setActivePortfolioType,
     portfolios,
   } = usePortfolio();
-  // The active ledger is shared with the Lab, whose tactical trades book into it.
-  const ledgerType = activeLedgerType(activePortfolioType);
+  // Core shows Simulation or Live Tracking; tactical trades book into Paper Trading.
+  const ledgerType = activePortfolioType;
   const mode: PortfolioMode = ledgerType === 'real_tracking' ? 'live' : 'simulation';
   const setMode = (next: PortfolioMode) =>
     setActivePortfolioType(next === 'live' ? 'real_tracking' : 'long_term_sim');

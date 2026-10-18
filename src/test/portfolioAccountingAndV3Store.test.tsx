@@ -6,7 +6,7 @@ import {
   computePortfolioValuation,
   type PortfolioContainer,
 } from '@/lib/portfolioAccounting';
-import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
+import { PortfolioProvider, usePortfolio, type PortfolioStateV3 } from '@/lib/portfolioStore';
 
 function emptyContainer(
   type: PortfolioContainer['type'] = 'paper_trading',
@@ -477,6 +477,7 @@ describe('portfolio store v3', () => {
     expect(store.getPortfolio('real_tracking').cashBalance).toBe(777);
 
     act(() => {
+      // Saved before Paper Trading had its own terminal, when it was a Core mode.
       store.replacePortfolioState({
         version: 3,
         activePortfolioType: 'paper_trading',
@@ -485,9 +486,9 @@ describe('portfolio store v3', () => {
           long_term_sim: emptyContainer('long_term_sim', 222),
           paper_trading: emptyContainer('paper_trading', 333),
         },
-      });
+      } as unknown as PortfolioStateV3);
     });
-    expect(store.activePortfolioType).toBe('paper_trading');
+    expect(store.activePortfolioType).toBe('long_term_sim');
     expect(store.getPortfolio('real_tracking').cashBalance).toBe(111);
     expect(store.getPortfolio('long_term_sim').cashBalance).toBe(222);
     expect(store.getPortfolio('paper_trading').cashBalance).toBe(333);

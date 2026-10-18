@@ -49,6 +49,19 @@ export function formatPrice(value: number | null) {
   }).format(value);
 }
 
+export function formatPnl(value: number) {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${formatPrice(Math.abs(value))}`;
+}
+
+export function formatSignedPercent(value: number) {
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+export function pnlTone(value: number): 'pnl-up' | 'pnl-down' | undefined {
+  return value > 0 ? 'pnl-up' : value < 0 ? 'pnl-down' : undefined;
+}
+
 export function formatRisk(value: number | null) {
   return value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(1)}%`;
 }

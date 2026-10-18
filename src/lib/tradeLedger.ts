@@ -26,6 +26,18 @@ export function executionDrag(transactions: readonly PortfolioTransaction[]): nu
   return transactions.reduce((sum, transaction) => sum + executionCost(transaction), 0);
 }
 
+/** Realized P&L booked by sells on `day`'s local calendar date. */
+export function realizedPnlOn(transactions: readonly PortfolioTransaction[], day: Date): number {
+  const date = day.toDateString();
+  return transactions.reduce(
+    (sum, transaction) =>
+      transaction.type === 'sell' && new Date(transaction.timestamp).toDateString() === date
+        ? sum + (transaction.realizedPnl ?? 0)
+        : sum,
+    0,
+  );
+}
+
 /** Execution cost in basis points of trade notional; null for cash movements. */
 export function frictionBps(transaction: PortfolioTransaction): number | null {
   if (!isTrade(transaction) || !transaction.shares || !transaction.price) return null;

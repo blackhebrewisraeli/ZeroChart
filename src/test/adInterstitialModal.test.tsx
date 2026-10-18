@@ -43,6 +43,12 @@ describe('AdInterstitialModal', () => {
     expect(screen.getByText(/sponsored · quant partner/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dismiss in 3s' })).toBeDisabled();
 
+    // Radix arms its outside-pointer listener on a 0ms timer.
+    act(() => vi.advanceTimersByTime(0));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.pointerDown(document.body);
+    expect(adDialog()).toBeInTheDocument();
+
     for (let i = 0; i < 3; i += 1) act(() => vi.advanceTimersByTime(1000));
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));

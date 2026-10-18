@@ -2,6 +2,7 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, LockKeyhole, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/lib/authStore';
 import { cn } from '@/lib/utils';
 
 type BillingCycle = 'monthly' | 'annual';
@@ -16,11 +17,21 @@ const PRO_FEATURES = [
   'Market Regime Detection',
   'ATR Trailing Stops',
   'Realistic Backtest Friction',
+  'Zero Ads: a trading experience free of pop-up ads',
 ] as const;
 
 export function PricingModal({ open, onOpenChange }: PricingModalProps) {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual');
   const isAnnual = billingCycle === 'annual';
+  const { activateSandboxPro } = useAuth();
+
+  function handleSandboxCheckout() {
+    activateSandboxPro();
+    onOpenChange(false);
+    toast.success('Pro activated (sandbox)', {
+      description: 'Locks and ads are gone for this tab. Reload to return to Basic.',
+    });
+  }
 
   function handleUpgrade() {
     onOpenChange(false);
@@ -66,7 +77,7 @@ export function PricingModal({ open, onOpenChange }: PricingModalProps) {
               aria-pressed={isAnnual}
               onClick={() => setBillingCycle('annual')}
             >
-              Annual <span>Save $38</span>
+              Annual <span className="pricing-billing-tag">2 months free</span>
             </button>
           </div>
 
@@ -127,6 +138,15 @@ export function PricingModal({ open, onOpenChange }: PricingModalProps) {
               <button type="button" className="pricing-upgrade-button" onClick={handleUpgrade}>
                 <LockKeyhole size={16} /> Upgrade to Pro
               </button>
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  className="pricing-sandbox-button"
+                  onClick={handleSandboxCheckout}
+                >
+                  Sandbox checkout (test mode)
+                </button>
+              )}
             </section>
           </div>
 

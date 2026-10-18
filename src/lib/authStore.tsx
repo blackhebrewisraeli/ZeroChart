@@ -25,6 +25,8 @@ interface AuthStore {
   isPro: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
+  /** Sandbox checkout: grants Pro for this tab only — no billing, nothing persisted. */
+  activateSandboxPro: () => void;
 }
 
 const AuthContext = createContext<AuthStore | null>(null);
@@ -32,6 +34,7 @@ const AuthContext = createContext<AuthStore | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sandboxPro, setSandboxPro] = useState(false);
   const { switchScope, replacePortfolioState } = usePortfolio();
   /** The user the currently-executing auth/hydration flow belongs to. */
   const activeUserIdRef = useRef<string | null>(null);
@@ -111,9 +114,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Temporary entitlement bridge until billing is connected. Supabase user
   // metadata gives us a production-shaped switch while every existing account
   // and guest remains on Basic by default.
-  const isPro = user?.app_metadata?.['is_pro'] === true || user?.user_metadata?.['is_pro'] === true;
+  const isPro =
+    sandboxPro ||
+    user?.app_metadata?.['is_pro'] === true ||
+    user?.user_metadata?.['is_pro'] === true;
 
-  const value = useMemo(() => ({ user, isPro, loading, signOut }), [user, isPro, loading, signOut]);
+  const activateSandboxPro = useCallback(() => setSandboxPro(true), []);
+
+  const value = useMemo(
+    () => ({ user, isPro, loading, signOut, activateSandboxPro }),
+    [user, isPro, loading, signOut, activateSandboxPro],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

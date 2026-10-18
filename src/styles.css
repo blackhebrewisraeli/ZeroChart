@@ -6180,10 +6180,14 @@ body {
     background 0.15s ease-out,
     color 0.15s ease-out;
 }
-.pricing-billing-option span {
-  margin-left: 4px;
-  color: var(--brand-blue);
+.pricing-billing-tag {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--brand-blue);
+  color: #101828;
   font-size: 10px;
+  font-weight: 700;
 }
 .pricing-billing-option.is-active {
   background: color-mix(in oklch, var(--brand-blue) 15%, #182238);
@@ -6322,12 +6326,29 @@ body {
 .pricing-upgrade-button:hover {
   box-shadow: 0 0 38px color-mix(in oklch, var(--brand-blue) 48%, transparent);
 }
+.pricing-sandbox-button {
+  margin-top: 8px;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: oklch(0.68 0.015 250);
+  font:
+    600 11.5px 'DM Sans',
+    sans-serif;
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.pricing-sandbox-button:hover {
+  color: var(--brand-blue);
+}
 .pricing-basic-button:active,
 .pricing-upgrade-button:active {
   transform: scale(0.985);
 }
 .pricing-close:focus-visible,
 .pricing-billing-option:focus-visible,
+.pricing-sandbox-button:focus-visible,
 .pricing-basic-button:focus-visible,
 .pricing-upgrade-button:focus-visible {
   outline: 2px solid var(--brand-blue);
@@ -6338,6 +6359,39 @@ body {
   text-align: center;
   color: oklch(0.62 0.015 250);
   font-size: 11px;
+}
+
+/* Basic-tier interstitial: reuses the pricing modal shell, sits just below it. */
+.ad-overlay {
+  z-index: 238;
+}
+.ad-modal {
+  z-index: 239;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(460px, calc(100vw - 32px));
+  padding: 26px;
+}
+.ad-modal .pricing-header {
+  margin-bottom: 8px;
+  padding-right: 0;
+}
+.ad-sponsor-label {
+  align-self: flex-start;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: oklch(0.72 0.015 250);
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ad-dismiss-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .pro-feature-gate {

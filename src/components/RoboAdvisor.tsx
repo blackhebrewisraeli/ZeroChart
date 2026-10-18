@@ -17,6 +17,7 @@ import { formatPrice, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { useAuth } from '@/lib/authStore';
+import { recordHeavyAction } from '@/lib/adManager';
 import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { REGIME_LABELS } from '@/lib/multiFactor';
@@ -173,6 +174,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
       return;
     }
     setError(null);
+    recordHeavyAction(isPro);
     setTotal(value);
     setMonthly(monthlyValue);
     setRejectedTickers(new Set());

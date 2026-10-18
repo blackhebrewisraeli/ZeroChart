@@ -159,6 +159,14 @@ function lotCostBasis(lot: PositionLot): number {
   return lot.shares * lot.buyPrice + (lot.feePaid ?? 0);
 }
 
+/** What the open lots cost, acquisition fees and slippage included. */
+export function positionCostBasis(position: Position): number {
+  return (normalizePositionLots(position).lots ?? []).reduce(
+    (sum, lot) => sum + lotCostBasis(lot),
+    0,
+  );
+}
+
 /** Creates a canonical lot representation without mutating the input. */
 export function normalizePositionLots(position: Position): Position {
   const ticker = normalizeTicker(position.ticker);
@@ -463,7 +471,7 @@ export function computePortfolioValuation(
 
   for (const rawPosition of container.positions) {
     const position = normalizePositionLots(rawPosition);
-    const costBasis = (position.lots ?? []).reduce((sum, lot) => sum + lotCostBasis(lot), 0);
+    const costBasis = positionCostBasis(position);
     const livePrice = livePrices[normalizeTicker(position.ticker)];
     const hasLivePrice =
       typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0;

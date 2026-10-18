@@ -53,7 +53,7 @@ vi.mock('sonner', () => ({
 vi.mock('@/components/AllocationChart', () => ({ AllocationChart: () => null }));
 vi.mock('@/components/BacktestChart', () => ({ BacktestChart: () => null }));
 vi.mock('@/components/PriceAlerts', () => ({ PriceAlerts: () => null }));
-vi.mock('@/components/TradeTicket', () => ({ TradeTicket: () => null }));
+vi.mock('@/components/TradeTicket', () => ({ FEE_RATE: 0.0025, TradeTicket: () => null }));
 vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
 
 import { resetHydration } from '@/lib/hydrationStore';

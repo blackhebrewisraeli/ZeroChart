@@ -18,19 +18,16 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateSignalScore, formatPrice, generateTrendData, type Asset } from '@/lib/assets';
-import {
-  calculatePortfolioStats,
-  generateSuggestions,
-  type Position,
-  type Suggestion,
-} from '@/lib/portfolioManager';
+import { calculatePortfolioStats, type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import {
+  activeLedgerType,
   computePortfolioValuation,
   positionCostBasis,
   type PortfolioTransaction,
 } from '@/lib/portfolioAccounting';
 import {
+  INTENT_LABELS,
   LEDGER_SIDE_LABELS,
   downloadCsv,
   executionCost,
@@ -58,7 +55,8 @@ import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
 import { BacktestChart } from '@/components/BacktestChart';
 import { PriceAlerts } from '@/components/PriceAlerts';
-import { FEE_RATE, TradeTicket } from '@/components/TradeTicket';
+import { FEE_RATE } from '@/components/TradeTicket';
+import { RebalancePanel } from '@/components/RebalancePanel';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
 import { isBinanceCrypto, toBinanceSymbol } from '@/lib/binance';
@@ -145,34 +143,6 @@ function HealthRing({ score }: { score: number }) {
   );
 }
 
-function SuggestionCard({ suggestion }: { suggestion: Suggestion }) {
-  const isSell = suggestion.type === 'SELL';
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: 'auto' }}
-      exit={{ opacity: 0, height: 0, scale: 0.95 }}
-      transition={SPRING}
-      className={cn('suggestion-card', isSell ? 'suggestion-sell' : 'suggestion-buy')}
-    >
-      <span className="suggestion-icon">
-        {isSell ? <TrendingDown size={18} /> : <TrendingUp size={18} />}
-      </span>
-      <div className="suggestion-body">
-        <div className="suggestion-head">
-          <span className="suggestion-ticker">{suggestion.ticker}</span>
-          <span className="suggestion-type">
-            {isSell ? 'Cut losses / take profit' : 'Buy opportunity'}
-          </span>
-        </div>
-        <p className="suggestion-reason">{suggestion.reason}</p>
-      </div>
-      <span className="suggestion-score">{suggestion.score}</span>
-    </motion.div>
-  );
-}
-
 function HoldingRow({
   position,
   assets,
@@ -252,7 +222,7 @@ function HoldingRow({
           <span className="holding-name">{asset?.name ?? position.ticker}</span>
         </div>
         <div className="holding-cell holding-cell-secondary">
-          <span className="holding-cell-value">{position.shares}</span>
+          <span className="holding-cell-value">{formatShares(position.shares)}</span>
           <span className="holding-cell-label">Shares</span>
         </div>
         <div className="holding-cell holding-cell-secondary">
@@ -463,6 +433,11 @@ function TradeLedger({
                           <span className="ledger-side" data-side={transaction.type}>
                             {LEDGER_SIDE_LABELS[transaction.type]}
                           </span>
+                          {transaction.intent && INTENT_LABELS[transaction.intent] && (
+                            <span className="ledger-intent">
+                              {INTENT_LABELS[transaction.intent]}
+                            </span>
+                          )}
                         </td>
                         <td>{transaction.ticker ?? '—'}</td>
                         <td>
@@ -513,21 +488,25 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
 }: {
   assets: Asset[];
 }) {
-  const [mode, setMode] = useState<PortfolioMode>('simulation');
   const [authOpen, setAuthOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [cashAmount, setCashAmount] = useState('');
   const { user } = useAuth();
   const {
-    positions,
     removePosition,
     updatePosition,
     executeSell,
     depositPortfolioCash,
     withdrawPortfolioCash,
     activePortfolioType,
+    setActivePortfolioType,
     portfolios,
   } = usePortfolio();
+  // The active ledger is shared with the Lab, whose tactical trades book into it.
+  const ledgerType = activeLedgerType(activePortfolioType);
+  const mode: PortfolioMode = ledgerType === 'real_tracking' ? 'live' : 'simulation';
+  const setMode = (next: PortfolioMode) =>
+    setActivePortfolioType(next === 'live' ? 'real_tracking' : 'long_term_sim');
   const hydration = useHydrationState();
 
   // Cloud saves stay disabled until this user's cloud hydration settled —
@@ -542,13 +521,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
 
-  const visible = positions.filter((p) =>
-    mode === 'simulation' ? p.isSimulation : !p.isSimulation,
-  );
-  const stats = calculatePortfolioStats(visible, assets);
-  // P&L attribution, cash and the Trade Ticket use the v3 ledger of the mode's portfolio.
-  const ledgerType = mode === 'simulation' ? 'long_term_sim' : 'real_tracking';
+  // Every Core view (KPIs, allocation, backtest, rebalancing) reads the mode's own portfolio.
   const ledger = portfolios[ledgerType];
+  const visible = ledger.positions;
+  const stats = calculatePortfolioStats(visible, assets);
   const cashBalance = ledger.cashBalance;
   const valuation = computePortfolioValuation(
     ledger,
@@ -561,8 +537,6 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   const closedCount = ledger.transactions.filter(
     (transaction) => transaction.type === 'sell',
   ).length;
-  const suggestions = generateSuggestions(visible, assets, cashBalance);
-  const topAsset = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
 
   let dayChange = 0;
   let hasDayChange = false;
@@ -594,7 +568,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       await publishSharedPortfolio({
         id,
         userId: user.id,
-        snapshot: buildSharedPortfolioSnapshot(visible, assets),
+        snapshot: await buildSharedPortfolioSnapshot(visible, assets),
       });
     } catch {
       toast.error("Couldn't create a public link. Please try again.");
@@ -711,15 +685,12 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {topAsset && (
-            <TradeTicket asset={topAsset} variant="compact" portfolioType={ledgerType} />
-          )}
           <button
             type="button"
             className="share-portfolio-button"
             onClick={handleShare}
             disabled={sharing}
-            title="Creates a public link with allocation %, returns %, and quant scores only. No balances or share counts are shared."
+            title="Creates a public link with allocation %, returns %, max drawdown, alpha vs BTC, and quant scores only. No balances or share counts are shared."
           >
             <Share2 size={15} />
             {sharing ? 'Creating link…' : 'Share Portfolio'}
@@ -823,12 +794,13 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       </section>
 
       <section className="portfolio-section" aria-label="Historical simulation">
-        <BacktestChart positions={visible} assets={assets} />
+        {/* Keyed so one portfolio's result never shows under another. */}
+        <BacktestChart key={ledgerType} positions={visible} assets={assets} />
       </section>
 
-      <section className="portfolio-section" aria-label="Smart suggestions">
+      <section className="portfolio-section" aria-label="Rebalancing">
         <div className="portfolio-section-head">
-          <h3 className="portfolio-section-title">Smart Suggestions</h3>
+          <h3 className="portfolio-section-title">Rebalancing</h3>
           <div className="portfolio-cash-controls">
             <span className="portfolio-cash">
               <Wallet size={14} /> {formatPrice(cashBalance)} available
@@ -860,28 +832,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             </button>
           </div>
         </div>
-        {suggestions.length > 0 ? (
-          <div className="suggestion-list">
-            <AnimatePresence>
-              {suggestions.map((suggestion) => (
-                <SuggestionCard
-                  key={`${suggestion.type}-${suggestion.ticker}`}
-                  suggestion={suggestion}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
-        ) : (
-          <div className="suggestion-empty">
-            <CheckCircle2 size={22} />
-            <div>
-              <span className="suggestion-empty-title">No action needed</span>
-              <span className="suggestion-empty-sub">
-                Every holding is scoring above the sell threshold and no new buy qualifies yet.
-              </span>
-            </div>
-          </div>
-        )}
+        <RebalancePanel portfolioType={ledgerType} assets={assets} />
       </section>
 
       <section className="portfolio-section" aria-label="Holdings">

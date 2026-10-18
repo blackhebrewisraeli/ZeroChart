@@ -1,5 +1,23 @@
 export type PortfolioType = 'real_tracking' | 'long_term_sim' | 'paper_trading';
 
+export const LEDGER_NAMES: Record<PortfolioType, string> = {
+  long_term_sim: 'Simulation',
+  real_tracking: 'Live Tracking',
+  paper_trading: 'Paper Trading',
+};
+
+/**
+ * The ledger fills book into and the Core dashboard shows for the active
+ * selection. Paper Trading has no workspace until M2-T3, so a saved
+ * `paper_trading` selection maps to Simulation everywhere alike.
+ */
+export function activeLedgerType(active: PortfolioType): 'real_tracking' | 'long_term_sim' {
+  return active === 'real_tracking' ? 'real_tracking' : 'long_term_sim';
+}
+
+/** Why a trade was placed: a Core rebalance or an Active Research Lab tactical trade. */
+export type TradeIntent = 'rebalance' | 'tactical';
+
 export interface PositionLot {
   id: string;
   shares: number;
@@ -52,6 +70,7 @@ export interface PortfolioTransaction {
   realizedPnl?: number;
   timestamp: string;
   note?: string;
+  intent?: TradeIntent;
 }
 
 export interface PortfolioContainer {
@@ -76,6 +95,7 @@ export interface BuyTransactionInput {
   lotId?: string;
   positionId?: string;
   requireCash?: boolean;
+  intent?: TradeIntent;
 }
 
 export interface SellTransactionInput {
@@ -87,6 +107,7 @@ export interface SellTransactionInput {
   timestamp?: string;
   transactionId?: string;
   creditCash?: boolean;
+  intent?: TradeIntent;
 }
 
 export type BuyTransactionResult =
@@ -351,6 +372,7 @@ export function applyBuyTransaction(
     ...(input.slippage !== undefined ? { slippage } : {}),
     amount: totalCost,
     timestamp,
+    ...(input.intent ? { intent: input.intent } : {}),
   };
 
   return {
@@ -443,6 +465,7 @@ export function applySellTransaction(
     amount: netProceeds,
     realizedPnl,
     timestamp,
+    ...(input.intent ? { intent: input.intent } : {}),
   };
 
   return {

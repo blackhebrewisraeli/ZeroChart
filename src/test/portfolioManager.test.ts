@@ -3,7 +3,6 @@ import {
   calculatePortfolioStats,
   deriveRiskLabel,
   generateShareText,
-  generateSuggestions,
   type Position,
 } from '@/lib/portfolioManager';
 import type { Asset } from '@/lib/assets';
@@ -110,109 +109,6 @@ describe('calculatePortfolioStats', () => {
       pnlPercent: 0,
       healthScore: 0,
     });
-  });
-});
-
-describe('generateSuggestions', () => {
-  it('flags held assets whose signal score drops below 50 for selling', () => {
-    const positions = [
-      makePosition({ id: 'weak', ticker: 'WEAK' }),
-      makePosition({ id: 'ok', ticker: 'OK' }),
-    ];
-    const assets = [
-      makeAsset('WEAK', 0.1, 0.1, 100), // 40
-      makeAsset('OK', 0.3, 0.1, 100), // 80
-      makeAsset('STRONG', 0.35, 0.1, 100), // 90
-    ];
-
-    const suggestions = generateSuggestions(positions, assets, 0);
-
-    expect(suggestions).toHaveLength(1);
-    expect(suggestions[0]).toMatchObject({ type: 'SELL', ticker: 'WEAK', score: 40 });
-  });
-
-  it('never SELLs a held asset whose risk/reward data is missing (F-1.1b)', () => {
-    const positions = [
-      makePosition({ id: 'nodata', ticker: 'NODATA' }),
-      makePosition({ id: 'spike', ticker: 'SPIKE' }),
-    ];
-    const assets = [
-      // Provider omitted risk/reward → neutral 50 (not the old 20 → permanent
-      // false "cut losses" suggestion).
-      { ...makeAsset('NODATA', 0.1, 0.1, 100), risk_pct: null, reward_pct: null },
-      // Missing risk/reward but a real volume surge: 50 + 15 = 65 — still no SELL.
-      { ...makeAsset('SPIKE', 0.1, 0.1, 100), risk_pct: null, reward_pct: null, volume_spike: 1.8 },
-    ];
-
-    const suggestions = generateSuggestions(positions, assets, 0);
-
-    expect(suggestions.filter((s) => s.type === 'SELL')).toEqual([]);
-  });
-
-  it('suggests buying non-held assets scoring 85+ when cash is available', () => {
-    const positions = [makePosition({ id: 'held', ticker: 'HELD' })];
-    const assets = [
-      makeAsset('HELD', 0.35, 0.1, 100), // 90 (held, skipped)
-      makeAsset('BUY_HIGH', 0.35, 0.1, 100), // 90
-      makeAsset('BUY_EDGE', 0.325, 0.1, 100), // 85
-      makeAsset('SKIP', 0.32, 0.1, 100), // 84
-    ];
-
-    const suggestions = generateSuggestions(positions, assets, 5000);
-
-    expect(suggestions.map((suggestion) => suggestion.ticker).sort()).toEqual([
-      'BUY_EDGE',
-      'BUY_HIGH',
-    ]);
-    expect(suggestions.every((suggestion) => suggestion.type === 'BUY')).toBe(true);
-  });
-
-  it('does not suggest buys when there is no available cash', () => {
-    const positions = [makePosition({ id: 'held', ticker: 'HELD' })];
-    const assets = [
-      makeAsset('HELD', 0.1, 0.1, 100), // 40
-      makeAsset('STRONG', 0.35, 0.1, 100), // 90 (non-held)
-    ];
-
-    const suggestions = generateSuggestions(positions, assets, 0);
-
-    expect(suggestions).toHaveLength(1);
-    expect(suggestions[0]).toMatchObject({ type: 'SELL', ticker: 'HELD', score: 40 });
-  });
-
-  it('respects the exact score thresholds (49 vs 50, 84 vs 85)', () => {
-    const positions = [
-      makePosition({ id: 'at50', ticker: 'AT50' }),
-      makePosition({ id: 'at49', ticker: 'AT49' }),
-    ];
-    const assets = [
-      makeAsset('AT50', 0.15, 0.1, 100), // 50 (not below 50)
-      makeAsset('AT49', 0.145, 0.1, 100), // 49 (below 50)
-      makeAsset('AT84', 0.32, 0.1, 100), // 84 (not strong enough)
-      makeAsset('AT85', 0.325, 0.1, 100), // 85 (strong enough)
-    ];
-
-    const suggestions = generateSuggestions(positions, assets, 1000);
-
-    expect(
-      suggestions.filter((suggestion) => suggestion.type === 'SELL').map((s) => s.ticker),
-    ).toEqual(['AT49']);
-    expect(
-      suggestions.filter((suggestion) => suggestion.type === 'BUY').map((s) => s.ticker),
-    ).toEqual(['AT85']);
-  });
-
-  it('collapses multiple lots of the same ticker into a single sell suggestion', () => {
-    const positions = [
-      makePosition({ id: 'lot-1', ticker: 'DUP' }),
-      makePosition({ id: 'lot-2', ticker: 'DUP' }),
-    ];
-    const assets = [makeAsset('DUP', 0.1, 0.1, 100)]; // 40
-
-    const suggestions = generateSuggestions(positions, assets, 0);
-
-    expect(suggestions).toHaveLength(1);
-    expect(suggestions[0]).toMatchObject({ type: 'SELL', ticker: 'DUP', score: 40 });
   });
 });
 

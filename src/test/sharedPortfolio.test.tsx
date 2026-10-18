@@ -14,6 +14,13 @@ vi.mock('@/lib/supabaseClient', () => ({
   supabase: { from: database.from, rpc: database.rpc },
 }));
 
+const history = vi.hoisted(() => ({ fetch: vi.fn() }));
+
+vi.mock('@/lib/binance', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/binance')>()),
+  fetchHistoricalKlines: history.fetch,
+}));
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...props }: React.ComponentProps<'a'> & { to: string }) => (
     <a href={to} {...props}>
@@ -72,12 +79,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   database.from.mockReturnValue({ insert: database.insert });
   database.rpc.mockReturnValue({ maybeSingle: database.maybeSingle });
+  history.fetch.mockResolvedValue([]);
 });
+
+const klines = (closes: number[], startDay = 0) =>
+  closes.map((close, index) => ({ timestamp: (startDay + index) * 86_400_000, close }));
 
 afterEach(cleanup);
 
 describe('shared portfolio snapshots', () => {
-  it('builds a percentage-only snapshot with no absolute amounts', () => {
+  it('builds a percentage-only snapshot with no absolute amounts', async () => {
     const positions = [
       makePosition({ id: 'btc-1', ticker: 'BTC', buyPrice: 100, shares: 1 }),
       makePosition({ id: 'btc-2', ticker: 'BTC', buyPrice: 80, shares: 1 }),
@@ -88,7 +99,11 @@ describe('shared portfolio snapshots', () => {
       makeAsset({ ticker: 'ETH', name: 'Ethereum', current_price: 80 }),
     ];
 
-    const snapshot = buildSharedPortfolioSnapshot(positions, assets, '2026-10-18T00:00:00.000Z');
+    const snapshot = await buildSharedPortfolioSnapshot(
+      positions,
+      assets,
+      '2026-10-18T00:00:00.000Z',
+    );
 
     // BTC: 240 now / 180 in · ETH: 160 now / 100 in · total: 400 now / 280 in.
     expect(snapshot.pnlPercent).toBeCloseTo((120 / 280) * 100);
@@ -102,8 +117,10 @@ describe('shared portfolio snapshots', () => {
     // The privacy contract: these keys and nothing else. Adding a field here
     // (especially an absolute amount) must be a deliberate test change.
     expect(Object.keys(snapshot).sort()).toEqual([
+      'alphaPercent',
       'createdAt',
       'holdings',
+      'maxDrawdownPercent',
       'pnlPercent',
       'quantScore',
       'version',
@@ -120,9 +137,93 @@ describe('shared portfolio snapshots', () => {
     }
   });
 
+  it('computes max drawdown and alpha vs BTC from the allocation-weighted history', async () => {
+    const closes: Record<string, number[]> = {
+      BTC: [100, 120, 90, 110],
+      ETH: [50, 50, 60, 70],
+    };
+    history.fetch.mockImplementation(async (ticker: string) => klines(closes[ticker] ?? []));
+
+    const snapshot = await buildSharedPortfolioSnapshot(
+      [
+        makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 2 }),
+        makePosition({ id: 'eth', ticker: 'ETH', buyPrice: 50, shares: 2 }),
+      ],
+      [
+        makeAsset({ ticker: 'BTC', current_price: 120 }),
+        makeAsset({ ticker: 'ETH', current_price: 80 }),
+      ],
+      '2026-10-18T00:00:00.000Z',
+    );
+
+    // Since 2026-01-01: 290 elapsed days + today.
+    expect(history.fetch).toHaveBeenCalledWith('ETH', '1d', 291);
+    expect(history.fetch).toHaveBeenCalledWith('BTC', '1d', 291);
+    // 60/40 curve on 10k: 10000 → 11200 → 10200 → 12200 (+22%); BTC alone +10%.
+    expect(snapshot.maxDrawdownPercent).toBeCloseTo((1000 / 11200) * 100);
+    expect(snapshot.alphaPercent).toBeCloseTo(12);
+  });
+
+  it('measures alpha over the portfolio window and keeps drawdown without a benchmark', async () => {
+    const eth = [makePosition({ id: 'eth', ticker: 'ETH', buyPrice: 50, shares: 1 })];
+    const assets = [makeAsset({ ticker: 'ETH', current_price: 60 })];
+    // ETH lists two days into the lookback; BTC's earlier crash is outside its window.
+    history.fetch.mockImplementation(async (ticker: string) =>
+      ticker === 'ETH' ? klines([50, 60], 2) : klines([200, 100, 100, 110]),
+    );
+
+    const aligned = await buildSharedPortfolioSnapshot(eth, assets, '2026-10-18T00:00:00.000Z');
+
+    expect(aligned.maxDrawdownPercent).toBeCloseTo(0);
+    expect(aligned.alphaPercent).toBeCloseTo(20 - 10);
+
+    history.fetch.mockImplementation(async (ticker: string) => {
+      if (ticker === 'ETH') return klines([50, 40, 60]);
+      throw new Error('benchmark down');
+    });
+
+    const noBenchmark = await buildSharedPortfolioSnapshot(eth, assets, '2026-10-18T00:00:00.000Z');
+
+    expect(noBenchmark.maxDrawdownPercent).toBeCloseTo(20);
+    expect(noBenchmark.alphaPercent).toBeNull();
+
+    // BTC missing the curve's first day: no like-for-like window, so no alpha.
+    history.fetch.mockImplementation(async (ticker: string) =>
+      ticker === 'ETH' ? klines([50, 40, 60]) : klines([100, 110], 1),
+    );
+
+    const partial = await buildSharedPortfolioSnapshot(eth, assets, '2026-10-18T00:00:00.000Z');
+
+    expect(partial.maxDrawdownPercent).toBeCloseTo(20);
+    expect(partial.alphaPercent).toBeNull();
+  });
+
+  it('still builds the snapshot, without drawdown and alpha, when history is unavailable', async () => {
+    const assets = [makeAsset({ ticker: 'BTC', current_price: 120 })];
+    const btc = makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 2 });
+    history.fetch.mockRejectedValue(new Error('Binance down'));
+
+    const failed = await buildSharedPortfolioSnapshot([btc], assets, '2026-10-18T00:00:00.000Z');
+
+    expect(failed.pnlPercent).toBeCloseTo(20);
+    expect(failed.maxDrawdownPercent).toBeNull();
+    expect(failed.alphaPercent).toBeNull();
+
+    // Equities have no Binance history: skip the fetch instead of diluting the curve.
+    history.fetch.mockClear();
+    const mixed = await buildSharedPortfolioSnapshot(
+      [btc, makePosition({ id: 'aapl', ticker: 'AAPL', dateAdded: '2020-01-01T00:00:00.000Z' })],
+      [...assets, makeAsset({ ticker: 'AAPL' })],
+      '2026-10-18T00:00:00.000Z',
+    );
+    expect(history.fetch).not.toHaveBeenCalled();
+    expect(mixed.maxDrawdownPercent).toBeNull();
+    expect(mixed.alphaPercent).toBeNull();
+  });
+
   it('publishes through the authenticated insert contract', async () => {
     database.insert.mockResolvedValue({ error: null });
-    const snapshot = buildSharedPortfolioSnapshot([], [], '2026-10-18T00:00:00.000Z');
+    const snapshot = await buildSharedPortfolioSnapshot([], [], '2026-10-18T00:00:00.000Z');
 
     await publishSharedPortfolio({ id: 'share-id', userId: 'user-a', snapshot });
 
@@ -136,7 +237,7 @@ describe('shared portfolio snapshots', () => {
 
   it('reads one snapshot by id through the RPC and validates it', async () => {
     const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const snapshot = buildSharedPortfolioSnapshot([], [], '2026-10-18T00:00:00.000Z');
+    const snapshot = await buildSharedPortfolioSnapshot([], [], '2026-10-18T00:00:00.000Z');
     database.maybeSingle.mockResolvedValue({
       data: { id, snapshot, created_at: snapshot.createdAt },
       error: null,
@@ -153,7 +254,7 @@ describe('shared portfolio snapshots', () => {
 
   it('drops any field outside the percentage-only contract when reading', async () => {
     const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const snapshot = buildSharedPortfolioSnapshot(
+    const snapshot = await buildSharedPortfolioSnapshot(
       [makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 2 })],
       [makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 })],
       '2026-10-18T00:00:00.000Z',
@@ -173,6 +274,30 @@ describe('shared portfolio snapshots', () => {
     expect(record?.snapshot).toEqual(snapshot);
   });
 
+  it('reads version 2 snapshots with drawdown and alpha as null', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const legacy = {
+      version: 2,
+      createdAt: '2026-10-18T00:00:00.000Z',
+      pnlPercent: 5,
+      quantScore: 70,
+      holdings: [],
+    };
+    database.maybeSingle.mockResolvedValue({
+      data: { id, snapshot: legacy, created_at: legacy.createdAt },
+      error: null,
+    });
+
+    const record = await fetchSharedPortfolio(id);
+
+    expect(record?.snapshot).toEqual({
+      ...legacy,
+      version: 3,
+      maxDrawdownPercent: null,
+      alphaPercent: null,
+    });
+  });
+
   it('skips the request for ids that are not UUIDs', async () => {
     await expect(fetchSharedPortfolio('not-a-uuid')).resolves.toBeNull();
     expect(database.rpc).not.toHaveBeenCalled();
@@ -180,8 +305,8 @@ describe('shared portfolio snapshots', () => {
 });
 
 describe('public portfolio view', () => {
-  it('shows portfolio essentials and never renders trading or credential controls', () => {
-    const snapshot = buildSharedPortfolioSnapshot(
+  it('shows portfolio essentials and never renders trading or credential controls', async () => {
+    const snapshot = await buildSharedPortfolioSnapshot(
       [makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 2 })],
       [makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 })],
       '2026-10-18T00:00:00.000Z',
@@ -210,5 +335,26 @@ describe('public portfolio view', () => {
     expect(screen.getByText('Total return')).toBeVisible();
     expect(screen.getAllByText('+20.00%').length).toBeGreaterThan(0);
     expect(container.textContent).not.toMatch(/\$/);
+  });
+
+  it('shows max drawdown and alpha, or an em dash when they are unavailable', async () => {
+    const snapshot = await buildSharedPortfolioSnapshot([], [], '2026-10-18T00:00:00.000Z');
+    const record = (risk: Partial<SharedPortfolioRecord['snapshot']>): SharedPortfolioRecord => ({
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      createdAt: snapshot.createdAt,
+      snapshot: { ...snapshot, ...risk },
+    });
+
+    const { rerender } = render(<SharedPortfolioView record={record({})} />);
+    expect(screen.getByText('Max drawdown')).toBeVisible();
+    expect(screen.getByText('Alpha')).toBeVisible();
+    expect(screen.getAllByText('—')).toHaveLength(2);
+
+    rerender(
+      <SharedPortfolioView record={record({ maxDrawdownPercent: 8.5, alphaPercent: -3.25 })} />,
+    );
+    expect(screen.getByText('-8.50%')).toBeVisible();
+    expect(screen.getByText('-3.25%')).toBeVisible();
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 });

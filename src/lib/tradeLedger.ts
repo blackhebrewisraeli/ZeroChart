@@ -1,10 +1,15 @@
-import type { PortfolioTransaction } from '@/lib/portfolioAccounting';
+import type { PortfolioTransaction, TradeIntent } from '@/lib/portfolioAccounting';
 
 export const LEDGER_SIDE_LABELS: Record<PortfolioTransaction['type'], string> = {
   buy: 'BUY',
   sell: 'SELL',
   deposit: 'DEPOSIT',
   withdrawal: 'WITHDRAW',
+};
+
+export const INTENT_LABELS: Record<TradeIntent, string> = {
+  rebalance: 'Rebalance',
+  tactical: 'Tactical',
 };
 
 function isTrade(transaction: PortfolioTransaction): boolean {
@@ -38,6 +43,7 @@ const CSV_HEADER = [
   'friction_bps',
   'amount',
   'realized_pnl',
+  'intent',
   'note',
 ];
 
@@ -64,6 +70,7 @@ export function tradeLedgerCsv(transactions: readonly PortfolioTransaction[]): s
       bps === null ? null : Number(bps.toFixed(2)),
       transaction.amount,
       transaction.realizedPnl,
+      transaction.intent,
       transaction.note,
     ]
       .map(csvCell)

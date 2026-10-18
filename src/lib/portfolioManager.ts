@@ -11,13 +11,6 @@ export interface PortfolioStats {
   healthScore: number;
 }
 
-export interface Suggestion {
-  type: 'BUY' | 'SELL';
-  ticker: string;
-  reason: string;
-  score: number;
-}
-
 /**
  * Calculates portfolio-level statistics by mapping each position to its live
  * market price. Positions without a valid live price fall back to their buy
@@ -69,56 +62,6 @@ export function calculatePortfolioStats(
   const healthScore = scoreWeightSum > 0 ? weightedScoreSum / scoreWeightSum : 0;
 
   return { totalValue, totalInvested, unrealizedPnL, pnlPercent, healthScore };
-}
-
-/**
- * Produces rebalancing suggestions from the live signal landscape.
- * - SELL: a held asset whose Signal Score has fallen below 50.
- * - BUY: a non-held asset scoring 85+ while there is cash to deploy.
- */
-export function generateSuggestions(
-  positions: Position[],
-  liveAssets: Asset[],
-  availableCash: number,
-): Suggestion[] {
-  const suggestions: Suggestion[] = [];
-  const heldTickers = new Set(positions.map((position) => position.ticker));
-
-  const flaggedForSell = new Set<string>();
-  for (const position of positions) {
-    if (flaggedForSell.has(position.ticker)) continue;
-    const asset = liveAssets.find((candidate) => candidate.ticker === position.ticker);
-    if (!asset) continue;
-    const score = calculateSignalScore(asset);
-    if (score < 50) {
-      flaggedForSell.add(position.ticker);
-      suggestions.push({
-        type: 'SELL',
-        ticker: position.ticker,
-        reason: `Signal score dropped to ${score} (below 50) — consider cutting losses or taking profits.`,
-        score,
-      });
-    }
-  }
-
-  if (availableCash > 0) {
-    const flaggedForBuy = new Set<string>();
-    for (const asset of liveAssets) {
-      if (heldTickers.has(asset.ticker) || flaggedForBuy.has(asset.ticker)) continue;
-      const score = calculateSignalScore(asset);
-      if (score >= 85) {
-        flaggedForBuy.add(asset.ticker);
-        suggestions.push({
-          type: 'BUY',
-          ticker: asset.ticker,
-          reason: `Strong signal score of ${score} with cash available — consider adding a position.`,
-          score,
-        });
-      }
-    }
-  }
-
-  return suggestions;
 }
 
 export type RiskLabel = 'Conservative' | 'Moderate' | 'Aggressive';

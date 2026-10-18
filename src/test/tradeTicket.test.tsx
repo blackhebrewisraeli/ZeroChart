@@ -21,13 +21,26 @@ vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
 vi.mock('@/components/AllocationChart', () => ({ AllocationChart: () => null }));
-vi.mock('@/components/BacktestChart', () => ({ BacktestChart: () => null }));
+const backtestMounts = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@/components/BacktestChart', async () => {
+  const { useEffect } = await import('react');
+  return {
+    BacktestChart: ({ positions }: { positions: { ticker: string }[] }) => {
+      useEffect(() => {
+        backtestMounts.count += 1;
+      }, []);
+      return <div data-testid="backtest">{positions.map((p) => p.ticker).join(',')}</div>;
+    },
+  };
+});
 vi.mock('@/components/PriceAlerts', () => ({ PriceAlerts: () => null }));
 vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
 
 import { AuthProvider } from '@/lib/authStore';
-import { PortfolioProvider } from '@/lib/portfolioStore';
+import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
+import { TradeTicket } from '@/components/TradeTicket';
+import { activeLedgerType } from '@/lib/portfolioAccounting';
 
 function aapl(price: number): Asset {
   return {
@@ -48,10 +61,23 @@ function aapl(price: number): Asset {
   };
 }
 
+/** A Lab tactical ticket, booking into whichever ledger the dashboard has active. */
+function ActiveTicket({ asset }: { asset: Asset }) {
+  const { activePortfolioType } = usePortfolio();
+  return (
+    <TradeTicket
+      asset={asset}
+      portfolioType={activeLedgerType(activePortfolioType)}
+      intent="tactical"
+    />
+  );
+}
+
 function tree(price: number) {
   return (
     <PortfolioProvider>
       <AuthProvider>
+        <ActiveTicket asset={aapl(price)} />
         <PortfolioDashboard assets={[aapl(price)]} />
       </AuthProvider>
     </PortfolioProvider>
@@ -66,7 +92,7 @@ function trade(side: 'Buy' | 'Sell', amount: string) {
   fireEvent.click(ticket.getByRole('button', { name: `${side} AAPL` }));
 }
 
-describe('Trade Ticket in Simulation mode', () => {
+describe('tactical Trade Ticket on the active ledger', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
@@ -97,8 +123,8 @@ describe('Trade Ticket in Simulation mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /trade ledger/i }));
     const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1);
     expect(rows.map((row) => within(row).getAllByRole('cell')[1]?.textContent)).toEqual([
-      'SELL',
-      'BUY',
+      'SELLTactical',
+      'BUYTactical',
       'DEPOSIT',
     ]);
     expect(within(rows[0]!).getByText('$1.50 · 25.0 bps')).toBeInTheDocument();
@@ -148,6 +174,19 @@ describe('Trade Ticket in Simulation mode', () => {
     expect(within(rows[0]!).getByText('+$194.50')).toHaveClass('pnl-up');
   });
 
+  it('scopes the backtest to the active portfolio and resets it on a switch', () => {
+    render(tree(100));
+    fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    trade('Buy', '100');
+    expect(screen.getByTestId('backtest')).toHaveTextContent(/^AAPL$/);
+
+    const mounts = backtestMounts.count;
+    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    expect(screen.getByTestId('backtest')).toHaveTextContent(/^NVDA,AAPL$/); // the demo live holdings
+    expect(backtestMounts.count).toBe(mounts + 1); // fresh chart: no Simulation result carried over
+  });
+
   it('closing a Live Tracking holding only removes it, even without a live price', () => {
     render(tree(100));
     fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
@@ -158,12 +197,51 @@ describe('Trade Ticket in Simulation mode', () => {
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 
-  it('keeps Live Tracking trades as mock executions', () => {
+  it('books into Live Tracking once it is active, moving its cash like a broker would', () => {
     render(tree(100));
     fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
 
     trade('Buy', '100');
-    expect(toast.success).toHaveBeenCalledWith('Buy order submitted', expect.anything());
+    trade('Sell', '50');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith('Bought AAPL', {
+      description: expect.stringMatching(/Live Tracking ledger/),
+    });
+    expect(screen.getByText('2 ENTRIES')).toBeInTheDocument();
+    // $2,500 − (100 + 0.25 fee) + (50 − 0.125 fee).
+    expect(screen.getByText(/\$2,449\.6\d available/)).toBeInTheDocument();
+
+    // The Simulation ledger never saw these trades.
+    fireEvent.click(screen.getByRole('tab', { name: 'Simulation' }));
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
+  });
+
+  it('books into the Simulation ledger the dashboard shows when paper_trading was saved', () => {
+    window.localStorage.setItem(
+      'zerochart:portfolio-positions',
+      JSON.stringify({ version: 3, activePortfolioType: 'paper_trading', portfolios: {} }),
+    );
+    render(tree(100));
+    expect(screen.getByRole('tab', { name: 'Simulation' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    trade('Buy', '100');
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByText('2 ENTRIES')).toBeInTheDocument(); // deposit + buy, same ledger
+  });
+
+  it('sells the whole holding when a cent-rounded amount overshoots it by dust', () => {
+    render(tree(3));
+    fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    trade('Buy', '10'); // 3.333… sh — worth $10.00 at $3
+    trade('Sell', '10.004');
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByText('No simulation positions')).toBeInTheDocument();
   });
 });

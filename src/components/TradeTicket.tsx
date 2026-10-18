@@ -6,7 +6,10 @@ import { toast } from 'sonner';
 import { AssetIcon } from '@/components/AssetIcon';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { usePortfolio, type PortfolioType } from '@/lib/portfolioStore';
+import { LEDGER_NAMES, type TradeIntent } from '@/lib/portfolioAccounting';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
+import { useLivePrice } from '@/lib/livePriceStore';
+import { toBinanceSymbol } from '@/lib/ticker';
 import { cn } from '@/lib/utils';
 
 export const FEE_RATE = 0.0025; // 0.25% network fee, also charged on simulated closes
@@ -18,16 +21,25 @@ export function TradeTicket({
   asset,
   variant = 'compact',
   portfolioType,
+  intent = 'tactical',
+  initialSide = 'buy',
+  initialAmount,
+  label,
 }: {
   asset: Asset;
   variant?: 'hero' | 'compact';
-  /** Ledger that records fills. Omitted or real_tracking: mock execution only. */
+  /** Ledger that records fills (the active one). Omitted: mock execution only. */
   portfolioType?: PortfolioType;
+  /** Core rebalance or Lab tactical trade — tagged on the recorded transaction. */
+  intent?: TradeIntent;
+  initialSide?: Side;
+  /** Prefilled USD order amount, e.g. the size of a rebalance trade. */
+  initialAmount?: number;
+  /** Compact trigger text; defaults to "Trade". */
+  label?: string;
 }) {
-  const { executeBuy, executeSell } = usePortfolio();
-  // Recording trades that never happened in a real tracker is a product call,
-  // so only simulated portfolios get ledger fills.
-  const recordsFills = portfolioType !== undefined && portfolioType !== 'real_tracking';
+  const { executeBuy, executeSell, portfolios } = usePortfolio();
+  const recordsFills = portfolioType !== undefined;
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [side, setSide] = useState<Side>('buy');
@@ -36,7 +48,8 @@ export function TradeTicket({
   const amountRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const price = asset.current_price;
+  // Fill at the streamed tick when there is one, wherever the ticket opens.
+  const price = useLivePrice(toBinanceSymbol(asset.ticker))?.price ?? asset.current_price;
   const priceFlash = usePriceFlash(price);
   const assetClass = getAssetClass(asset.ticker);
 
@@ -52,8 +65,8 @@ export function TradeTicket({
   }, []);
 
   function openTicket() {
-    setSide('buy');
-    setAmount('');
+    setSide(initialSide);
+    setAmount(initialAmount ? initialAmount.toFixed(2) : '');
     setOpen(true);
   }
 
@@ -86,16 +99,32 @@ export function TradeTicket({
   function handleSubmit() {
     if (!canSubmit) return;
     if (recordsFills) {
+      const heldShares = portfolios[portfolioType].positions
+        .filter((position) => position.ticker.toUpperCase() === asset.ticker.toUpperCase())
+        .reduce((sum, position) => sum + position.shares, 0);
+      const orderShares = numericAmount / price;
+      // A cent-rounded "sell everything" amount can overshoot the holding by dust.
+      const shares =
+        side === 'sell' && Math.abs(orderShares - heldShares) * price < 0.01
+          ? heldShares
+          : orderShares;
       const input = {
         ticker: asset.ticker,
-        shares: numericAmount / price,
+        shares,
         price,
         fee,
         timestamp: new Date().toISOString(),
+        intent,
       };
       const result =
         side === 'buy'
-          ? executeBuy(portfolioType, { ...input, ...(asset.name ? { name: asset.name } : {}) })
+          ? // Every ledger's cash moves with its fills, Live Tracking's included:
+            // it mirrors the broker cash a real trade spends or frees.
+            executeBuy(portfolioType, {
+              ...input,
+              requireCash: true,
+              ...(asset.name ? { name: asset.name } : {}),
+            })
           : executeSell(portfolioType, input);
       if (!result.ok) {
         toast.error(result.error ?? 'Order rejected');
@@ -104,7 +133,7 @@ export function TradeTicket({
       toast.success(`${side === 'buy' ? 'Bought' : 'Sold'} ${asset.ticker}`, {
         description: `${formatPrice(numericAmount)} at ${formatPrice(price)} · fee ${formatPrice(
           fee,
-        )} — simulated fill, recorded in the ledger.`,
+        )} — recorded in your ${LEDGER_NAMES[portfolioType]} ledger.`,
       });
     } else {
       toast.success(`${side === 'buy' ? 'Buy' : 'Sell'} order submitted`, {
@@ -135,7 +164,7 @@ export function TradeTicket({
           className="ticket-trigger ticket-trigger-compact"
           onClick={openTicket}
         >
-          <Zap size={15} /> Trade
+          <Zap size={15} /> {label ?? 'Trade'}
         </button>
       )}
 
@@ -165,7 +194,10 @@ export function TradeTicket({
                 >
                   <header className="ticket-header">
                     <div>
-                      <span className="ticket-eyebrow">{assetClass} · Quick trade</span>
+                      <span className="ticket-eyebrow">
+                        {assetClass} ·{' '}
+                        {intent === 'rebalance' ? 'Core rebalance' : 'Tactical trade'}
+                      </span>
                       <div className="ticket-title">
                         <span className="ticket-title-asset">
                           <AssetIcon symbol={asset.ticker} name={asset.name} size="lg" />
@@ -261,9 +293,11 @@ export function TradeTicket({
                     </button>
 
                     <p className="ticket-footnote">
-                      {recordsFills
-                        ? 'Simulated fill at the live price, recorded in your Simulation ledger. No real funds move.'
-                        : 'Mock execution — no real funds move. Slippage controls ship with the broker integration.'}
+                      {!recordsFills
+                        ? 'Mock execution — no real funds move. Slippage controls ship with the broker integration.'
+                        : portfolioType === 'real_tracking'
+                          ? 'Recorded in your Live Tracking ledger and cash at the live price. ZeroChart places no real orders — log trades you made at your broker.'
+                          : `Simulated fill at the live price, recorded in your ${LEDGER_NAMES[portfolioType]} ledger. No real funds move.`}
                     </p>
                   </div>
                 </motion.aside>

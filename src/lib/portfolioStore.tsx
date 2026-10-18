@@ -117,7 +117,7 @@ function emptyContainer(type: PortfolioType): PortfolioContainer {
 function seedScope(): PortfolioStateV3 {
   return {
     version: 3,
-    activePortfolioType: 'real_tracking',
+    activePortfolioType: 'long_term_sim',
     portfolios: {
       real_tracking: {
         type: 'real_tracking',
@@ -278,7 +278,7 @@ function migrateLegacy(
   const seeded = seedScope();
   return {
     version: 3,
-    activePortfolioType: 'real_tracking',
+    activePortfolioType: 'long_term_sim',
     portfolios: {
       real_tracking: {
         ...emptyContainer('real_tracking'),

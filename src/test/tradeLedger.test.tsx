@@ -24,7 +24,7 @@ vi.mock('sonner', () => ({
 vi.mock('@/components/AllocationChart', () => ({ AllocationChart: () => null }));
 vi.mock('@/components/BacktestChart', () => ({ BacktestChart: () => null }));
 vi.mock('@/components/PriceAlerts', () => ({ PriceAlerts: () => null }));
-vi.mock('@/components/TradeTicket', () => ({ TradeTicket: () => null }));
+vi.mock('@/components/TradeTicket', () => ({ FEE_RATE: 0.0025, TradeTicket: () => null }));
 vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
 
 import { AuthProvider } from '@/lib/authStore';
@@ -43,7 +43,15 @@ function trade(overrides: Partial<PortfolioTransaction>): PortfolioTransaction {
 }
 
 describe('trade ledger helpers', () => {
-  const buy = trade({ type: 'buy', ticker: 'AAPL', shares: 10, price: 100, fee: 2, slippage: 3 });
+  const buy = trade({
+    type: 'buy',
+    ticker: 'AAPL',
+    shares: 10,
+    price: 100,
+    fee: 2,
+    slippage: 3,
+    intent: 'rebalance',
+  });
   const sell = trade({ type: 'sell', ticker: 'AAPL', shares: 4, price: 120, fee: 1 });
   const deposit = trade({ type: 'deposit', amount: 500, note: 'Top-up, "monthly"' });
 
@@ -61,11 +69,11 @@ describe('trade ledger helpers', () => {
   it('exports RFC 4180 CSV with a header row and quoted user text', () => {
     const lines = tradeLedgerCsv([buy, sell, deposit]).split('\r\n');
     expect(lines[0]).toBe(
-      'timestamp,side,ticker,quantity,price,fee,slippage,friction_bps,amount,realized_pnl,note',
+      'timestamp,side,ticker,quantity,price,fee,slippage,friction_bps,amount,realized_pnl,intent,note',
     );
-    expect(lines[1]).toBe('2026-01-01T00:00:00.000Z,BUY,AAPL,10,100,2,3,50,0,,');
-    expect(lines[2]).toBe('2026-01-01T00:00:00.000Z,SELL,AAPL,4,120,1,,20.83,0,,');
-    expect(lines[3]).toBe('2026-01-01T00:00:00.000Z,DEPOSIT,,,,,,,500,,"Top-up, ""monthly"""');
+    expect(lines[1]).toBe('2026-01-01T00:00:00.000Z,BUY,AAPL,10,100,2,3,50,0,,rebalance,');
+    expect(lines[2]).toBe('2026-01-01T00:00:00.000Z,SELL,AAPL,4,120,1,,20.83,0,,,');
+    expect(lines[3]).toBe('2026-01-01T00:00:00.000Z,DEPOSIT,,,,,,,500,,,"Top-up, ""monthly"""');
   });
 
   it('neutralises spreadsheet formulas in text but keeps negative numbers', () => {
@@ -73,7 +81,7 @@ describe('trade ledger helpers', () => {
       trade({ type: 'sell', ticker: '=HYPERLINK("x")', shares: 1, price: 1, realizedPnl: -30 }),
     ]);
     expect(csv.split('\r\n')[1]).toBe(
-      `2026-01-01T00:00:00.000Z,SELL,"'=HYPERLINK(""x"")",1,1,,,0,0,-30,`,
+      `2026-01-01T00:00:00.000Z,SELL,"'=HYPERLINK(""x"")",1,1,,,0,0,-30,,`,
     );
   });
 });

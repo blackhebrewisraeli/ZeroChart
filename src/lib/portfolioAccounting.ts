@@ -98,6 +98,19 @@ export type BuyTransactionResult =
     }
   | { ok: false; container: PortfolioContainer; error: string };
 
+export interface CashTransactionInput {
+  type: CashTransaction['type'];
+  amount: number;
+  note?: string;
+  timestamp?: string;
+  cashTransactionId?: string;
+  transactionId?: string;
+}
+
+/** Any engine step: the next container, or why nothing changed. */
+export type PortfolioTransition =
+  { ok: true; container: PortfolioContainer } | { ok: false; error: string };
+
 export type SellTransactionResult =
   | {
       ok: true;
@@ -173,6 +186,76 @@ export function normalizePositionLots(position: Position): Position {
     shares,
     buyPrice: weightedAverageBuyPrice(lots),
     lots,
+  };
+}
+
+/**
+ * Folds rows that share a ticker into one position, keeping every lot. The
+ * engine trades by ticker, so engine-driven containers need one row each;
+ * older Robo-Advisor invests appended a new row per run.
+ */
+export function mergeDuplicateTickers(positions: Position[]): Position[] {
+  const merged = new Map<string, Position>();
+  for (const raw of positions) {
+    const position = normalizePositionLots(raw);
+    const existing = merged.get(position.ticker);
+    merged.set(
+      position.ticker,
+      existing
+        ? normalizePositionLots({
+            ...existing,
+            lots: [...(existing.lots ?? []), ...(position.lots ?? [])],
+          })
+        : position,
+    );
+  }
+  return [...merged.values()];
+}
+
+/** Applies a deposit or withdrawal; the balance is kept in whole cents. */
+export function applyCashTransaction(
+  container: PortfolioContainer,
+  input: CashTransactionInput,
+):
+  | { ok: true; container: PortfolioContainer }
+  | { ok: false; container: PortfolioContainer; error: string } {
+  const { type, amount } = input;
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, container, error: 'Amount must be greater than zero' };
+  }
+  if (type === 'withdrawal' && amount > container.cashBalance) {
+    return { ok: false, container, error: 'Insufficient cash' };
+  }
+
+  const timestamp = input.timestamp ?? DEFAULT_TIMESTAMP;
+  const nextBalance =
+    type === 'deposit' ? container.cashBalance + amount : container.cashBalance - amount;
+  const cashTransaction: CashTransaction = {
+    id:
+      input.cashTransactionId ??
+      deterministicId(type, 'cash', timestamp, container.cashLedger.length),
+    type,
+    amount,
+    createdAt: timestamp,
+  };
+  const transaction: PortfolioTransaction = {
+    id:
+      input.transactionId ??
+      deterministicId(`portfolio-${type}`, 'cash', timestamp, container.transactions.length),
+    portfolioType: container.type,
+    type,
+    amount,
+    timestamp,
+    ...(input.note !== undefined ? { note: input.note } : {}),
+  };
+  return {
+    ok: true,
+    container: {
+      ...container,
+      cashBalance: Number(nextBalance.toFixed(2)),
+      cashLedger: [...container.cashLedger, cashTransaction],
+      transactions: [...container.transactions, transaction],
+    },
   };
 }
 

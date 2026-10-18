@@ -10,12 +10,15 @@ import {
 } from 'react';
 import {
   applyBuyTransaction,
+  applyCashTransaction,
   applySellTransaction,
+  mergeDuplicateTickers,
   normalizePositionLots,
   type BuyTransactionInput,
   type CashTransaction,
   type PortfolioContainer,
   type PortfolioTransaction,
+  type PortfolioTransition,
   type PortfolioType,
   type Position,
   type SellTransactionInput,
@@ -26,6 +29,7 @@ export type {
   CashTransaction,
   PortfolioContainer,
   PortfolioTransaction,
+  PortfolioTransition,
   PortfolioType,
   SellTransactionInput,
 } from '@/lib/portfolioAccounting';
@@ -233,11 +237,13 @@ function normalizeContainer(
 ): PortfolioContainer {
   if (!isRecord(value)) return fallback;
   const targetAllocations = normalizeTargetAllocations(value['targetAllocations']);
+  const positions = Array.isArray(value['positions'])
+    ? normalizePersistedPositions(value['positions'])
+    : fallback.positions;
   return {
     type,
-    positions: Array.isArray(value['positions'])
-      ? normalizePersistedPositions(value['positions'])
-      : fallback.positions,
+    // Real-tracking rows are user-entered and closed by id; the others trade by ticker.
+    positions: type === 'real_tracking' ? positions : mergeDuplicateTickers(positions),
     cashBalance:
       typeof value['cashBalance'] === 'number' && Number.isFinite(value['cashBalance'])
         ? value['cashBalance']
@@ -282,7 +288,7 @@ function migrateLegacy(
       },
       long_term_sim: {
         ...emptyContainer('long_term_sim'),
-        positions: simulatedPositions,
+        positions: mergeDuplicateTickers(simulatedPositions),
       },
       paper_trading: seeded.portfolios.paper_trading,
     },
@@ -405,6 +411,11 @@ interface PortfolioStore {
     input: SellTransactionInput,
   ) => { ok: boolean; realizedPnl?: number; error?: string };
   depositPortfolioCash: (type: PortfolioType, amount: number, note?: string) => boolean;
+  /** Commits every step `build` applies to the container, or none of them. */
+  transactPortfolio: (
+    type: PortfolioType,
+    build: (container: PortfolioContainer) => PortfolioTransition,
+  ) => { ok: boolean; error?: string };
   withdrawPortfolioCash: (type: PortfolioType, amount: number, note?: string) => boolean;
   setTargetAllocations: (type: PortfolioType, targets: Record<string, number>) => void;
   depositCash: (amount: number) => boolean;
@@ -491,36 +502,29 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       amount: number,
       note?: string,
     ): boolean => {
-      if (!Number.isFinite(amount) || amount <= 0) return false;
       const current = scopeRef.current;
-      const container = current.portfolios[type];
-      if (action === 'withdrawal' && amount > container.cashBalance) return false;
-
-      const timestamp = new Date().toISOString();
-      const nextBalance =
-        action === 'deposit' ? container.cashBalance + amount : container.cashBalance - amount;
-      const cashTransaction: CashTransaction = {
-        id: nextTransactionId(action),
+      const result = applyCashTransaction(current.portfolios[type], {
         type: action,
         amount,
-        createdAt: timestamp,
-      };
-      const transaction: PortfolioTransaction = {
-        id: nextTransactionId(`portfolio-${action}`),
-        portfolioType: type,
-        type: action,
-        amount,
-        timestamp,
+        timestamp: new Date().toISOString(),
+        cashTransactionId: nextTransactionId(action),
+        transactionId: nextTransactionId(`portfolio-${action}`),
         ...(note !== undefined ? { note } : {}),
-      };
-      const nextContainer: PortfolioContainer = {
-        ...container,
-        cashBalance: Number(nextBalance.toFixed(2)),
-        cashLedger: [...container.cashLedger, cashTransaction],
-        transactions: [...container.transactions, transaction],
-      };
-      commit(replaceContainer(current, type, nextContainer));
+      });
+      if (!result.ok) return false;
+      commit(replaceContainer(current, type, result.container));
       return true;
+    },
+    [commit],
+  );
+
+  const transactPortfolio = useCallback(
+    (type: PortfolioType, build: (container: PortfolioContainer) => PortfolioTransition) => {
+      const current = scopeRef.current;
+      const result = build(current.portfolios[type]);
+      if (!result.ok) return { ok: false, error: result.error };
+      commit(replaceContainer(current, type, result.container));
+      return { ok: true };
     },
     [commit],
   );
@@ -584,7 +588,10 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
           },
           long_term_sim: {
             ...current.portfolios.long_term_sim,
-            positions: [...current.portfolios.long_term_sim.positions, ...simulatedIncoming],
+            positions: mergeDuplicateTickers([
+              ...current.portfolios.long_term_sim.positions,
+              ...simulatedIncoming,
+            ]),
           },
         },
       });
@@ -619,7 +626,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
           real_tracking: { ...current.portfolios.real_tracking, positions: realPositions },
           long_term_sim: {
             ...current.portfolios.long_term_sim,
-            positions: simulatedPositions,
+            positions: mergeDuplicateTickers(simulatedPositions),
           },
         },
       });
@@ -731,6 +738,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       executeBuy,
       executeSell,
       depositPortfolioCash,
+      transactPortfolio,
       withdrawPortfolioCash,
       setTargetAllocations,
       depositCash,
@@ -751,6 +759,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       executeBuy,
       executeSell,
       depositPortfolioCash,
+      transactPortfolio,
       withdrawPortfolioCash,
       setTargetAllocations,
       depositCash,

@@ -41,6 +41,7 @@ dist-ssr
 cline_mcp_settings.json
 # Local agent config (contains secrets)
 .codex/
+.claude/
 
 # Supabase CLI cache
 supabase/.temp/

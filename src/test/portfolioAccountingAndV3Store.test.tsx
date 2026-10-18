@@ -356,6 +356,57 @@ describe('portfolio store v3', () => {
     expect(store.getPortfolio('paper_trading').cashBalance).toBe(10_000);
   });
 
+  it('folds duplicate Simulation rows into one position per ticker on load', () => {
+    const row = (id: string, ticker: string, buyPrice: number, shares: number, sim: boolean) => ({
+      id,
+      ticker,
+      buyPrice,
+      shares,
+      isSimulation: sim,
+      dateAdded: '2026-01-01',
+    });
+    window.localStorage.setItem(
+      'zerochart:portfolio-positions',
+      JSON.stringify({
+        version: 3,
+        activePortfolioType: 'long_term_sim',
+        portfolios: {
+          real_tracking: {
+            type: 'real_tracking',
+            positions: [row('a', 'MSFT', 100, 1, false), row('b', 'MSFT', 120, 1, false)],
+          },
+          long_term_sim: {
+            type: 'long_term_sim',
+            positions: [
+              row('robo-btc-1', 'BTC', 60_000, 0.1, true),
+              row('robo-eth-1', 'ETH', 3_000, 1, true),
+              row('robo-btc-2', 'btc', 70_000, 0.3, true),
+            ],
+          },
+        },
+      }),
+    );
+
+    renderStore();
+
+    const sim = store.getPortfolio('long_term_sim').positions;
+    expect(sim.map((position) => position.ticker)).toEqual(['BTC', 'ETH']);
+    expect(sim[0]).toMatchObject({ id: 'robo-btc-1', shares: 0.4 });
+    expect(sim[0]?.buyPrice).toBeCloseTo(67_500, 6);
+    expect(sim[0]?.lots?.map((lot) => lot.shares)).toEqual([0.1, 0.3]);
+
+    // Selling by ticker now sees the whole holding instead of the first row.
+    act(() => {
+      expect(
+        store.executeSell('long_term_sim', { ticker: 'BTC', shares: 0.4, price: 80_000 }).ok,
+      ).toBe(true);
+    });
+    expect(store.getPortfolio('long_term_sim').positions.map((p) => p.ticker)).toEqual(['ETH']);
+
+    // Real-tracking rows are user-entered and closed by id, so they stay apart.
+    expect(store.getPortfolio('real_tracking').positions.map((p) => p.id)).toEqual(['a', 'b']);
+  });
+
   it('migrates v2 cash and ledger without loss and persists a v3 envelope', () => {
     window.localStorage.setItem(
       'zerochart:portfolio-positions',

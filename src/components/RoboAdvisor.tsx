@@ -12,6 +12,7 @@ import {
   Shield,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
@@ -20,8 +21,9 @@ import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { REGIME_LABELS } from '@/lib/multiFactor';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
-import { type Position } from '@/lib/portfolioManager';
+import { applyBuyTransaction, applyCashTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { FEE_RATE } from '@/components/TradeTicket';
 import { isBinanceCrypto } from '@/lib/binance';
 import { getBrokerUrl } from '@/lib/tradeRouter';
 import { cn } from '@/lib/utils';
@@ -96,7 +98,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   const closeTimer = useRef<number | undefined>(undefined);
 
   const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
-  const { addPositions } = usePortfolio();
+  const { transactPortfolio } = usePortfolio();
 
   const topAllocation =
     result && result.length > 0
@@ -209,27 +211,49 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   function handleConfirmInvest() {
     if (closingRef.current || !result || result.length === 0) return;
 
-    const now = new Date();
-    const dateAdded = now.toISOString().slice(0, 10);
-    const positions: Position[] = [];
-
-    result.forEach((allocation, index) => {
+    const buys = result.flatMap((allocation) => {
       const asset = assetByTicker.get(allocation.ticker);
       const price = asset?.current_price;
-      if (price === null || price === undefined || !Number.isFinite(price) || price <= 0) return;
-
-      positions.push({
-        id: `robo-${allocation.ticker.toLowerCase()}-${now.getTime()}-${index}`,
-        ticker: allocation.ticker,
-        buyPrice: price,
-        shares: Number((allocation.allocatedAmount / price).toFixed(4)),
-        isSimulation: true,
-        dateAdded,
-      });
+      if (price === null || price === undefined || !Number.isFinite(price) || price <= 0) return [];
+      return [{ allocation, name: asset?.name, price }];
     });
+    if (buys.length === 0) {
+      toast.error('No live prices to invest at right now. Try again shortly.');
+      return;
+    }
 
-    if (positions.length > 0) {
-      addPositions(positions);
+    const timestamp = new Date().toISOString();
+    // Fund, then buy, as one commit: a rejected buy leaves the ledger untouched.
+    const invested = transactPortfolio('long_term_sim', (container) => {
+      const funded = applyCashTransaction(container, {
+        type: 'deposit',
+        amount: total,
+        note: 'Robo Advisor funding',
+        timestamp,
+      });
+      if (!funded.ok) return funded;
+      let next = funded.container;
+      for (const { allocation, name, price } of buys) {
+        // Allocations are rounded to cents, so together they can overshoot the deposit.
+        const budget = Math.min(allocation.allocatedAmount, next.cashBalance);
+        const shares = Math.floor((budget / (price * (1 + FEE_RATE))) * 1e8) / 1e8;
+        if (shares <= 0) continue;
+        const bought = applyBuyTransaction(next, {
+          ticker: allocation.ticker,
+          ...(name ? { name } : {}),
+          shares,
+          price,
+          fee: shares * price * FEE_RATE,
+          timestamp,
+        });
+        if (!bought.ok) return bought;
+        next = bought.container;
+      }
+      return { ok: true, container: next };
+    });
+    if (!invested.ok) {
+      toast.error(invested.error ?? 'Order rejected');
+      return;
     }
 
     closeModal();

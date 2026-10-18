@@ -1,14 +1,32 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
+import { FEE_RATE } from '@/components/TradeTicket';
 import type { Asset } from '@/lib/assets';
-import { PortfolioProvider } from '@/lib/portfolioStore';
+import type { PortfolioContainer } from '@/lib/portfolioAccounting';
+import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 
 const authState = vi.hoisted(() => ({ isPro: true }));
 
 vi.mock('@/lib/authStore', () => ({
   useAuth: () => authState,
 }));
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+// Lets a test make the engine reject one ticker's buy mid-invest.
+const rejectBuyOf = vi.hoisted(() => ({ ticker: null as string | null }));
+vi.mock('@/lib/portfolioAccounting', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/portfolioAccounting')>();
+  return {
+    ...actual,
+    applyBuyTransaction: (...args: Parameters<typeof actual.applyBuyTransaction>) =>
+      args[1].ticker === rejectBuyOf.ticker
+        ? { ok: false as const, container: args[0], error: 'Simulated rejection' }
+        : actual.applyBuyTransaction(...args),
+  };
+});
 
 // The results phase is the unit under test — stub the quant pipeline so the
 // test proves the UI surfaces the Multi-Factor Score and the ATR sizing.
@@ -57,6 +75,98 @@ const assets = [makeAsset('BTC', 'Bitcoin', 67000), makeAsset('ETH', 'Ethereum',
 
 beforeEach(() => {
   authState.isPro = true;
+  localStorage.clear();
+  rejectBuyOf.ticker = null;
+  vi.mocked(toast.error).mockClear();
+});
+
+let sim: PortfolioContainer | undefined;
+function SimProbe() {
+  sim = usePortfolio().portfolios.long_term_sim;
+  return null;
+}
+
+async function confirmInvest() {
+  fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /confirm & invest/i }));
+}
+
+async function investOnce() {
+  await confirmInvest();
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+}
+
+describe('RoboAdvisor invest', () => {
+  it('funds sim cash, then books one fee-inclusive BUY per allocation', async () => {
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+        <SimProbe />
+      </PortfolioProvider>,
+    );
+
+    await investOnce();
+
+    expect(toast.error).not.toHaveBeenCalled();
+    const ledger = sim!.transactions;
+    expect(ledger.map((t) => [t.type, t.ticker])).toEqual([
+      ['deposit', undefined],
+      ['buy', 'BTC'],
+      ['buy', 'ETH'],
+    ]);
+    expect(ledger[0]).toMatchObject({ amount: 10000, note: 'Robo Advisor funding' });
+    for (const [buy, allocated] of [
+      [ledger[1]!, 6000],
+      [ledger[2]!, 4000],
+    ] as const) {
+      expect(buy.fee).toBeCloseTo(buy.shares! * buy.price! * FEE_RATE, 9);
+      expect(buy.amount).toBeLessThanOrEqual(allocated);
+      expect(buy.amount).toBeGreaterThan(allocated - 0.01);
+    }
+    expect(ledger[1]!.price).toBe(67000);
+    expect(ledger[2]!.price).toBe(3500);
+
+    // Cash is the deposit minus exactly what the buys spent.
+    expect(sim!.cashBalance).toBeCloseTo(10000 - ledger[1]!.amount - ledger[2]!.amount, 9);
+    expect(sim!.cashBalance).toBeGreaterThanOrEqual(0);
+    expect(sim!.positions.map((p) => [p.ticker, p.shares])).toEqual([
+      ['BTC', ledger[1]!.shares],
+      ['ETH', ledger[2]!.shares],
+    ]);
+
+    // Investing again merges into the same rows instead of duplicating them.
+    await investOnce();
+    expect(sim!.transactions.map((t) => t.type)).toEqual([
+      'deposit',
+      'buy',
+      'buy',
+      'deposit',
+      'buy',
+      'buy',
+    ]);
+    expect(sim!.positions.map((p) => p.ticker)).toEqual(['BTC', 'ETH']);
+    expect(sim!.positions[0]!.shares).toBeCloseTo(ledger[1]!.shares! * 2, 8);
+  });
+
+  it('commits nothing and keeps the modal open when any buy is rejected', async () => {
+    rejectBuyOf.ticker = 'ETH';
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+        <SimProbe />
+      </PortfolioProvider>,
+    );
+    const before = structuredClone(sim);
+
+    await confirmInvest();
+
+    expect(toast.error).toHaveBeenCalledWith('Simulated rejection');
+    expect(document.querySelector('.robo-overlay')).not.toHaveClass('is-closing');
+    // The deposit and the BTC buy that ran before ETH are rolled back too.
+    expect(sim).toEqual(before);
+  });
 });
 
 describe('RoboAdvisor results', () => {

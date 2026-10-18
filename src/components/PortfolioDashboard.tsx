@@ -21,6 +21,7 @@ import { calculateSignalScore, formatPrice, generateTrendData, type Asset } from
 import { calculatePortfolioStats, type Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
 import {
+  activeLedgerType,
   computePortfolioValuation,
   positionCostBasis,
   type PortfolioTransaction,
@@ -502,7 +503,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     portfolios,
   } = usePortfolio();
   // The active ledger is shared with the Lab, whose tactical trades book into it.
-  const mode: PortfolioMode = activePortfolioType === 'real_tracking' ? 'live' : 'simulation';
+  const ledgerType = activeLedgerType(activePortfolioType);
+  const mode: PortfolioMode = ledgerType === 'real_tracking' ? 'live' : 'simulation';
   const setMode = (next: PortfolioMode) =>
     setActivePortfolioType(next === 'live' ? 'real_tracking' : 'long_term_sim');
   const hydration = useHydrationState();
@@ -520,7 +522,6 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
 
   // Every Core view (KPIs, allocation, backtest, rebalancing) reads the mode's own portfolio.
-  const ledgerType = mode === 'simulation' ? 'long_term_sim' : 'real_tracking';
   const ledger = portfolios[ledgerType];
   const visible = ledger.positions;
   const stats = calculatePortfolioStats(visible, assets);

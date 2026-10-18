@@ -2,7 +2,7 @@ import { CheckCircle2, TrendingDown, TrendingUp } from 'lucide-react';
 import type { Asset } from '@/lib/assets';
 import { REGIME_LABELS } from '@/lib/multiFactor';
 import { usePortfolio } from '@/lib/portfolioStore';
-import { LEDGER_NAMES } from '@/lib/portfolioAccounting';
+import { LEDGER_NAMES, activeLedgerType } from '@/lib/portfolioAccounting';
 import { generateTacticalSignals } from '@/lib/tacticalSignals';
 import { TradeTicket } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
  */
 export function TacticalSignals({ assets }: { assets: Asset[] }) {
   const { activePortfolioType, portfolios } = usePortfolio();
-  const ledger = portfolios[activePortfolioType];
+  const ledgerType = activeLedgerType(activePortfolioType);
+  const ledger = portfolios[ledgerType];
   const signals = generateTacticalSignals(ledger.positions, assets, ledger.cashBalance);
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker, asset]));
 
@@ -21,9 +22,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
     <section className="portfolio-section" aria-label="Tactical signals">
       <div className="portfolio-section-head">
         <h3 className="portfolio-section-title">Tactical Signals</h3>
-        <span className="portfolio-count">
-          Multi-Factor · {LEDGER_NAMES[activePortfolioType]} ledger
-        </span>
+        <span className="portfolio-count">Multi-Factor · {LEDGER_NAMES[ledgerType]} ledger</span>
       </div>
       {signals.length > 0 ? (
         <div className="suggestion-list">
@@ -52,7 +51,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
                 {asset && (
                   <TradeTicket
                     asset={asset}
-                    portfolioType={activePortfolioType}
+                    portfolioType={ledgerType}
                     intent="tactical"
                     initialSide={isSell ? 'sell' : 'buy'}
                   />

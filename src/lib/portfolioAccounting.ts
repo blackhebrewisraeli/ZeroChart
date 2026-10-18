@@ -6,6 +6,15 @@ export const LEDGER_NAMES: Record<PortfolioType, string> = {
   paper_trading: 'Paper Trading',
 };
 
+/**
+ * The ledger fills book into and the Core dashboard shows for the active
+ * selection. Paper Trading has no workspace until M2-T3, so a saved
+ * `paper_trading` selection maps to Simulation everywhere alike.
+ */
+export function activeLedgerType(active: PortfolioType): 'real_tracking' | 'long_term_sim' {
+  return active === 'real_tracking' ? 'real_tracking' : 'long_term_sim';
+}
+
 /** Why a trade was placed: a Core rebalance or an Active Research Lab tactical trade. */
 export type TradeIntent = 'rebalance' | 'tactical';
 

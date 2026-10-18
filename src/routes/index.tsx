@@ -32,6 +32,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
 import { TacticalSignals } from '@/components/TacticalSignals';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { activeLedgerType } from '@/lib/portfolioAccounting';
 import {
   calculateSignalScore,
   fetchAssets,
@@ -136,7 +137,7 @@ function Hero({ asset }: { asset: Asset }) {
           <TradeTicket
             asset={asset}
             variant="hero"
-            portfolioType={activePortfolioType}
+            portfolioType={activeLedgerType(activePortfolioType)}
             intent="tactical"
           />
           <BrokerModal asset={asset} variant="hero" />

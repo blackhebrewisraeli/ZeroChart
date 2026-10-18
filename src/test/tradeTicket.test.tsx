@@ -40,6 +40,7 @@ import { AuthProvider } from '@/lib/authStore';
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { TradeTicket } from '@/components/TradeTicket';
+import { activeLedgerType } from '@/lib/portfolioAccounting';
 
 function aapl(price: number): Asset {
   return {
@@ -63,7 +64,13 @@ function aapl(price: number): Asset {
 /** A Lab tactical ticket, booking into whichever ledger the dashboard has active. */
 function ActiveTicket({ asset }: { asset: Asset }) {
   const { activePortfolioType } = usePortfolio();
-  return <TradeTicket asset={asset} portfolioType={activePortfolioType} intent="tactical" />;
+  return (
+    <TradeTicket
+      asset={asset}
+      portfolioType={activeLedgerType(activePortfolioType)}
+      intent="tactical"
+    />
+  );
 }
 
 function tree(price: number) {
@@ -207,6 +214,24 @@ describe('tactical Trade Ticket on the active ledger', () => {
     // The Simulation ledger never saw these trades.
     fireEvent.click(screen.getByRole('tab', { name: 'Simulation' }));
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
+  });
+
+  it('books into the Simulation ledger the dashboard shows when paper_trading was saved', () => {
+    window.localStorage.setItem(
+      'zerochart:portfolio-positions',
+      JSON.stringify({ version: 3, activePortfolioType: 'paper_trading', portfolios: {} }),
+    );
+    render(tree(100));
+    expect(screen.getByRole('tab', { name: 'Simulation' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
+    trade('Buy', '100');
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByText('2 ENTRIES')).toBeInTheDocument(); // deposit + buy, same ledger
   });
 
   it('sells the whole holding when a cent-rounded amount overshoots it by dust', () => {

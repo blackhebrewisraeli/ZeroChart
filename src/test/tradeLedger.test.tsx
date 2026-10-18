@@ -161,6 +161,19 @@ describe('portfolio P&L attribution and trade ledger', () => {
     expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
   });
 
+  it('shows each holding at its fee-inclusive cost with a date-only Date added', () => {
+    const { container } = renderDashboard();
+    const holding = within(container.querySelector<HTMLElement>('.holding')!);
+    const metric = (label: string) => holding.getByText(label).nextElementSibling;
+
+    // 6 shares @100 plus the $3 of fees still on the lot, like the Invested card.
+    expect(metric('Invested')).toHaveTextContent('$603.00');
+    expect(metric('Date added')).toHaveTextContent(/^2026-03-01$/);
+    // Marked at 110, net of those fees — the same +57 / +9.45% as the strip.
+    expect(holding.getByText('+$57.00')).toBeInTheDocument();
+    expect(holding.getByText('+9.45%')).toBeInTheDocument();
+  });
+
   it('lists ledger entries newest first once expanded', () => {
     renderDashboard();
     const toggle = screen.getByRole('button', { name: /trade ledger/i });

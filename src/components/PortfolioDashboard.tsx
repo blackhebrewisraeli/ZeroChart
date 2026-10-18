@@ -25,7 +25,11 @@ import {
   type Suggestion,
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
-import { computePortfolioValuation, type PortfolioTransaction } from '@/lib/portfolioAccounting';
+import {
+  computePortfolioValuation,
+  positionCostBasis,
+  type PortfolioTransaction,
+} from '@/lib/portfolioAccounting';
 import {
   LEDGER_SIDE_LABELS,
   downloadCsv,
@@ -200,9 +204,10 @@ function HoldingRow({
   // (M1-T3, F-1.3b).
   const currentPrice = hasLivePrice ? livePrice : position.buyPrice;
   const marketValue = currentPrice * position.shares;
-  const pnl = (currentPrice - position.buyPrice) * position.shares;
-  const pnlPct =
-    position.buyPrice > 0 ? ((currentPrice - position.buyPrice) / position.buyPrice) * 100 : 0;
+  // Fees are part of what the holding cost, as in the Invested and P&L cards above.
+  const costBasis = positionCostBasis(position);
+  const pnl = marketValue - costBasis;
+  const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
   const tone = !hasLivePrice ? undefined : pnl >= 0 ? 'pnl-up' : 'pnl-down';
   const priceFlash = usePriceFlash(currentPrice);
   // A simulated close is a sell at the live price; with no price there is nothing to fill at.
@@ -299,9 +304,7 @@ function HoldingRow({
             </div>
             <div className="holding-metric">
               <span className="holding-metric-label">Invested</span>
-              <span className="holding-metric-value">
-                {formatPrice(position.buyPrice * position.shares)}
-              </span>
+              <span className="holding-metric-value">{formatPrice(costBasis)}</span>
             </div>
             <div className="holding-metric">
               <span className="holding-metric-label">Signal</span>
@@ -311,7 +314,8 @@ function HoldingRow({
             </div>
             <div className="holding-metric">
               <span className="holding-metric-label">Date added</span>
-              <span className="holding-metric-value">{position.dateAdded}</span>
+              {/* Engine fills store a full ISO timestamp; older rows a bare date. */}
+              <span className="holding-metric-value">{position.dateAdded.slice(0, 10)}</span>
             </div>
           </div>
 

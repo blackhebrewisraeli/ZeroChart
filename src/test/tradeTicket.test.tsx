@@ -88,9 +88,10 @@ describe('Trade Ticket in Simulation mode', () => {
     // Proceeds 598.50 − cost (500 + 1.25 allocated fee) = +97.25.
     const strip = within(screen.getByRole('region', { name: 'P&L attribution' }));
     expect(strip.getByText('+$97.25')).toBeInTheDocument();
-    // 5 open shares: 600 − (500 + 1.25) = +98.75, same on the headline KPI.
+    // 5 open shares: 600 − (500 + 1.25) = +98.75, same on the headline KPI
+    // and on the holding row, which is net of fees too.
     expect(strip.getByText('+$98.75')).toBeInTheDocument();
-    expect(screen.getAllByText('+$98.75')).toHaveLength(2);
+    expect(screen.getAllByText('+$98.75')).toHaveLength(3);
     expect(screen.getByText(/\$1,596\.00 available/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /trade ledger/i }));

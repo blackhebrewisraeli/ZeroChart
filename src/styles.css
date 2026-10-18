@@ -2279,10 +2279,16 @@ body {
 }
 .holding-asset-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 4px 10px;
+  min-width: 0;
 }
 .holding-ticker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font:
     700 15px 'JetBrains Mono',
     monospace;
@@ -2406,6 +2412,7 @@ body {
 }
 .holding-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 16px 18px 18px;
 }

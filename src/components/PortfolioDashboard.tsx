@@ -54,7 +54,7 @@ import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
 import { BacktestChart } from '@/components/BacktestChart';
 import { PriceAlerts } from '@/components/PriceAlerts';
-import { TradeTicket } from '@/components/TradeTicket';
+import { FEE_RATE, TradeTicket } from '@/components/TradeTicket';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
 import { isBinanceCrypto, toBinanceSymbol } from '@/lib/binance';
@@ -177,7 +177,7 @@ function HoldingRow({
 }: {
   position: Position;
   assets: Asset[];
-  onClose: (id: string) => void;
+  onClose: (position: Position, livePrice: number | undefined) => void;
   onUpdate: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -205,6 +205,8 @@ function HoldingRow({
     position.buyPrice > 0 ? ((currentPrice - position.buyPrice) / position.buyPrice) * 100 : 0;
   const tone = !hasLivePrice ? undefined : pnl >= 0 ? 'pnl-up' : 'pnl-down';
   const priceFlash = usePriceFlash(currentPrice);
+  // A simulated close is a sell at the live price; with no price there is nothing to fill at.
+  const closeBlocked = position.isSimulation && !hasLivePrice;
 
   function startEdit() {
     setDraftShares(String(position.shares));
@@ -367,7 +369,9 @@ function HoldingRow({
             <button
               type="button"
               className="holding-action holding-action-danger"
-              onClick={() => onClose(position.id)}
+              disabled={closeBlocked}
+              title={closeBlocked ? 'No live price to close at yet' : undefined}
+              onClick={() => onClose(position, hasLivePrice ? livePrice : undefined)}
             >
               <Trash2 size={15} /> Close Position
             </button>
@@ -514,9 +518,9 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     positions,
     removePosition,
     updatePosition,
-    cashBalance,
-    depositCash,
-    withdrawCash,
+    executeSell,
+    depositPortfolioCash,
+    withdrawPortfolioCash,
     activePortfolioType,
     portfolios,
   } = usePortfolio();
@@ -538,8 +542,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     mode === 'simulation' ? p.isSimulation : !p.isSimulation,
   );
   const stats = calculatePortfolioStats(visible, assets);
-  // P&L attribution reads the v3 ledger of the portfolio this mode shows.
-  const ledger = portfolios[mode === 'simulation' ? 'long_term_sim' : 'real_tracking'];
+  // P&L attribution, cash and the Trade Ticket use the v3 ledger of the mode's portfolio.
+  const ledgerType = mode === 'simulation' ? 'long_term_sim' : 'real_tracking';
+  const ledger = portfolios[ledgerType];
+  const cashBalance = ledger.cashBalance;
   const valuation = computePortfolioValuation(
     ledger,
     Object.fromEntries(assets.map((asset) => [asset.ticker.toUpperCase(), asset.current_price])),
@@ -634,13 +640,39 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       toast.error('Enter an amount greater than $0.');
       return;
     }
-    const applied = type === 'deposit' ? depositCash(amount) : withdrawCash(amount);
+    const applied =
+      type === 'deposit'
+        ? depositPortfolioCash(ledgerType, amount)
+        : withdrawPortfolioCash(ledgerType, amount);
     if (!applied) {
       toast.error('Cannot withdraw more than your available cash.');
       return;
     }
     toast.success(`${type === 'deposit' ? 'Deposited' : 'Withdrew'} ${formatPrice(amount)}`);
     setCashAmount('');
+  }
+
+  function handleClosePosition(position: Position, livePrice: number | undefined) {
+    // Live Tracking mirrors a real account, so closing only stops tracking the row.
+    if (!position.isSimulation) {
+      removePosition(position.id);
+      return;
+    }
+    if (livePrice === undefined) return; // HoldingRow disables close without a live price
+    const result = executeSell('long_term_sim', {
+      ticker: position.ticker,
+      shares: position.shares,
+      price: livePrice,
+      fee: position.shares * livePrice * FEE_RATE,
+      timestamp: new Date().toISOString(),
+    });
+    if (!result.ok) {
+      toast.error(result.error ?? 'Close rejected');
+      return;
+    }
+    toast.success(`Closed ${position.ticker}`, {
+      description: `Realized ${formatPnl(result.realizedPnl ?? 0)} — simulated fill, recorded in the ledger.`,
+    });
   }
 
   async function handleSaveToCloud() {
@@ -675,7 +707,9 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {topAsset && <TradeTicket asset={topAsset} variant="compact" />}
+          {topAsset && (
+            <TradeTicket asset={topAsset} variant="compact" portfolioType={ledgerType} />
+          )}
           <button
             type="button"
             className="share-portfolio-button"
@@ -713,13 +747,13 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Invested"
-          value={formatPrice(stats.totalInvested)}
+          value={formatPrice(valuation.investedCostBasis)}
           sub={`Cost basis · ${visible.length} ${visible.length === 1 ? 'holding' : 'holdings'}`}
           icon={<Wallet size={18} />}
         />
         <KpiCard
           label="Current Value"
-          value={formatPrice(stats.totalValue)}
+          value={formatPrice(valuation.marketValue)}
           sub={hasDayChange ? `24h ${formatPnl(dayChange)}` : 'Live prices'}
           icon={
             dayTone ? (
@@ -734,10 +768,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         />
         <KpiCard
           label="Profit / Loss"
-          value={formatPnl(stats.unrealizedPnL)}
-          sub={formatSignedPercent(stats.pnlPercent)}
+          value={formatPnl(valuation.unrealizedPnl)}
+          sub={formatSignedPercent(valuation.unrealizedPnlPct)}
           icon={<Briefcase size={18} />}
-          tone={stats.unrealizedPnL >= 0 ? 'pnl-up' : 'pnl-down'}
+          tone={valuation.unrealizedPnl >= 0 ? 'pnl-up' : 'pnl-down'}
         />
         <div className="kpi-card kpi-card-health">
           <span className="overview-label">Signal Health</span>
@@ -864,7 +898,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
                   key={position.id}
                   position={position}
                   assets={assets}
-                  onClose={removePosition}
+                  onClose={handleClosePosition}
                   onUpdate={updatePosition}
                 />
               ))}

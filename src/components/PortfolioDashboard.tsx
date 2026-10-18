@@ -435,7 +435,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       await publishSharedPortfolio({
         id,
         userId: user.id,
-        snapshot: buildSharedPortfolioSnapshot(visible, assets),
+        snapshot: await buildSharedPortfolioSnapshot(visible, assets),
       });
     } catch {
       toast.error("Couldn't create a public link. Please try again.");
@@ -532,7 +532,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             className="share-portfolio-button"
             onClick={handleShare}
             disabled={sharing}
-            title="Creates a public link with allocation %, returns %, and quant scores only. No balances or share counts are shared."
+            title="Creates a public link with allocation %, returns %, max drawdown, alpha vs BTC, and quant scores only. No balances or share counts are shared."
           >
             <Share2 size={15} />
             {sharing ? 'Creating link…' : 'Share Portfolio'}

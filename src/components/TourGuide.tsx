@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Joyride, STATUS, type Styles } from 'react-joyride';
 import { Compass } from 'lucide-react';
-import { tourSteps } from '@/lib/tourSteps';
+import { tourSteps, withViewSwitching, type TourView } from '@/lib/tourSteps';
 
 const joyrideStyles: Partial<Styles> = {
   tooltip: {
@@ -31,20 +31,16 @@ const joyrideStyles: Partial<Styles> = {
   buttonSkip: { color: '#9aa4b2', fontSize: 12 },
 };
 
-export function TourGuide({ onBeforeStart }: { onBeforeStart?: () => void }) {
+export function TourGuide({ onViewChange }: { onViewChange: (view: TourView) => void }) {
   const [run, setRun] = useState(false);
-
-  function startTour() {
-    onBeforeStart?.();
-    setRun(true);
-  }
+  const steps = useMemo(() => withViewSwitching(tourSteps, onViewChange), [onViewChange]);
 
   return (
     <>
       <button
         type="button"
         className="tour-trigger"
-        onClick={startTour}
+        onClick={() => setRun(true)}
         aria-label="Start product tour"
         title="Product tour"
       >
@@ -54,7 +50,7 @@ export function TourGuide({ onBeforeStart }: { onBeforeStart?: () => void }) {
 
       <Joyride
         run={run}
-        steps={tourSteps}
+        steps={steps}
         continuous
         scrollToFirstStep
         styles={joyrideStyles}

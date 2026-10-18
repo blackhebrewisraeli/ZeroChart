@@ -5,7 +5,10 @@ import {
   CheckCircle2,
   ChevronDown,
   CloudUpload,
+  Download,
   ExternalLink,
+  Gauge,
+  Layers,
   Pencil,
   Share2,
   Trash2,
@@ -22,6 +25,16 @@ import {
   type Suggestion,
 } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { computePortfolioValuation, type PortfolioTransaction } from '@/lib/portfolioAccounting';
+import {
+  LEDGER_SIDE_LABELS,
+  downloadCsv,
+  executionCost,
+  executionDrag,
+  frictionBps,
+  tradeLedgerCsv,
+} from '@/lib/tradeLedger';
+import { formatShares } from '@/lib/risk';
 import { useAuth } from '@/lib/authStore';
 import {
   mergeLivePrices,
@@ -63,6 +76,10 @@ function formatPnl(value: number) {
 
 function formatSignedPercent(value: number) {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function pnlTone(value: number): 'pnl-up' | 'pnl-down' | undefined {
+  return value > 0 ? 'pnl-up' : value < 0 ? 'pnl-down' : undefined;
 }
 
 function KpiCard({
@@ -364,6 +381,125 @@ function HoldingRow({
   );
 }
 
+function formatLedgerTime(timestamp: string) {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime())
+    ? timestamp
+    : date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function TradeLedger({
+  transactions,
+  filename,
+}: {
+  transactions: PortfolioTransaction[];
+  filename: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const newestFirst = [...transactions].reverse();
+
+  return (
+    <section className="portfolio-section" aria-label="Trade ledger">
+      <div className="portfolio-section-head">
+        <h3 className="portfolio-section-title">
+          <button
+            type="button"
+            className="ledger-toggle"
+            aria-expanded={open}
+            aria-controls="trade-ledger-panel"
+            onClick={() => setOpen((value) => !value)}
+          >
+            Trade Ledger
+            <ChevronDown size={18} className={cn('holding-chevron', open && 'is-open')} />
+          </button>
+        </h3>
+        <div className="portfolio-section-actions">
+          <span className="portfolio-count">
+            {transactions.length} ENTR{transactions.length === 1 ? 'Y' : 'IES'}
+          </span>
+          <button
+            type="button"
+            className="portfolio-cash-btn ledger-export"
+            disabled={transactions.length === 0}
+            onClick={() => downloadCsv(filename, tradeLedgerCsv(transactions))}
+          >
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div id="trade-ledger-panel">
+          {newestFirst.length > 0 ? (
+            <div className="ledger-scroll">
+              <table className="ledger-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Time</th>
+                    <th scope="col">Side</th>
+                    <th scope="col">Ticker</th>
+                    <th scope="col">Qty</th>
+                    <th scope="col">Price</th>
+                    <th scope="col">Fee + Slip</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">Realized P&amp;L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {newestFirst.map((transaction) => {
+                    const bps = frictionBps(transaction);
+                    const realized = transaction.realizedPnl;
+                    return (
+                      <tr key={transaction.id}>
+                        <td>{formatLedgerTime(transaction.timestamp)}</td>
+                        <td>
+                          <span className="ledger-side" data-side={transaction.type}>
+                            {LEDGER_SIDE_LABELS[transaction.type]}
+                          </span>
+                        </td>
+                        <td>{transaction.ticker ?? '—'}</td>
+                        <td>
+                          {transaction.shares !== undefined
+                            ? formatShares(transaction.shares)
+                            : '—'}
+                        </td>
+                        <td>
+                          {transaction.price !== undefined ? formatPrice(transaction.price) : '—'}
+                        </td>
+                        <td>
+                          {bps === null
+                            ? '—'
+                            : `${formatPrice(executionCost(transaction))} · ${bps.toFixed(1)} bps`}
+                        </td>
+                        <td>{formatPrice(transaction.amount)}</td>
+                        <td
+                          className={cn(
+                            realized !== undefined && realized > 0 && 'pnl-up',
+                            realized !== undefined && realized < 0 && 'pnl-down',
+                          )}
+                        >
+                          {realized !== undefined ? formatPnl(realized) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="holdings-empty">
+              <Layers size={26} />
+              <span className="holdings-empty-title">No ledger activity yet</span>
+              <span className="holdings-empty-sub">
+                Buys, sells and cash movements recorded by the accounting engine appear here.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export const PortfolioDashboard = memo(function PortfolioDashboard({
   assets: baseAssets,
 }: {
@@ -402,6 +538,19 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     mode === 'simulation' ? p.isSimulation : !p.isSimulation,
   );
   const stats = calculatePortfolioStats(visible, assets);
+  // P&L attribution reads the v3 ledger of the portfolio this mode shows.
+  const ledger = portfolios[mode === 'simulation' ? 'long_term_sim' : 'real_tracking'];
+  const valuation = computePortfolioValuation(
+    ledger,
+    Object.fromEntries(assets.map((asset) => [asset.ticker.toUpperCase(), asset.current_price])),
+  );
+  const drag = executionDrag(ledger.transactions);
+  const tradeCount = ledger.transactions.filter(
+    (transaction) => transaction.type === 'buy' || transaction.type === 'sell',
+  ).length;
+  const closedCount = ledger.transactions.filter(
+    (transaction) => transaction.type === 'sell',
+  ).length;
   const suggestions = generateSuggestions(visible, assets, cashBalance);
   const topAsset = [...assets].sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a))[0];
 
@@ -518,7 +667,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
 
   return (
     <section className="portfolio" aria-label="Portfolio dashboard">
-      <header className="portfolio-head">
+      <header className="portfolio-head" data-tour="wealth">
         <div>
           <h2 className="portfolio-title">Wealth Management</h2>
           <p className="portfolio-subtitle">
@@ -595,6 +744,38 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           <HealthRing score={stats.healthScore} />
         </div>
       </div>
+
+      <section
+        className="portfolio-section"
+        aria-label="P&L attribution"
+        data-tour="pnl-attribution"
+      >
+        <div className="portfolio-section-head">
+          <h3 className="portfolio-section-title">P&amp;L Attribution</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <KpiCard
+            label="Unrealized P&L"
+            value={formatPnl(valuation.unrealizedPnl)}
+            sub={`${formatSignedPercent(valuation.unrealizedPnlPct)} · open lots, net of fees`}
+            icon={<TrendingUp size={18} />}
+            tone={pnlTone(valuation.unrealizedPnl)}
+          />
+          <KpiCard
+            label="Realized P&L"
+            value={formatPnl(valuation.realizedPnl)}
+            sub={`${closedCount} closed ${closedCount === 1 ? 'trade' : 'trades'} · FIFO lots`}
+            icon={<CheckCircle2 size={18} />}
+            tone={pnlTone(valuation.realizedPnl)}
+          />
+          <KpiCard
+            label="Execution Drag"
+            value={formatPrice(drag)}
+            sub={`Fees + slippage · ${tradeCount} ${tradeCount === 1 ? 'fill' : 'fills'}`}
+            icon={<Gauge size={18} />}
+          />
+        </div>
+      </section>
 
       <section className="portfolio-section" aria-label="Allocation">
         <div className="portfolio-section-head">
@@ -703,6 +884,11 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           </div>
         )}
       </section>
+
+      <TradeLedger
+        transactions={ledger.transactions}
+        filename={`zerochart-ledger-${mode === 'simulation' ? 'simulation' : 'live'}.csv`}
+      />
 
       <section className="portfolio-section" aria-label="Price alerts">
         <PriceAlerts assets={assets} user={user} />

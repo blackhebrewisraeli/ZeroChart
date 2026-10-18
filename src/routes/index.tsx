@@ -379,7 +379,7 @@ function Terminal() {
                 </div>
               </>
             ) : null}
-            <TourGuide onBeforeStart={() => setView('portfolio')} />
+            <TourGuide onViewChange={setView} />
           </div>
         </div>
       </header>

@@ -38,7 +38,7 @@ const positions: Position[] = [
 
 const stateV3: PortfolioStateV3 = {
   version: 3,
-  activePortfolioType: 'paper_trading',
+  activePortfolioType: 'long_term_sim',
   portfolios: {
     real_tracking: {
       type: 'real_tracking',

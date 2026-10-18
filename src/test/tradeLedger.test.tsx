@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PortfolioTransaction } from '@/lib/portfolioAccounting';
 import type { Asset } from '@/lib/assets';
-import { executionDrag, frictionBps, tradeLedgerCsv } from '@/lib/tradeLedger';
+import { executionDrag, frictionBps, realizedPnlOn, tradeLedgerCsv } from '@/lib/tradeLedger';
 
 vi.mock('@/lib/supabaseClient', () => ({
   supabase: {
@@ -58,6 +58,20 @@ describe('trade ledger helpers', () => {
   it('sums fees + slippage across fills only', () => {
     expect(executionDrag([buy, sell, deposit])).toBe(6);
     expect(executionDrag([])).toBe(0);
+  });
+
+  it("sums only the sells booked on the given local day as today's realized P&L", () => {
+    const today = new Date(2026, 9, 18, 15, 0);
+    const at = (hour: number, day = 18) => new Date(2026, 9, day, hour, 0).toISOString();
+    const ledger = [
+      trade({ type: 'sell', realizedPnl: 40, timestamp: at(0) }),
+      trade({ type: 'sell', realizedPnl: -15, timestamp: at(23) }),
+      trade({ type: 'sell', realizedPnl: 999, timestamp: at(23, 17) }), // yesterday
+      trade({ type: 'buy', timestamp: at(10) }),
+      trade({ type: 'sell', timestamp: at(11) }), // no realized P&L recorded
+    ];
+    expect(realizedPnlOn(ledger, today)).toBe(25);
+    expect(realizedPnlOn([], today)).toBe(0);
   });
 
   it('expresses friction in bps of notional, null for cash movements', () => {

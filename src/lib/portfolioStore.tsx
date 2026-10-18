@@ -16,6 +16,7 @@ import {
   normalizePositionLots,
   type BuyTransactionInput,
   type CashTransaction,
+  type CorePortfolioType,
   type PortfolioContainer,
   type PortfolioTransaction,
   type PortfolioTransition,
@@ -27,6 +28,7 @@ import {
 export type {
   BuyTransactionInput,
   CashTransaction,
+  CorePortfolioType,
   PortfolioContainer,
   PortfolioTransaction,
   PortfolioTransition,
@@ -86,7 +88,8 @@ const PAPER_CASH_LEDGER: CashTransaction[] = [
 
 export interface PortfolioStateV3 {
   version: 3;
-  activePortfolioType: PortfolioType;
+  /** The Core dashboard's mode; Paper Trading lives in its own terminal. */
+  activePortfolioType: CorePortfolioType;
   portfolios: Record<PortfolioType, PortfolioContainer>;
 }
 
@@ -141,8 +144,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isPortfolioType(value: unknown): value is PortfolioType {
-  return value === 'real_tracking' || value === 'long_term_sim' || value === 'paper_trading';
+/** A pre-terminal `paper_trading` selection reopens Core on Simulation. */
+function coreModeOf(value: unknown): CorePortfolioType {
+  return value === 'long_term_sim' || value === 'paper_trading' ? 'long_term_sim' : 'real_tracking';
 }
 
 function normalizePersistedPosition(value: unknown): Position | null {
@@ -311,9 +315,7 @@ function migratePortfolioState(payload: unknown): PortfolioStateV3 {
     const seeded = seedScope();
     return {
       version: 3,
-      activePortfolioType: isPortfolioType(payload['activePortfolioType'])
-        ? payload['activePortfolioType']
-        : 'real_tracking',
+      activePortfolioType: coreModeOf(payload['activePortfolioType']),
       portfolios: {
         real_tracking: normalizeContainer(
           persistedPortfolios['real_tracking'],
@@ -401,9 +403,9 @@ interface PortfolioStore {
   scopeUserId: string | null;
   cashBalance: number;
   cashLedger: CashTransaction[];
-  activePortfolioType: PortfolioType;
+  activePortfolioType: CorePortfolioType;
   portfolios: Record<PortfolioType, PortfolioContainer>;
-  setActivePortfolioType: (type: PortfolioType) => void;
+  setActivePortfolioType: (type: CorePortfolioType) => void;
   getPortfolio: (type: PortfolioType) => PortfolioContainer;
   executeBuy: (type: PortfolioType, input: BuyTransactionInput) => { ok: boolean; error?: string };
   executeSell: (
@@ -459,7 +461,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   );
 
   const setActivePortfolioType = useCallback(
-    (type: PortfolioType) => {
+    (type: CorePortfolioType) => {
       const current = scopeRef.current;
       commit({ ...current, activePortfolioType: type });
     },

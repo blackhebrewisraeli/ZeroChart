@@ -3,7 +3,6 @@ import { useAlerts } from '@/lib/alertsStore';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { REGIME_LABELS } from '@/lib/multiFactor';
 import { usePortfolio } from '@/lib/portfolioStore';
-import { LEDGER_NAMES, activeLedgerType } from '@/lib/portfolioAccounting';
 import { buildSignalFeed, generateTacticalSignals } from '@/lib/tacticalSignals';
 import { TradeTicket } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
@@ -23,15 +22,14 @@ function FeedTime({ at }: { at: number | null }) {
 }
 
 /**
- * Active Research Lab feed (M2-T2/T3): Multi-Factor BUY/SELL ideas against the
- * active ledger's holdings, merged newest-first with price alerts fired this
- * session. Fills book into that ledger as tactical trades.
+ * Tactical feed (M2-T2/T3): Multi-Factor BUY/SELL ideas against the Paper
+ * Trading holdings, merged newest-first with price alerts fired this session.
+ * Fills book into Paper Trading as tactical trades, never into Core.
  */
 export function TacticalSignals({ assets }: { assets: Asset[] }) {
-  const { activePortfolioType, portfolios } = usePortfolio();
+  const { portfolios } = usePortfolio();
   const { triggered } = useAlerts();
-  const ledgerType = activeLedgerType(activePortfolioType);
-  const ledger = portfolios[ledgerType];
+  const ledger = portfolios.paper_trading;
   const signals = generateTacticalSignals(ledger.positions, assets, ledger.cashBalance);
   const feed = buildSignalFeed(signals, triggered);
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker, asset]));
@@ -40,9 +38,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
     <section className="portfolio-section" aria-label="Tactical signals">
       <div className="portfolio-section-head">
         <h3 className="portfolio-section-title">Tactical Signals</h3>
-        <span className="portfolio-count">
-          Multi-Factor · Price Alerts · {LEDGER_NAMES[ledgerType]} ledger
-        </span>
+        <span className="portfolio-count">Multi-Factor · Price Alerts · Paper Trading ledger</span>
       </div>
       {feed.length > 0 ? (
         <div className="suggestion-list">
@@ -74,7 +70,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
                     <p className="suggestion-reason">Triggered at {formatPrice(price)}.</p>
                   </div>
                   {asset && (
-                    <TradeTicket asset={asset} portfolioType={ledgerType} intent="tactical" />
+                    <TradeTicket asset={asset} portfolioType="paper_trading" intent="tactical" />
                   )}
                 </div>
               );
@@ -107,7 +103,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
                 {asset && (
                   <TradeTicket
                     asset={asset}
-                    portfolioType={ledgerType}
+                    portfolioType="paper_trading"
                     intent="tactical"
                     initialSide={isSell ? 'sell' : 'buy'}
                   />

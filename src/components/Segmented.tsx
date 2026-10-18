@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export interface SegmentOption<T extends string> {
@@ -7,8 +7,8 @@ export interface SegmentOption<T extends string> {
 }
 
 /**
- * A two-option, iOS-style segmented control with a sliding glass thumb.
- * Both options share equal width; the thumb translates between them.
+ * An iOS-style segmented control with a sliding glass thumb.
+ * All options share equal width; the thumb translates between them.
  */
 export function Segmented<T extends string>({
   value,
@@ -29,7 +29,12 @@ export function Segmented<T extends string>({
   );
 
   return (
-    <div className={cn('segment', className)} role="tablist" aria-label={ariaLabel}>
+    <div
+      className={cn('segment', className)}
+      role="tablist"
+      aria-label={ariaLabel}
+      style={{ '--segments': options.length } as CSSProperties}
+    >
       <span
         className="segment-thumb"
         aria-hidden="true"

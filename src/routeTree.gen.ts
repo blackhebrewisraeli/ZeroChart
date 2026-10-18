@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PaperTradingRouteImport } from './routes/paper-trading'
 import { Route as PPortfolioIdRouteImport } from './routes/p/$portfolioId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PaperTradingRoute = PaperTradingRouteImport.update({
+  id: '/paper-trading',
+  path: '/paper-trading',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PPortfolioIdRoute = PPortfolioIdRouteImport.update({
@@ -25,27 +31,31 @@ const PPortfolioIdRoute = PPortfolioIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/paper-trading': typeof PaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/paper-trading': typeof PaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/paper-trading': typeof PaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/p/$portfolioId'
+  fullPaths: '/' | '/paper-trading' | '/p/$portfolioId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/p/$portfolioId'
-  id: '__root__' | '/' | '/p/$portfolioId'
+  to: '/' | '/paper-trading' | '/p/$portfolioId'
+  id: '__root__' | '/' | '/paper-trading' | '/p/$portfolioId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PaperTradingRoute: typeof PaperTradingRoute
   PPortfolioIdRoute: typeof PPortfolioIdRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/paper-trading': {
+      id: '/paper-trading'
+      path: '/paper-trading'
+      fullPath: '/paper-trading'
+      preLoaderRoute: typeof PaperTradingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/p/$portfolioId': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PaperTradingRoute: PaperTradingRoute,
   PPortfolioIdRoute: PPortfolioIdRoute,
 }
 export const routeTree = rootRouteImport

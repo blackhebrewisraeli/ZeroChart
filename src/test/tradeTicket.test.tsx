@@ -40,7 +40,6 @@ import { AuthProvider } from '@/lib/authStore';
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { TradeTicket } from '@/components/TradeTicket';
-import { activeLedgerType } from '@/lib/portfolioAccounting';
 
 function aapl(price: number): Asset {
   return {
@@ -61,16 +60,10 @@ function aapl(price: number): Asset {
   };
 }
 
-/** A Lab tactical ticket, booking into whichever ledger the dashboard has active. */
+/** A ticket booking into whichever Core ledger the dashboard has active. */
 function ActiveTicket({ asset }: { asset: Asset }) {
   const { activePortfolioType } = usePortfolio();
-  return (
-    <TradeTicket
-      asset={asset}
-      portfolioType={activeLedgerType(activePortfolioType)}
-      intent="tactical"
-    />
-  );
+  return <TradeTicket asset={asset} portfolioType={activePortfolioType} intent="tactical" />;
 }
 
 function tree(price: number) {
@@ -78,6 +71,12 @@ function tree(price: number) {
     <PortfolioProvider>
       <AuthProvider>
         <ActiveTicket asset={aapl(price)} />
+        <TradeTicket
+          asset={aapl(price)}
+          portfolioType="paper_trading"
+          intent="tactical"
+          label="Paper trade"
+        />
         <PortfolioDashboard assets={[aapl(price)]} />
       </AuthProvider>
     </PortfolioProvider>
@@ -216,7 +215,7 @@ describe('tactical Trade Ticket on the active ledger', () => {
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 
-  it('books into the Simulation ledger the dashboard shows when paper_trading was saved', () => {
+  it('never shows Paper Trading fills in Core, even when paper_trading was the saved mode', () => {
     window.localStorage.setItem(
       'zerochart:portfolio-positions',
       JSON.stringify({ version: 3, activePortfolioType: 'paper_trading', portfolios: {} }),
@@ -226,12 +225,21 @@ describe('tactical Trade Ticket on the active ledger', () => {
       'aria-selected',
       'true',
     );
-    fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '500' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
-    trade('Buy', '100');
 
-    expect(toast.error).not.toHaveBeenCalled();
-    expect(screen.getByText('2 ENTRIES')).toBeInTheDocument(); // deposit + buy, same ledger
+    // Paper starts with $10,000 of its own cash; Core Simulation has none.
+    fireEvent.click(screen.getByRole('button', { name: 'Paper trade' }));
+    const ticket = within(screen.getByRole('dialog', { name: 'Trade AAPL' }));
+    fireEvent.change(ticket.getByLabelText('Order amount (USD)'), { target: { value: '100' } });
+    fireEvent.click(ticket.getByRole('button', { name: 'Buy AAPL' }));
+    expect(toast.success).toHaveBeenCalledWith('Bought AAPL', {
+      description: expect.stringMatching(/Paper Trading ledger/),
+    });
+
+    expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
+    expect(screen.getByText('No simulation positions')).toBeInTheDocument();
+    expect(screen.getByText(/\$0\.00 available/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 
   it('sells the whole holding when a cent-rounded amount overshoots it by dust', () => {

@@ -56,7 +56,7 @@ export const tourSteps: TourStep[] = [
     target: '[data-tour="wealth"]',
     title: 'Wealth Management',
     content:
-      'Switch between Simulation and Live Tracking. Every position keeps FIFO lots with cost basis including fees and slippage. Share Portfolio publishes a read-only link with percentages only: no balances or share counts.',
+      'Switch between Simulation and Live Tracking. Set target weights and Rebalancing suggests the trades to restore them once a holding drifts more than 5 pts. Every position keeps FIFO lots with cost basis including fees and slippage. Share Portfolio publishes a read-only link with percentages only: no balances or share counts.',
     placement: 'bottom',
   },
   {

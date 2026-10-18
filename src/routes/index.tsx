@@ -30,6 +30,8 @@ import { SetAlertButton } from '@/components/SetAlertModal';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
+import { TacticalSignals } from '@/components/TacticalSignals';
+import { usePortfolio } from '@/lib/portfolioStore';
 import {
   calculateSignalScore,
   fetchAssets,
@@ -94,6 +96,7 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 function Hero({ asset }: { asset: Asset }) {
+  const { activePortfolioType } = usePortfolio();
   const score = calculateSignalScore(asset);
   const surging = asset.volume_spike !== null && asset.volume_spike > 1;
   return (
@@ -130,7 +133,12 @@ function Hero({ asset }: { asset: Asset }) {
           )}
         </div>
         <div className="hero-action">
-          <TradeTicket asset={asset} variant="hero" />
+          <TradeTicket
+            asset={asset}
+            variant="hero"
+            portfolioType={activePortfolioType}
+            intent="tactical"
+          />
           <BrokerModal asset={asset} variant="hero" />
         </div>
       </div>
@@ -433,6 +441,7 @@ function Terminal() {
         ) : topPick ? (
           <>
             <Hero asset={topPick} />
+            <TacticalSignals assets={baseAssets} />
             <section className="markets" data-tour="markets" aria-label="Markets">
               <div className="markets-head">
                 <h2 className="markets-title">Markets</h2>

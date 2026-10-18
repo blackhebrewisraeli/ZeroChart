@@ -121,7 +121,8 @@ export interface ScoredAsset {
   atr: number | null;
 }
 
-function staticScore(asset: Asset): ScoredAsset {
+/** Multi-Factor score from the asset table alone (no history fetch). */
+export function scoreAssetStatic(asset: Asset): ScoredAsset {
   const price = validPrice(asset);
   return {
     asset,
@@ -141,11 +142,11 @@ export async function scoreAsset(
   asset: Asset,
   deps: QuantDeps = defaultDeps,
 ): Promise<ScoredAsset> {
-  if (!isBinanceCrypto(asset.ticker)) return staticScore(asset);
+  if (!isBinanceCrypto(asset.ticker)) return scoreAssetStatic(asset);
 
   try {
     const history = await deps.fetchHistory(asset.ticker);
-    if (history.closes.length < 2) return staticScore(asset);
+    if (history.closes.length < 2) return scoreAssetStatic(asset);
 
     const bundle = await deps.computeIndicators(history);
     const price = validPrice(asset) ?? lastFinite(history.closes);
@@ -165,7 +166,7 @@ export async function scoreAsset(
 
     return { asset, breakdown: computeMultiFactorBreakdown(inputs), price, atr };
   } catch {
-    return staticScore(asset);
+    return scoreAssetStatic(asset);
   }
 }
 

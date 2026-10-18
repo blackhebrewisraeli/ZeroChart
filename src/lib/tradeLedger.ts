@@ -77,7 +77,10 @@ export function downloadCsv(filename: string, csv: string): void {
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  // Firefox and the HTML spec only follow links that are in the document.
+  document.body.append(link);
   link.click();
+  link.remove();
   // Revoke on the next tick so Safari has started the download first.
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

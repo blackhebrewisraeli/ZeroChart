@@ -433,7 +433,7 @@ function Terminal() {
         ) : topPick ? (
           <>
             <Hero asset={topPick} />
-            <section className="markets" aria-label="Markets">
+            <section className="markets" data-tour="markets" aria-label="Markets">
               <div className="markets-head">
                 <h2 className="markets-title">Markets</h2>
                 <div className="markets-head-actions">
@@ -477,7 +477,7 @@ function Terminal() {
               {rows.length === 0 ? (
                 <div className="markets-empty">No assets match this filter.</div>
               ) : (
-                <div className="markets-table" data-tour="markets">
+                <div className="markets-table">
                   <div className="markets-row markets-row-head" aria-hidden="true">
                     <span className="markets-head-cell markets-rank-head">#</span>
                     <span className="markets-head-cell">Asset</span>

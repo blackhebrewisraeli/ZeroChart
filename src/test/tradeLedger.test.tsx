@@ -187,6 +187,7 @@ describe('portfolio P&L attribution and trade ledger', () => {
     ) {
       expect(this.download).toBe('zerochart-ledger-simulation.csv');
       expect(this.href).toBe('blob:ledger');
+      expect(this.isConnected).toBe(true);
     });
 
     renderDashboard();

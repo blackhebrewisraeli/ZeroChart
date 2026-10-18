@@ -1,3 +1,4 @@
+import type { TriggeredAlert } from '@/lib/alertsStore';
 import type { Asset } from '@/lib/assets';
 import type { MarketRegime } from '@/lib/multiFactor';
 import type { Position } from '@/lib/portfolioAccounting';
@@ -15,7 +16,14 @@ export interface TacticalSignal {
   score: number;
   regime: MarketRegime;
   rationale: string;
+  /** Epoch ms of the market snapshot the score came from; null when unknown. */
+  asOf: number | null;
 }
+
+/** One card in the Lab feed: a Multi-Factor idea or a fired price alert. */
+export type SignalFeedItem =
+  | { kind: 'quant'; at: number | null; signal: TacticalSignal }
+  | { kind: 'alert'; at: number; trigger: TriggeredAlert };
 
 const SELL_BELOW = 50;
 const BUY_AT = 85;
@@ -49,7 +57,9 @@ export function generateTacticalSignals(
     const breakdown = breakdownOf(asset);
     if (!breakdown) continue;
     const { score, regime, rationale } = breakdown;
-    const base = { ticker: asset.ticker, score, regime, rationale };
+    const updatedAt = asset.updated_at ? Date.parse(asset.updated_at) : NaN;
+    const asOf = Number.isFinite(updatedAt) ? updatedAt : null;
+    const base = { ticker: asset.ticker, score, regime, rationale, asOf };
     if (isHeld && score < SELL_BELOW) signals.push({ type: 'SELL', ...base });
     else if (!isHeld && score >= BUY_AT) signals.push({ type: 'BUY', ...base });
   }
@@ -57,4 +67,20 @@ export function generateTacticalSignals(
   return signals.sort((a, b) =>
     a.type === b.type ? b.score - a.score : a.type === 'SELL' ? -1 : 1,
   );
+}
+
+/**
+ * Merges quant signals and fired price alerts into one feed, newest first.
+ * The sort is stable, so same-snapshot quant signals keep their SELL-first,
+ * score-ranked order; undated signals sink to the bottom.
+ */
+export function buildSignalFeed(
+  signals: readonly TacticalSignal[],
+  triggered: readonly TriggeredAlert[],
+): SignalFeedItem[] {
+  const items: SignalFeedItem[] = [
+    ...signals.map((signal) => ({ kind: 'quant' as const, at: signal.asOf, signal })),
+    ...triggered.map((trigger) => ({ kind: 'alert' as const, at: trigger.triggeredAt, trigger })),
+  ];
+  return items.sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
 }

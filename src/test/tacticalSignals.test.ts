@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { generateTacticalSignals } from '@/lib/tacticalSignals';
+import {
+  buildSignalFeed,
+  generateTacticalSignals,
+  type TacticalSignal,
+} from '@/lib/tacticalSignals';
 import { scoreAssetStatic } from '@/lib/roboAdvisor';
+import type { TriggeredAlert } from '@/lib/alertsStore';
 import type { Asset } from '@/lib/assets';
 import type { Position } from '@/lib/portfolioAccounting';
 
@@ -57,6 +62,7 @@ describe('generateTacticalSignals', () => {
       score: breakdown.score,
       regime: breakdown.regime,
       rationale: breakdown.rationale,
+      asOf: null,
     });
   });
 
@@ -77,6 +83,67 @@ describe('generateTacticalSignals', () => {
   it('suggests no buys without cash to deploy', () => {
     expect(generateTacticalSignals([held('WEAK')], [STRONG, WEAK], 0)).toMatchObject([
       { type: 'SELL', ticker: 'WEAK' },
+    ]);
+  });
+});
+
+describe('buildSignalFeed', () => {
+  const T = Date.parse('2026-10-18T12:00:00Z');
+  const MIN = 60_000;
+
+  function quant(ticker: string, type: 'BUY' | 'SELL', asOf: number | null): TacticalSignal {
+    return { type, ticker, score: 50, regime: 'NEUTRAL', rationale: '', asOf };
+  }
+
+  function fired(id: string, triggeredAt: number): TriggeredAlert {
+    const alert = {
+      id,
+      ticker: 'BTC-USD',
+      targetPrice: 100,
+      condition: 'above' as const,
+      createdAt: 0,
+      scope: 'session' as const,
+    };
+    return { alert, price: 101, triggeredAt };
+  }
+
+  const label = (feed: ReturnType<typeof buildSignalFeed>) =>
+    feed.map((item) =>
+      item.kind === 'alert' ? `alert ${item.trigger.alert.id}` : item.signal.ticker,
+    );
+
+  it('stamps quant signals with their market snapshot time', () => {
+    const dated = { ...STRONG, updated_at: new Date(T).toISOString() };
+    expect(generateTacticalSignals([], [dated], 1000)[0]?.asOf).toBe(T);
+  });
+
+  it('interleaves both signal types newest first', () => {
+    const feed = buildSignalFeed(
+      [quant('OLDQ', 'BUY', T - 10 * MIN), quant('NEWQ', 'SELL', T)],
+      [fired('a1', T - 20 * MIN), fired('a2', T - 5 * MIN), fired('a3', T + MIN)],
+    );
+    expect(label(feed)).toEqual(['alert a3', 'NEWQ', 'alert a2', 'OLDQ', 'alert a1']);
+    expect(feed.map((item) => item.at)).toEqual([
+      T + MIN,
+      T,
+      T - 5 * MIN,
+      T - 10 * MIN,
+      T - 20 * MIN,
+    ]);
+  });
+
+  it('keeps same-snapshot quant priority and sinks undated signals', () => {
+    const feed = buildSignalFeed(
+      [quant('SELL1', 'SELL', T), quant('BUY1', 'BUY', T), quant('NODATE', 'BUY', null)],
+      [fired('a1', T - MIN)],
+    );
+    expect(label(feed)).toEqual(['SELL1', 'BUY1', 'alert a1', 'NODATE']);
+  });
+
+  it('shows fired alerts on their own when there is no quant signal', () => {
+    expect(label(buildSignalFeed([], [fired('a1', T), fired('a2', T + MIN)]))).toEqual([
+      'alert a2',
+      'alert a1',
     ]);
   });
 });

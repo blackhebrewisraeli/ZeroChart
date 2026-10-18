@@ -44,6 +44,16 @@ beforeEach(() => {
 });
 
 describe('runAlertPass — the single evaluator (M1-T4, F-5.1)', () => {
+  it('records each firing once for the Lab feed, cleared on an account switch', () => {
+    const alert = addAlert({ ticker: 'BTC-USD', targetPrice: 100, condition: 'above' }, 'session');
+    pass([asset('BTC-USD', 150)]);
+    pass([asset('BTC-USD', 150)]);
+    expect(getAlertsState().triggered).toEqual([{ alert, price: 150, triggeredAt: NOW }]);
+
+    beginCloudSync('u1');
+    expect(getAlertsState().triggered).toEqual([]);
+  });
+
   it('fires exactly once per crossing even across repeated passes', () => {
     addAlert({ ticker: 'BTC-USD', targetPrice: 100, condition: 'above' }, 'session');
     expect(pass([asset('BTC-USD', 150)])).toHaveLength(1);

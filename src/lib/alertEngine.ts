@@ -1,5 +1,5 @@
 import type { Asset } from '@/lib/assets';
-import { getAlertsState, takeAlert, type PriceAlert } from '@/lib/alertsStore';
+import { getAlertsState, recordTriggered, takeAlert, type PriceAlert } from '@/lib/alertsStore';
 import { assetFreshness, isAlertableFreshness, type FreshnessState } from '@/lib/freshness';
 import type { LivePrice } from '@/lib/livePriceStore';
 import { hasTriggered } from '@/lib/priceAlerts';
@@ -70,6 +70,8 @@ export function runAlertPass(input: AlertPassInput): AlertFiring[] {
     const claimed = takeAlert(alert.id);
     if (claimed) fired.push({ alert: claimed, price: entry.price, freshness: entry.freshness });
   }
+  const triggeredAt = input.now ?? Date.now();
+  recordTriggered(fired.map(({ alert, price }) => ({ alert, price, triggeredAt })));
   return fired;
 }
 

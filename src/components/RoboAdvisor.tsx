@@ -162,6 +162,8 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   }, [open, phase, closeModal]);
 
   async function handleSubmit() {
+    // Enter in either input bypasses the disabled button; one build at a time.
+    if (building) return;
     const value = Number(amount.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(value) || value <= 0) {
       setError('Enter an investment amount greater than $0.');

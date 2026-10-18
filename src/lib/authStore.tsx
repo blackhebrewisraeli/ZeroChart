@@ -18,6 +18,7 @@ import {
   resetHydration,
 } from '@/lib/hydrationStore';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { resetAdManager } from '@/lib/adManager';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 
 interface AuthStore {
@@ -74,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     activeUserIdRef.current = userId;
 
     if (userId === null) {
+      resetAdManager();
       switchScope(null);
       resetHydration();
       return;
@@ -82,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const hydration = getHydrationState();
     if (hydration.userId === userId && hydration.status !== 'idle') return;
 
+    resetAdManager();
     switchScope(userId);
     beginHydration(userId);
 

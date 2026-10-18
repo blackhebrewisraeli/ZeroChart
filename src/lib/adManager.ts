@@ -52,7 +52,7 @@ export function useAdOpen(): boolean {
   );
 }
 
-/** Test helper: back to a fresh session. */
+/** Back to a fresh session: a new signed-in identity never inherits ad state. */
 export function resetAdManager(): void {
   actionsSinceAd = 0;
   lastAdAt = Number.NEGATIVE_INFINITY;

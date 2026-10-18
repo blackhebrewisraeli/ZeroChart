@@ -27,6 +27,13 @@ export interface PriceAlert {
   scope: AlertScope;
 }
 
+/** A fired alert, kept for the session so the Lab signal feed can show it. */
+export interface TriggeredAlert {
+  alert: PriceAlert;
+  price: number;
+  triggeredAt: number;
+}
+
 export interface NewPriceAlert {
   ticker: string;
   targetPrice: number;
@@ -47,6 +54,8 @@ export interface AlertsState {
   sync: AlertsSyncState;
   /** Cloud alert ids already fired this session — suppresses refires. */
   firedCloudIds: ReadonlySet<string>;
+  /** Alerts fired this session, oldest first. */
+  triggered: TriggeredAlert[];
 }
 
 function guestState(): AlertsState {
@@ -54,6 +63,7 @@ function guestState(): AlertsState {
     alerts: [],
     sync: { syncedUserId: null, status: 'ready' },
     firedCloudIds: new Set<string>(),
+    triggered: [],
   };
 }
 
@@ -108,6 +118,7 @@ export function beginCloudSync(userId: string): void {
     alerts: sameUser ? state.alerts : [],
     sync: { syncedUserId: userId, status: 'loading' },
     firedCloudIds: sameUser ? state.firedCloudIds : new Set<string>(),
+    triggered: sameUser ? state.triggered : [],
   });
 }
 
@@ -130,6 +141,7 @@ export function completeCloudSync(userId: string, alerts: PriceAlert[]): void {
     alerts: [...fetched, ...createdMeanwhile],
     sync: { syncedUserId: userId, status: 'ready' },
     firedCloudIds: fired,
+    triggered: state.triggered,
   });
 }
 
@@ -191,6 +203,12 @@ export function takeAlert(id: string): PriceAlert | null {
     firedCloudIds,
   });
   return alert;
+}
+
+/** Records alerts a pass just fired (see `runAlertPass`). */
+export function recordTriggered(fired: TriggeredAlert[]): void {
+  if (fired.length === 0) return;
+  setState({ ...state, triggered: [...state.triggered, ...fired] });
 }
 
 /** Removes an alert without claiming it (user deletes). */

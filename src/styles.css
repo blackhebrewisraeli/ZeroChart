@@ -2131,7 +2131,8 @@ body {
   -webkit-backdrop-filter: blur(12px);
   overflow: hidden;
 }
-.suggestion-buy {
+.suggestion-buy,
+.suggestion-alert-up {
   border-color: color-mix(in oklch, var(--signal-green) 32%, transparent);
   box-shadow:
     0 0 30px color-mix(in oklch, var(--signal-green) 14%, transparent),
@@ -2143,6 +2144,12 @@ body {
     0 0 30px color-mix(in oklch, var(--signal-red) 14%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
+.suggestion-alert-down {
+  border-color: color-mix(in oklch, var(--brand-blue) 32%, transparent);
+  box-shadow:
+    0 0 30px color-mix(in oklch, var(--brand-blue) 14%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
 .suggestion-icon {
   display: flex;
   align-items: center;
@@ -2152,7 +2159,8 @@ body {
   flex-shrink: 0;
   border-radius: 12px;
 }
-.suggestion-buy .suggestion-icon {
+.suggestion-buy .suggestion-icon,
+.suggestion-alert-up .suggestion-icon {
   color: var(--signal-green);
   background: color-mix(in oklch, var(--signal-green) 12%, transparent);
   border: 1px solid color-mix(in oklch, var(--signal-green) 28%, transparent);
@@ -2161,6 +2169,11 @@ body {
   color: var(--signal-red);
   background: color-mix(in oklch, var(--signal-red) 12%, transparent);
   border: 1px solid color-mix(in oklch, var(--signal-red) 28%, transparent);
+}
+.suggestion-alert-down .suggestion-icon {
+  color: var(--brand-blue);
+  background: color-mix(in oklch, var(--brand-blue) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 28%, transparent);
 }
 .suggestion-body {
   flex: 1;
@@ -2184,11 +2197,33 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.suggestion-buy .suggestion-type {
+.suggestion-buy .suggestion-type,
+.suggestion-alert-up .suggestion-type {
   color: var(--signal-green);
 }
 .suggestion-sell .suggestion-type {
   color: var(--signal-red);
+}
+.suggestion-alert-down .suggestion-type {
+  color: var(--brand-blue);
+}
+.suggestion-source {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font:
+    600 9.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.suggestion-time {
+  margin-left: auto;
+  font:
+    500 11px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
 }
 .suggestion-reason {
   margin: 4px 0 0;

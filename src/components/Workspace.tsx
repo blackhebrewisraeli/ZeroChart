@@ -33,6 +33,7 @@ import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
 import { TacticalSignals } from '@/components/TacticalSignals';
+import { TradingViewWidget } from '@/components/TradingViewWidget';
 import {
   calculateSignalScore,
   fetchAssets,
@@ -55,7 +56,6 @@ import { useAuth } from '@/lib/authStore';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
-import { AdvancedRealTimeChart } from 'react-ts-tradingview-widgets';
 
 function scoreToneOf(score: number) {
   return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
@@ -121,12 +121,7 @@ function Hero({ asset }: { asset: Asset }) {
         </div>
       </div>
       <div className="hero-chart">
-        <AdvancedRealTimeChart
-          key={asset.ticker}
-          symbol={formatTradingViewSymbol(asset.ticker)}
-          theme="dark"
-          autosize={true}
-        />
+        <TradingViewWidget symbol={formatTradingViewSymbol(asset.ticker)} />
       </div>
     </section>
   );

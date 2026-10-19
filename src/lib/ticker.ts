@@ -79,15 +79,6 @@ export function toBinanceSymbol(ticker: string): string | null {
   return base === null ? null : `${base}USDT`;
 }
 
-/** TradingView widget symbol for any ticker kind. */
-export function toTradingViewSymbol(ticker: string): string {
-  const kind = classifyTicker(ticker);
-  const symbol = normalize(ticker);
-  if (kind === 'forex') return `FX:${symbol.slice(0, -FOREX_SUFFIX.length)}`;
-  if (kind === 'crypto') return `CRYPTO:${cryptoBase(ticker) ?? symbol}USD`;
-  return ticker.trim();
-}
-
 /** Whether a ticker represents a crypto asset that Binance can stream/chart. */
 export function isBinanceCrypto(ticker: string): boolean {
   return classifyTicker(ticker) === 'crypto';

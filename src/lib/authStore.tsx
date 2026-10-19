@@ -35,8 +35,12 @@ const AuthContext = createContext<AuthStore | null>(null);
 const DEV_AUTH_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
 /**
- * Local-only user for browser verification. This branch is statically disabled
- * in production builds and never exposes a real Supabase session.
+ * Dev-only stub user for headless browser verification (Playwright / CDP):
+ * open `http://localhost:<port>/?devAuth=1` (or `?devAuth=pro`) to render the
+ * signed-in shell without a Supabase session or credentials. Cloud reads and
+ * writes still go through RLS with the anon key, so nothing real is reachable.
+ * `import.meta.env.DEV` is statically `false` in `vite build`, so this is
+ * stripped from production; the vitest run and non-localhost hosts are excluded.
  */
 // eslint-disable-next-line react-refresh/only-export-components
 export function readDevAuthUser(): User | null {
@@ -132,12 +136,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, switchScope, replacePortfolioState]);
 
   const signOut = useCallback(async () => {
+    const devAuthActive = readDevAuthUser() !== null;
     // Clear the signed-in user's in-memory portfolio and re-scope to guest
     // IMMEDIATELY — before the network sign-out resolves — so a subsequent
     // account can never observe the previous user's positions (F-4.1a).
     activeUserIdRef.current = null;
+    setUser(null);
+    setSandboxPro(false);
     switchScope(null);
     resetHydration();
+    if (devAuthActive) {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('devAuth');
+      window.history.replaceState(window.history.state, '', nextUrl);
+      return;
+    }
     await supabase.auth.signOut();
   }, [switchScope]);
 

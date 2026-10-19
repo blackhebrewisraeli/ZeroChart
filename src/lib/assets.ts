@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { classifyTicker, toTradingViewSymbol } from '@/lib/ticker';
+import { classifyTicker } from '@/lib/ticker';
+import { toTradingViewSymbol } from '@/lib/tradingViewSymbol';
 
 export type Signal = 'Green' | 'Yellow' | 'Red';
 export interface AssetStatus {
@@ -84,7 +85,7 @@ export function formatRsi(value: number | null) {
   return value === null || !Number.isFinite(value) ? '—' : value.toFixed(1);
 }
 
-/** TradingView symbol — delegated to the canonical classifier (F-3.2d). */
+/** TradingView symbol — delegated to the canonical mapper (F-3.2d). */
 export function formatTradingViewSymbol(ticker: string) {
   return toTradingViewSymbol(ticker);
 }

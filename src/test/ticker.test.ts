@@ -5,8 +5,8 @@ import {
   isBinanceCrypto,
   toBinanceSymbol,
   toDisplayTicker,
-  toTradingViewSymbol,
 } from '@/lib/ticker';
+import { toTradingViewSymbol } from '@/lib/tradingViewSymbol';
 import { formatTradingViewSymbol, getAssetClass, getBrokerRoute } from '@/lib/assets';
 
 describe('classifyTicker (M1-T4, F-3.2d)', () => {
@@ -42,10 +42,10 @@ describe('classifyTicker (M1-T4, F-3.2d)', () => {
   it('derives display + TradingView symbols from one classification', () => {
     expect(toDisplayTicker('BTC-USDT')).toBe('BTC');
     expect(toDisplayTicker('aapl')).toBe('AAPL');
-    expect(toTradingViewSymbol('BTC')).toBe('CRYPTO:BTCUSD');
-    expect(toTradingViewSymbol('BTC-USD')).toBe('CRYPTO:BTCUSD');
+    expect(toTradingViewSymbol('BTC')).toBe('BINANCE:BTCUSDT');
+    expect(toTradingViewSymbol('BTC-USD')).toBe('BINANCE:BTCUSDT');
     expect(toTradingViewSymbol('EURUSD=X')).toBe('FX:EURUSD');
-    expect(toTradingViewSymbol('AAPL')).toBe('AAPL');
+    expect(toTradingViewSymbol('AAPL')).toBe('NASDAQ:AAPL');
   });
 
   it('keeps every consumer consistent for bare crypto tickers', () => {
@@ -53,7 +53,7 @@ describe('classifyTicker (M1-T4, F-3.2d)', () => {
       expect(isBinanceCrypto(ticker)).toBe(true);
       expect(getAssetClass(ticker)).toBe('Crypto');
       expect(getBrokerRoute(ticker).label).toBe('Trade on Binance');
-      expect(formatTradingViewSymbol(ticker)).toBe('CRYPTO:BTCUSD');
+      expect(formatTradingViewSymbol(ticker)).toBe('BINANCE:BTCUSDT');
     }
     expect(getAssetClass('AAPL')).toBe('Stocks');
     expect(getBrokerRoute('AAPL').label).toBe('Trade on eToro');

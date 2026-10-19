@@ -1,0 +1,79 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { AssetDetailsModal } from '@/components/AssetDetailsModal';
+import type { Asset } from '@/lib/assets';
+
+vi.mock('@/lib/authStore', () => ({ useAuth: () => ({ isPro: true }) }));
+
+// Keep the test hermetic: no canvas chart, no Binance network, no worker.
+vi.mock('@/components/LightweightChart', () => ({
+  CandlestickChart: () => <div data-testid="quant-chart" />,
+}));
+
+vi.mock('@/lib/binance', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/binance')>()),
+  fetchHistoricalCandles: vi.fn(async () => [
+    { timestamp: 1_700_000_000_000, open: 99, high: 102, low: 98, close: 100 },
+  ]),
+}));
+
+vi.mock('@/lib/roboAdvisor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/roboAdvisor')>();
+  return { ...actual, scoreAsset: async (asset: Asset) => actual.scoreAssetStatic(asset) };
+});
+
+function makeAsset(ticker: string): Asset {
+  return {
+    ticker,
+    name: ticker,
+    current_price: 100,
+    stable_signal: null,
+    radar_signal: null,
+    stable_explanation: null,
+    radar_explanation: null,
+    risk_pct: 0.03,
+    reward_pct: 0.05,
+    volume_spike: null,
+    rsi_14: 55,
+    sma_50: null,
+    sma_200: null,
+    change_24h: 1.2,
+    updated_at: null,
+  };
+}
+
+describe('AssetDetailsModal chart mode', () => {
+  it('switches between ZeroChart Quant and TradingView Pro, keeping the quant breakdown', async () => {
+    render(<AssetDetailsModal asset={makeAsset('BTC')} onClose={() => {}} />);
+
+    const quantTab = screen.getByRole('tab', { name: 'ZeroChart Quant' });
+    const tvTab = screen.getByRole('tab', { name: 'TradingView Pro' });
+    expect(quantTab).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByTestId('quant-chart')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Technical indicators' })).toBeInTheDocument();
+
+    fireEvent.click(tvTab);
+    expect(tvTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByTestId('quant-chart')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Technical indicators' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('tradingview-placeholder')).toHaveTextContent('BINANCE:BTCUSDT');
+    expect(screen.getByText('Quant Signal Breakdown')).toBeInTheDocument();
+    expect(await screen.findByText(/ATR position size/)).toBeInTheDocument();
+    // The placeholder never loads TradingView's script under test.
+    expect(document.querySelector('script[src*="tradingview"]')).toBeNull();
+
+    fireEvent.click(quantTab);
+    expect(screen.getByTestId('quant-chart')).toBeInTheDocument();
+    expect(screen.queryByTestId('tradingview-placeholder')).not.toBeInTheDocument();
+  });
+
+  it('opens equities on TradingView Pro, since quant candles are crypto-only', () => {
+    render(<AssetDetailsModal asset={makeAsset('AAPL')} onClose={() => {}} />);
+
+    expect(screen.getByRole('tab', { name: 'TradingView Pro' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByTestId('tradingview-placeholder')).toHaveTextContent('NASDAQ:AAPL');
+  });
+});

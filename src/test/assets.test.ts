@@ -86,9 +86,9 @@ describe('asset data', () => {
   });
   it('maps tickers to TradingView symbols', () => {
     expect(formatTradingViewSymbol('EURUSD=X')).toBe('FX:EURUSD');
-    expect(formatTradingViewSymbol('BTC-USD')).toBe('CRYPTO:BTCUSD');
-    expect(formatTradingViewSymbol('AAPL')).toBe('AAPL');
-    expect(formatTradingViewSymbol('MSFT')).toBe('MSFT');
+    expect(formatTradingViewSymbol('BTC-USD')).toBe('BINANCE:BTCUSDT');
+    expect(formatTradingViewSymbol('AAPL')).toBe('NASDAQ:AAPL');
+    expect(formatTradingViewSymbol('MSFT')).toBe('NASDAQ:MSFT');
   });
   it('scores assets from reward-to-risk ratio and signal bonuses', () => {
     const base: Asset = {

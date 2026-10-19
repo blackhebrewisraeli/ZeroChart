@@ -24,15 +24,30 @@ function FeedTime({ at }: { at: number | null }) {
 /**
  * Tactical feed (M2-T2/T3): Multi-Factor BUY/SELL ideas against the Paper
  * Trading holdings, merged newest-first with price alerts fired this session.
- * Fills book into Paper Trading as tactical trades, never into Core.
+ * Fills book into Paper Trading as tactical trades, never into Core. With
+ * `onSelect`, clicking a card (its Trade button included, so keyboard users get
+ * it too) also picks that ticker, e.g. for the terminal chart.
  */
-export function TacticalSignals({ assets }: { assets: Asset[] }) {
+export function TacticalSignals({
+  assets,
+  onSelect,
+  selectedTicker,
+}: {
+  assets: Asset[];
+  onSelect?: (ticker: string) => void;
+  selectedTicker?: string | undefined;
+}) {
   const { portfolios } = usePortfolio();
   const { triggered } = useAlerts();
   const ledger = portfolios.paper_trading;
   const signals = generateTacticalSignals(ledger.positions, assets, ledger.cashBalance);
   const feed = buildSignalFeed(signals, triggered);
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker, asset]));
+  const selectable = (ticker: string) =>
+    onSelect && {
+      onClick: () => onSelect(ticker),
+      'data-selected': ticker === selectedTicker || undefined,
+    };
 
   return (
     <section className="portfolio-section" aria-label="Tactical signals">
@@ -54,6 +69,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
                     'suggestion-card',
                     isUp ? 'suggestion-alert-up' : 'suggestion-alert-down',
                   )}
+                  {...selectable(alert.ticker)}
                 >
                   <span className="suggestion-icon">
                     <BellRing size={18} />
@@ -83,6 +99,7 @@ export function TacticalSignals({ assets }: { assets: Asset[] }) {
               <div
                 key={`${signal.type}-${signal.ticker}`}
                 className={cn('suggestion-card', isSell ? 'suggestion-sell' : 'suggestion-buy')}
+                {...selectable(signal.ticker)}
               >
                 <span className="suggestion-icon">
                   {isSell ? <TrendingDown size={18} /> : <TrendingUp size={18} />}

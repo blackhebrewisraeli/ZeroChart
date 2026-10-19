@@ -321,7 +321,7 @@ function Terminal() {
                 value: 'paper',
                 label: (
                   <>
-                    <Activity size={14} /> Trade <span className="segment-tag">Paper</span>
+                    <Activity size={14} /> Paper <span className="segment-tag">Desk</span>
                   </>
                 ),
               },

@@ -14,12 +14,18 @@ import { cn } from '@/lib/utils';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
 
+/** Appends fetched rows the realtime feed hasn't already delivered. */
+function appendNew(list: Signal[], rows: Signal[]): Signal[] {
+  const seen = new Set(list.map((s) => s.id));
+  return [...list, ...rows.filter((row) => !seen.has(row.id))];
+}
+
 /**
  * Action Center: TradingView signals (via the tv-webhook function) as one
  * giant card with Execute / Dismiss. Execute books a tactical fill in the
  * `paper_trading` ledger at the live price. No charts, no math for the user.
  */
-export function ActionCenter({ assets }: { assets: Asset[] }) {
+export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const { scopeUserId: userId, getPortfolio, executeBuy, executeSell } = usePortfolio();
   const [pending, setPending] = useState<Signal[]>([]);
   const [busy, setBusy] = useState(false);
@@ -36,10 +42,7 @@ export function ActionCenter({ assets }: { assets: Asset[] }) {
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         if (!live || !data) return;
-        setPending((list) => [
-          ...list,
-          ...data.filter((row) => !list.some((s) => s.id === row.id)),
-        ]);
+        setPending((list) => appendNew(list, data));
       });
     const channel = supabase
       .channel(`trading-signals:${userId}`)
@@ -87,7 +90,7 @@ export function ActionCenter({ assets }: { assets: Asset[] }) {
       (a) => a.ticker.toUpperCase() === ticker || toBinanceSymbol(a.ticker) === ticker,
     );
     const price = asset?.current_price;
-    if (!asset || !price || !(price > 0)) {
+    if (!asset || !price || price <= 0) {
       toast.error(`No live ${signal.ticker} price to fill at yet`);
       return;
     }

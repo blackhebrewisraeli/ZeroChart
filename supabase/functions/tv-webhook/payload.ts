@@ -17,7 +17,12 @@ const TICKER = /^[A-Z0-9.=-]{1,20}$/;
 /** Pine's str.tostring() sends numbers as strings, so accept both. */
 function num(value: unknown): number {
   if (typeof value === 'number') return value;
-  return typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+  return typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN;
+}
+
+/** Non-strings become '' so objects can't sneak through as "[object Object]". */
+function upper(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
 export function parseSignal(body: unknown): ParsedSignal {
@@ -30,14 +35,9 @@ export function parseSignal(body: unknown): ParsedSignal {
     return { ok: false, error: 'secret_token is required' };
   }
   // {{ticker}} is bare ("BTCUSDT"); "{{exchange}}:{{ticker}}" is accepted too.
-  const ticker = String(fields['ticker'] ?? '')
-    .trim()
-    .toUpperCase()
-    .replace(/^[A-Z0-9_]+:/, '');
+  const ticker = upper(fields['ticker']).replace(/^[A-Z0-9_]+:/, '');
   if (!TICKER.test(ticker)) return { ok: false, error: 'ticker is invalid' };
-  const action = String(fields['action'] ?? '')
-    .trim()
-    .toUpperCase();
+  const action = upper(fields['action']);
   if (action !== 'BUY' && action !== 'SELL') {
     return { ok: false, error: 'action must be BUY or SELL' };
   }

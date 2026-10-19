@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import {
+  Activity,
   Briefcase,
   CheckCircle2,
   ChevronDown,
@@ -592,6 +593,9 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       ? 'pnl-up'
       : 'pnl-down'
     : undefined;
+  let dayIcon = <Activity size={18} />;
+  if (dayTone === 'pnl-up') dayIcon = <TrendingUp size={18} />;
+  else if (dayTone === 'pnl-down') dayIcon = <TrendingDown size={18} />;
 
   async function handleShare() {
     if (!user) {
@@ -768,15 +772,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           label="Current Value"
           value={formatPrice(valuation.marketValue)}
           sub={hasDayChange ? `24h ${formatPnl(dayChange)}` : 'Live prices'}
-          icon={
-            dayTone ? (
-              dayTone === 'pnl-up' ? (
-                <TrendingUp size={18} />
-              ) : (
-                <TrendingDown size={18} />
-              )
-            ) : undefined
-          }
+          icon={dayIcon}
           accent={dayTone === 'pnl-up' ? 'green' : dayTone === 'pnl-down' ? 'red' : 'blue'}
           tone={dayTone}
         />

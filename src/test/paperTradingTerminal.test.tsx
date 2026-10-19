@@ -112,6 +112,14 @@ describe('Paper Desk', () => {
     expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('ETH-USD');
   });
 
+  it('defaults the chart to a fired alert when it is the top feed card', () => {
+    render(tree(1900));
+    fireEthAlert(1900);
+    const feed = within(screen.getByRole('region', { name: 'Tactical signals' }));
+    expect(feed.getAllByText(/-USD$/)[0]).toHaveTextContent('ETH-USD');
+    expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('ETH-USD');
+  });
+
   it('keeps the default chart on a listed asset when the top alert is for an unlisted ticker', () => {
     render(
       <PortfolioProvider>

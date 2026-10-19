@@ -95,6 +95,42 @@ describe('Paper Desk', () => {
   });
   afterEach(cleanup);
 
+  it('defaults the chart to the top card of the Tactical Signals feed', () => {
+    // BTC wins the legacy signal score (volume spike, above SMA 50) but has no
+    // factor data; ETH is the feed's only Multi-Factor BUY.
+    const ranked = [
+      { ...asset('BTC-USD', 'Bitcoin', 60_000), volume_spike: 2, sma_50: 50_000 },
+      { ...asset('ETH-USD', 'Ethereum', 1900), rsi_14: 25, change_24h: 0.02, risk_pct: 0.004 },
+    ];
+    render(
+      <PortfolioProvider>
+        <PaperTradingTerminal assets={ranked} />
+      </PortfolioProvider>,
+    );
+    const feed = within(screen.getByRole('region', { name: 'Tactical signals' }));
+    expect(feed.getAllByText(/-USD$/)[0]).toHaveTextContent('ETH-USD');
+    expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('ETH-USD');
+  });
+
+  it('defaults the chart to a fired alert when it is the top feed card', () => {
+    render(tree(1900));
+    fireEthAlert(1900);
+    const feed = within(screen.getByRole('region', { name: 'Tactical signals' }));
+    expect(feed.getAllByText(/-USD$/)[0]).toHaveTextContent('ETH-USD');
+    expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('ETH-USD');
+  });
+
+  it('keeps the default chart on a listed asset when the top alert is for an unlisted ticker', () => {
+    render(
+      <PortfolioProvider>
+        <PaperTradingTerminal assets={[asset('BTC-USD', 'Bitcoin', 60_000)]} />
+      </PortfolioProvider>,
+    );
+    fireEthAlert(1900);
+    expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('BTC-USD');
+    expect(screen.getByRole('region', { name: 'Quick order' })).toBeInTheDocument();
+  });
+
   it('clicking a tactical signal charts its ticker and opens a paper-bound ticket', () => {
     render(tree(1900));
     const symbol = screen.getByRole('combobox', { name: 'Chart symbol' });

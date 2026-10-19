@@ -6309,6 +6309,35 @@ body {
   width: 100%;
 }
 
+/* ===== Chart mode (ZeroChart Quant / TradingView Pro) ===== */
+.chart-mode-bar {
+  margin: 14px 24px 0;
+}
+.asset-details-chart.is-tradingview {
+  height: 480px;
+  padding: 0;
+  overflow: hidden;
+}
+.tv-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.tv-widget .tradingview-widget-container {
+  flex: 1;
+  min-height: 0;
+}
+.tv-widget .tradingview-widget-container__widget {
+  height: 100%;
+}
+.tv-widget-copyright {
+  padding: 4px 12px;
+  font-size: 11px;
+  text-align: right;
+  color: var(--muted-foreground);
+}
+
 /* ===== Indicator toggles ===== */
 .indicator-toggles {
   display: flex;

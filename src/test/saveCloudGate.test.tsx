@@ -116,7 +116,7 @@ describe('Save to Cloud hydration gate (M1-T1, F-4.1b)', () => {
         expect.objectContaining({
           version: 3,
           portfolios: expect.objectContaining({
-            paper_trading: expect.objectContaining({ cashBalance: 10_000 }),
+            paper_trading: expect.objectContaining({ cashBalance: 100_000 }),
           }),
         }),
       ),

@@ -1714,7 +1714,7 @@ body {
   outline: 2px solid var(--brand-blue);
   outline-offset: 2px;
 }
-/* Workspace qualifier in the header nav: Wealth CORE / Trade PAPER. */
+/* Workspace qualifier in the header nav: Wealth CORE / Paper DESK. */
 .segment-tag {
   padding: 1px 5px;
   border: 1px solid currentColor;
@@ -2602,7 +2602,7 @@ body {
 }
 .paper-pnl {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -2682,19 +2682,103 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-weight: 600;
   color: var(--foreground);
+}
+button.paper-ticker {
+  cursor: pointer;
+}
+button.paper-ticker:hover {
+  color: var(--brand-blue);
 }
 .paper-row-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.paper-positions td .ticket-trigger-compact,
 .paper-close {
   height: 28px;
   padding: 0 10px;
   font-size: 11px;
+}
+.paper-size {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: border-color 0.15s ease-out;
+}
+.paper-size:hover:not(:disabled) {
+  border-color: var(--brand-blue);
+}
+.paper-size:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.paper-ticker:focus-visible,
+.paper-size:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+.paper-account .portfolio-cash-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The shared chart (AssetChart) carries the asset modal's 24px gutters. */
+.paper-chart .chart-mode-bar,
+.paper-chart .indicator-toggles,
+.paper-chart .asset-details-chart,
+.paper-chart .asset-chart-source {
+  margin-inline: 0;
+}
+.paper-chart .chart-mode-bar {
+  margin-top: 0;
+}
+.paper-chart .asset-details-chart {
+  height: 330px;
+}
+.paper-chart .asset-details-chart.is-tradingview {
+  height: 460px;
+}
+.paper-symbol {
+  width: auto;
+  max-width: 160px;
+}
+.paper-order-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--secondary);
+}
+.paper-order-price {
+  font:
+    600 15px 'JetBrains Mono',
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.paper-order-body .ticket-trigger {
+  margin-left: auto;
+}
+.paper-side .suggestion-card[data-selected] {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: -2px;
+}
+.paper-side .suggestion-card {
+  cursor: pointer;
 }
 .paper-close {
   border: 1px solid color-mix(in oklch, var(--destructive) 45%, transparent);
@@ -2726,10 +2810,21 @@ body {
   .paper-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* 5 stats as 2 + 3: Paper Cash spans two of three columns. */
+  .paper-pnl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .paper-stat:first-child {
+    grid-column: span 2;
+  }
 }
-@media (max-width: 900px) {
+@media (max-width: 640px) {
+  /* 1 + 2 + 2. */
   .paper-pnl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .paper-chart .asset-details-chart.is-tradingview {
+    height: 380px;
   }
 }
 @media (max-width: 420px) {
@@ -4960,13 +5055,13 @@ body {
     monospace;
   color: var(--foreground);
 }
-.asset-details-footer {
-  padding: 14px 24px 22px;
+.asset-chart-source {
+  margin: 8px 24px 0;
   font-size: 11.5px;
   color: var(--muted-foreground);
 }
 .quant-breakdown {
-  margin: 16px 24px 0;
+  margin: 16px 24px 22px;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 16px;

@@ -1,40 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { UTCTimestamp } from 'lightweight-charts';
-import { ExternalLink, LineChart, LockKeyhole, X } from 'lucide-react';
+import { ExternalLink, LockKeyhole, X } from 'lucide-react';
 import { AssetIcon } from '@/components/AssetIcon';
 import { PricingModal } from '@/components/PricingModal';
-import { Segmented, type SegmentOption } from '@/components/Segmented';
-import { TradingViewWidget } from '@/components/TradingViewWidget';
-import {
-  CandlestickChart,
-  type CandlePoint,
-  type IndicatorToggles,
-} from '@/components/LightweightChart';
+import { AssetChart } from '@/components/AssetChart';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
-import { fetchHistoricalCandles, isBinanceCrypto, type Candle } from '@/lib/binance';
 import { REGIME_LABELS } from '@/lib/multiFactor';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
 import { scoreAsset, type ScoredAsset } from '@/lib/roboAdvisor';
 import { getBrokerUrl } from '@/lib/tradeRouter';
-import { toTradingViewSymbol } from '@/lib/tradingViewSymbol';
 import { useAuth } from '@/lib/authStore';
 import { cn } from '@/lib/utils';
 
 const CLOSE_MS = 260;
-
-const INDICATOR_OPTIONS = [
-  { key: 'sma50', label: 'SMA 50' },
-  { key: 'sma200', label: 'SMA 200' },
-  { key: 'rsi', label: 'RSI' },
-] as const;
-
-type ChartMode = 'quant' | 'tradingview';
-
-const CHART_MODES: SegmentOption<ChartMode>[] = [
-  { value: 'quant', label: 'ZeroChart Quant' },
-  { value: 'tradingview', label: 'TradingView Pro' },
-];
 
 /** Reference account the ATR position size is quoted against. */
 const REFERENCE_CAPITAL = 10_000;
@@ -54,26 +32,10 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
   const { isPro } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [indicators, setIndicators] = useState<IndicatorToggles>({
-    sma50: true,
-    sma200: false,
-    rsi: false,
-  });
-
-  function toggleIndicator(key: 'sma50' | 'sma200' | 'rsi') {
-    setIndicators((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
-
   const closingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
   const closeRef = useRef<HTMLButtonElement>(null);
-
-  const isCrypto = isBinanceCrypto(asset.ticker);
   const assetClass = getAssetClass(asset.ticker);
-  // Our own candles are crypto-only, so other assets open on TradingView.
-  const [chartMode, setChartMode] = useState<ChartMode>(isCrypto ? 'quant' : 'tradingview');
 
   const close = useCallback(() => {
     if (closingRef.current) return;
@@ -108,29 +70,6 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
     return () => window.removeEventListener('keydown', onKey);
   }, [close]);
 
-  useEffect(() => {
-    if (!isCrypto) {
-      setStatus('idle');
-      setCandles([]);
-      return;
-    }
-    let cancelled = false;
-    setStatus('loading');
-    fetchHistoricalCandles(asset.ticker)
-      .then((data) => {
-        if (cancelled) return;
-        setCandles(data);
-        setStatus('success');
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [asset.ticker, isCrypto]);
-
   const [quant, setQuant] = useState<ScoredAsset | null>(null);
 
   useEffect(() => {
@@ -150,18 +89,6 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
     quant && quant.price !== null && quant.atr !== null
       ? recommendPositionSize({ capital: REFERENCE_CAPITAL, price: quant.price, atr: quant.atr })
       : null;
-
-  const candleData = useMemo<CandlePoint[]>(
-    () =>
-      candles.map((candle) => ({
-        time: Math.floor(candle.timestamp / 1000) as UTCTimestamp,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-      })),
-    [candles],
-  );
 
   return (
     <>
@@ -208,56 +135,7 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
               )}
             </div>
 
-            <div className="chart-mode-bar">
-              <Segmented
-                value={chartMode}
-                options={CHART_MODES}
-                onChange={setChartMode}
-                ariaLabel="Chart mode"
-              />
-            </div>
-
-            {chartMode === 'quant' && isCrypto && status === 'success' && (
-              <div className="indicator-toggles" role="group" aria-label="Technical indicators">
-                {INDICATOR_OPTIONS.map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    className={cn('indicator-pill', indicators[option.key] && 'is-active')}
-                    aria-pressed={indicators[option.key]}
-                    onClick={() => toggleIndicator(option.key)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <section
-              className={cn('asset-details-chart', chartMode === 'tradingview' && 'is-tradingview')}
-              aria-label={`${asset.ticker} historical chart`}
-            >
-              {chartMode === 'tradingview' ? (
-                <TradingViewWidget symbol={toTradingViewSymbol(asset.ticker)} />
-              ) : !isCrypto ? (
-                <div className="asset-chart-fallback">
-                  <LineChart size={22} />
-                  <span>
-                    Quant charts are available for crypto assets. Switch to TradingView Pro for live
-                    charts.
-                  </span>
-                </div>
-              ) : status === 'loading' ? (
-                <div className="asset-chart-fallback">Loading historical data…</div>
-              ) : status === 'error' ? (
-                <div className="asset-chart-fallback">
-                  <LineChart size={22} />
-                  <span>Couldn't load chart data. Please try again.</span>
-                </div>
-              ) : (
-                <CandlestickChart data={candleData} height={276} indicators={indicators} />
-              )}
-            </section>
+            <AssetChart ticker={asset.ticker} />
 
             <section className="quant-breakdown" aria-labelledby="quant-breakdown-title">
               <div className="quant-breakdown-head">
@@ -340,14 +218,6 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
                 )}
               </div>
             </section>
-
-            <footer className="asset-details-footer">
-              <span>
-                {chartMode === 'tradingview'
-                  ? 'Chart: TradingView live market data'
-                  : 'Data: Binance public REST API · Daily candles (30 days)'}
-              </span>
-            </footer>
           </div>
         </div>,
         document.body,

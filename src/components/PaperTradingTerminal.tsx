@@ -1,22 +1,45 @@
-import { useMemo } from 'react';
-import { Activity } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Activity, Download, Minus, Plus, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatPnl, formatPrice, formatSignedPercent, pnlTone, type Asset } from '@/lib/assets';
-import { usePortfolio } from '@/lib/portfolioStore';
+import {
+  calculateSignalScore,
+  formatPnl,
+  formatPrice,
+  formatSignedPercent,
+  pnlTone,
+  type Asset,
+} from '@/lib/assets';
+import { PAPER_STARTING_CASH, usePortfolio } from '@/lib/portfolioStore';
 import {
   computePortfolioValuation,
   positionCostBasis,
   type Position,
 } from '@/lib/portfolioAccounting';
-import { realizedPnlOn } from '@/lib/tradeLedger';
+import { downloadCsv, executionDrag, realizedPnlOn, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
 import { formatShares } from '@/lib/risk';
+import { AssetChart } from '@/components/AssetChart';
 import { AssetIcon } from '@/components/AssetIcon';
 import { TacticalSignals } from '@/components/TacticalSignals';
 import { TradeLedger } from '@/components/PortfolioDashboard';
 import { FEE_RATE, TradeTicket } from '@/components/TradeTicket';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { cn } from '@/lib/utils';
+
+/** Share of the open position one +/− click adds or trims. */
+const SIZE_STEP = 0.25;
+const LEDGER_FILENAME = 'zerochart-ledger-paper.csv';
 
 function Stat({
   label,
@@ -43,10 +66,14 @@ function Stat({
 function PositionRow({
   position,
   asset,
+  onSelect,
+  onResize,
   onClose,
 }: {
   position: Position;
   asset: Asset | undefined;
+  onSelect: (ticker: string) => void;
+  onResize: (position: Position, price: number, side: 'buy' | 'sell') => void;
   onClose: (position: Position, price: number) => void;
 }) {
   const price = asset?.current_price;
@@ -54,14 +81,20 @@ function PositionRow({
   const priceFlash = usePriceFlash(hasPrice ? price : null);
   const costBasis = positionCostBasis(position);
   const pnl = hasPrice ? price * position.shares - costBasis : null;
+  const noPrice = hasPrice ? undefined : 'No live price to fill at yet';
 
   return (
     <tr>
       <td>
-        <span className="paper-ticker">
+        <button
+          type="button"
+          className="paper-ticker"
+          aria-label={`Chart ${position.ticker}`}
+          onClick={() => onSelect(position.ticker)}
+        >
           <AssetIcon symbol={position.ticker} name={asset?.name ?? null} size="sm" />
           {position.ticker}
-        </span>
+        </button>
       </td>
       <td>{formatShares(position.shares)}</td>
       <td>{formatPrice(position.buyPrice)}</td>
@@ -74,13 +107,32 @@ function PositionRow({
       </td>
       <td>
         <span className="paper-row-actions">
-          {asset && <TradeTicket asset={asset} portfolioType="paper_trading" intent="tactical" />}
+          <button
+            type="button"
+            className="paper-size"
+            aria-label={`Trim ${position.ticker} by 25%`}
+            title={noPrice ?? 'Sell 25% of this position'}
+            disabled={!hasPrice}
+            onClick={() => hasPrice && onResize(position, price, 'sell')}
+          >
+            <Minus size={13} />
+          </button>
+          <button
+            type="button"
+            className="paper-size"
+            aria-label={`Add 25% to ${position.ticker}`}
+            title={noPrice ?? 'Buy 25% more of this position'}
+            disabled={!hasPrice}
+            onClick={() => hasPrice && onResize(position, price, 'buy')}
+          >
+            <Plus size={13} />
+          </button>
           <button
             type="button"
             className="paper-close"
             aria-label={`Close ${position.ticker} position`}
             disabled={!hasPrice}
-            title={hasPrice ? undefined : 'No live price to close at yet'}
+            title={noPrice}
             onClick={() => hasPrice && onClose(position, price)}
           >
             Close
@@ -91,16 +143,86 @@ function PositionRow({
   );
 }
 
+/** Top-up input and a confirmed reset, scoped to the Paper Trading ledger. */
+function PaperAccountControls() {
+  const { portfolios, depositPortfolioCash, resetPaperAccount } = usePortfolio();
+  const [amount, setAmount] = useState('10000');
+  const paper = portfolios.paper_trading;
+
+  function topUp() {
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value <= 0) {
+      toast.error('Enter an amount greater than $0.');
+      return;
+    }
+    depositPortfolioCash('paper_trading', value, 'Paper top-up');
+    toast.success(`Added ${formatPrice(value)} paper cash`);
+  }
+
+  function reset() {
+    resetPaperAccount();
+    toast.success('Paper account reset', {
+      description: `${formatPrice(PAPER_STARTING_CASH)} paper cash, no positions, empty ledger.`,
+    });
+  }
+
+  return (
+    <div className="portfolio-cash-controls paper-account" aria-label="Paper account">
+      <input
+        className="portfolio-cash-input"
+        type="number"
+        min="0"
+        step="any"
+        inputMode="decimal"
+        aria-label="Top-up amount"
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+      />
+      <button type="button" className="portfolio-cash-btn" onClick={topUp}>
+        <Plus size={13} /> Top Up
+      </button>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button type="button" className="portfolio-cash-btn">
+            <RotateCcw size={13} /> Reset
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset paper account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Clears {paper.positions.length} open{' '}
+              {paper.positions.length === 1 ? 'position' : 'positions'} and{' '}
+              {paper.transactions.length} ledger{' '}
+              {paper.transactions.length === 1 ? 'entry' : 'entries'}, and restores{' '}
+              {formatPrice(PAPER_STARTING_CASH)} of paper cash. Your Core portfolios are not
+              affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={reset}>
+              Reset to {formatPrice(PAPER_STARTING_CASH)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 /**
- * Active trader workspace (M2-T3): signals, open positions and fills for the
+ * Paper Desk (M2-T3): chart, positions, fills and the tactical feed for the
  * `paper_trading` ledger only. Every fill here is a simulated tactical trade;
  * the Core Simulation and Live Tracking ledgers never see it.
  */
 export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }) {
-  const { portfolios, executeSell } = usePortfolio();
+  const { portfolios, executeBuy, executeSell } = usePortfolio();
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker.toUpperCase(), asset]));
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<'positions' | 'ledger'>('positions');
 
   const paper = portfolios.paper_trading;
   const valuation = computePortfolioValuation(
@@ -108,23 +230,51 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
     Object.fromEntries([...assetByTicker].map(([ticker, asset]) => [ticker, asset.current_price])),
   );
   const now = new Date();
-  const todayRealized = realizedPnlOn(paper.transactions, now);
-  const fillsToday = paper.transactions.filter(
-    (transaction) =>
-      (transaction.type === 'buy' || transaction.type === 'sell') &&
-      new Date(transaction.timestamp).toDateString() === now.toDateString(),
+  const fills = paper.transactions.filter(
+    (transaction) => transaction.type === 'buy' || transaction.type === 'sell',
+  );
+  const fillsToday = fills.filter(
+    (transaction) => new Date(transaction.timestamp).toDateString() === now.toDateString(),
   ).length;
+  const closes = fills.filter((transaction) => transaction.type === 'sell');
+  const wins = closes.filter((transaction) => (transaction.realizedPnl ?? 0) > 0).length;
+  const todayRealized = realizedPnlOn(paper.transactions, now);
+  const drag = executionDrag(paper.transactions);
   const openCount = paper.positions.length;
 
-  function closePosition(position: Position, price: number) {
-    const result = executeSell('paper_trading', {
-      ticker: position.ticker,
-      shares: position.shares,
-      price,
-      fee: position.shares * price * FEE_RATE,
-      timestamp: new Date().toISOString(),
-      intent: 'tactical',
+  // The chart follows the last pick, else the first open position, else the top signal.
+  const topSignal = [...assets].sort(
+    (a, b) => calculateSignalScore(b) - calculateSignalScore(a),
+  )[0];
+  const ticker = selected ?? paper.positions[0]?.ticker ?? topSignal?.ticker;
+  const chartAsset = ticker ? assetByTicker.get(ticker.toUpperCase()) : undefined;
+
+  const order = (position: Position, shares: number, price: number) => ({
+    ticker: position.ticker,
+    shares,
+    price,
+    fee: shares * price * FEE_RATE,
+    timestamp: new Date().toISOString(),
+    intent: 'tactical' as const,
+  });
+
+  function resizePosition(position: Position, price: number, side: 'buy' | 'sell') {
+    const shares = position.shares * SIZE_STEP;
+    const result =
+      side === 'buy'
+        ? executeBuy('paper_trading', { ...order(position, shares, price), requireCash: true })
+        : executeSell('paper_trading', order(position, shares, price));
+    if (!result.ok) {
+      toast.error(result.error ?? 'Order rejected');
+      return;
+    }
+    toast.success(`${side === 'buy' ? 'Added to' : 'Trimmed'} ${position.ticker}`, {
+      description: `${formatShares(shares)} at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
     });
+  }
+
+  function closePosition(position: Position, price: number) {
+    const result = executeSell('paper_trading', order(position, position.shares, price));
     if (!result.ok) {
       toast.error(result.error ?? 'Close rejected');
       return;
@@ -141,94 +291,175 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
           <span className="paper-eyebrow">
             <span className="paper-eyebrow-dot" aria-hidden="true" /> Paper · Simulated fills
           </span>
-          <h2 className="portfolio-title">Paper Trading Terminal</h2>
+          <h2 className="portfolio-title">Paper Desk</h2>
           <p className="portfolio-subtitle">
             Act on tactical signals at the live price. Isolated from your Core portfolio.
           </p>
         </div>
+        <PaperAccountControls />
       </header>
 
-      <section className="paper-pnl" aria-label="Paper P&L">
+      <section className="paper-pnl" aria-label="Paper telemetry">
         <Stat
-          primary
-          label="Today's Realized P&L"
-          value={formatPnl(todayRealized)}
-          sub={`${fillsToday} ${fillsToday === 1 ? 'fill' : 'fills'} today · FIFO lots`}
-          tone={pnlTone(todayRealized)}
+          label="Paper Cash"
+          value={formatPrice(paper.cashBalance)}
+          sub={`Equity ${formatPrice(valuation.totalEquity)}`}
         />
         <Stat
           primary
           label="Open Unrealized P&L"
           value={formatPnl(valuation.unrealizedPnl)}
-          sub={`${formatSignedPercent(valuation.unrealizedPnlPct)} · net of fees`}
+          sub={`${formatSignedPercent(valuation.unrealizedPnlPct)} · ${openCount} open`}
           tone={pnlTone(valuation.unrealizedPnl)}
         />
-        <Stat label="Buying Power" value={formatPrice(paper.cashBalance)} sub="Paper cash" />
         <Stat
-          label="Equity"
-          value={formatPrice(valuation.totalEquity)}
-          sub={`${openCount} open ${openCount === 1 ? 'position' : 'positions'}`}
+          primary
+          label="Session Realized P&L"
+          value={formatPnl(todayRealized)}
+          sub={`${fillsToday} ${fillsToday === 1 ? 'fill' : 'fills'} today · FIFO lots`}
+          tone={pnlTone(todayRealized)}
+        />
+        <Stat
+          label="Execution Drag"
+          value={formatPrice(drag)}
+          sub={`Fees + slippage · ${fills.length} ${fills.length === 1 ? 'fill' : 'fills'}`}
+        />
+        <Stat
+          label="Win Rate"
+          value={closes.length > 0 ? `${Math.round((wins / closes.length) * 100)}%` : '—'}
+          sub={`${wins} of ${closes.length} ${closes.length === 1 ? 'close' : 'closes'}`}
         />
       </section>
 
       <div className="paper-grid">
         <div className="paper-main">
-          <section className="portfolio-section" aria-label="Open positions">
+          <section className="portfolio-section paper-chart" aria-label="Paper chart">
             <div className="portfolio-section-head">
-              <h3 className="portfolio-section-title">Open Positions</h3>
-              <span className="portfolio-count">
-                {openCount} OPEN · REALIZED {formatPnl(paper.realizedPnl)}
-              </span>
+              <h3 className="portfolio-section-title">Chart</h3>
+              <select
+                className="portfolio-cash-input paper-symbol"
+                aria-label="Chart symbol"
+                value={ticker ?? ''}
+                onChange={(event) => setSelected(event.target.value)}
+              >
+                {assets.map((asset) => (
+                  <option key={asset.ticker} value={asset.ticker}>
+                    {asset.ticker}
+                  </option>
+                ))}
+              </select>
             </div>
-            {openCount > 0 ? (
-              <div className="ledger-scroll">
-                <table className="ledger-table paper-positions">
-                  <thead>
-                    <tr>
-                      <th scope="col">Ticker</th>
-                      <th scope="col">Qty</th>
-                      <th scope="col">Avg Price</th>
-                      <th scope="col">Last</th>
-                      <th scope="col">Value</th>
-                      <th scope="col">Unrealized P&amp;L</th>
-                      <th scope="col">
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paper.positions.map((position) => (
-                      <PositionRow
-                        key={position.id}
-                        position={position}
-                        asset={assetByTicker.get(position.ticker.toUpperCase())}
-                        onClose={closePosition}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="holdings-empty">
-                <Activity size={26} />
-                <span className="holdings-empty-title">No open paper positions</span>
-                <span className="holdings-empty-sub">
-                  Act on a tactical signal, or trade the top signal from the Scanner. Fills book
-                  here against {formatPrice(paper.cashBalance)} of paper buying power.
-                </span>
-              </div>
-            )}
+            {ticker && <AssetChart key={ticker} ticker={ticker} quantHeight={300} />}
           </section>
 
-          <TradeLedger
-            transactions={paper.transactions}
-            filename="zerochart-ledger-paper.csv"
-            title="Recent Fills"
-            defaultOpen
-          />
+          <section
+            className="portfolio-section analytics-workspace"
+            aria-label="Positions and fills"
+          >
+            <div className="analytics-workspace-tabs">
+              <button
+                type="button"
+                className={cn('analytics-workspace-tab', tab === 'positions' && 'is-active')}
+                aria-pressed={tab === 'positions'}
+                onClick={() => setTab('positions')}
+              >
+                Open Positions ({openCount})
+              </button>
+              <button
+                type="button"
+                className={cn('analytics-workspace-tab', tab === 'ledger' && 'is-active')}
+                aria-pressed={tab === 'ledger'}
+                onClick={() => setTab('ledger')}
+              >
+                Trade Ledger ({paper.transactions.length})
+              </button>
+              <span className="portfolio-count analytics-entry-count">
+                REALIZED {formatPnl(paper.realizedPnl)}
+              </span>
+              <button
+                type="button"
+                className="portfolio-cash-btn ledger-export analytics-export"
+                disabled={paper.transactions.length === 0}
+                onClick={() => downloadCsv(LEDGER_FILENAME, tradeLedgerCsv(paper.transactions))}
+              >
+                <Download size={13} /> Export CSV
+              </button>
+            </div>
+            <div className="analytics-workspace-panel">
+              {tab === 'ledger' ? (
+                <TradeLedger
+                  embedded
+                  title="Paper Trade Ledger"
+                  transactions={paper.transactions}
+                  filename={LEDGER_FILENAME}
+                />
+              ) : openCount > 0 ? (
+                <div className="ledger-scroll" role="region" aria-label="Open positions">
+                  <table className="ledger-table paper-positions">
+                    <thead>
+                      <tr>
+                        <th scope="col">Ticker</th>
+                        <th scope="col">Qty</th>
+                        <th scope="col">Avg Price</th>
+                        <th scope="col">Last</th>
+                        <th scope="col">Value</th>
+                        <th scope="col">Unrealized P&amp;L</th>
+                        <th scope="col">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paper.positions.map((position) => (
+                        <PositionRow
+                          key={position.id}
+                          position={position}
+                          asset={assetByTicker.get(position.ticker.toUpperCase())}
+                          onSelect={setSelected}
+                          onResize={resizePosition}
+                          onClose={closePosition}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="holdings-empty">
+                  <Activity size={26} />
+                  <span className="holdings-empty-title">No open paper positions</span>
+                  <span className="holdings-empty-sub">
+                    Act on a tactical signal or place a quick order. Fills book here against{' '}
+                    {formatPrice(paper.cashBalance)} of paper cash.
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
+
         <div className="paper-side">
-          <TacticalSignals assets={assets} />
+          {chartAsset && (
+            <section className="portfolio-section paper-order" aria-label="Quick order">
+              <div className="portfolio-section-head">
+                <h3 className="portfolio-section-title">Quick Order</h3>
+                <span className="portfolio-count">Paper Trading ledger</span>
+              </div>
+              <div className="paper-order-body">
+                <span className="paper-ticker">
+                  <AssetIcon symbol={chartAsset.ticker} name={chartAsset.name} size="sm" />
+                  {chartAsset.ticker}
+                </span>
+                <span className="paper-order-price">{formatPrice(chartAsset.current_price)}</span>
+                <TradeTicket
+                  asset={chartAsset}
+                  portfolioType="paper_trading"
+                  intent="tactical"
+                  label={`Trade ${chartAsset.ticker}`}
+                />
+              </div>
+            </section>
+          )}
+          <TacticalSignals assets={assets} onSelect={setSelected} selectedTicker={ticker} />
         </div>
       </div>
     </section>

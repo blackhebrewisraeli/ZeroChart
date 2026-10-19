@@ -13,6 +13,14 @@ vi.mock('@/lib/db', () => ({
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
+// Keep the terminal chart hermetic: no canvas, no Binance network.
+vi.mock('@/components/LightweightChart', () => ({
+  CandlestickChart: () => <div data-testid="quant-chart" />,
+}));
+vi.mock('@/lib/binance', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/binance')>()),
+  fetchHistoricalCandles: vi.fn(async () => []),
+}));
 
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { PaperTradingTerminal } from '@/components/PaperTradingTerminal';
@@ -21,10 +29,10 @@ import { runAlertPass } from '@/lib/alertEngine';
 
 const NOW = Date.now();
 
-function eth(price: number): Asset {
+function asset(ticker: string, name: string, price: number): Asset {
   return {
-    ticker: 'ETH-USD',
-    name: 'Ethereum',
+    ticker,
+    name,
     current_price: price,
     stable_signal: null,
     radar_signal: null,
@@ -41,16 +49,21 @@ function eth(price: number): Asset {
   };
 }
 
+const assets = (ethPrice: number) => [
+  asset('BTC-USD', 'Bitcoin', 60_000),
+  asset('ETH-USD', 'Ethereum', ethPrice),
+];
+
 let store: ReturnType<typeof usePortfolio>;
 function Probe() {
   store = usePortfolio();
   return null;
 }
 
-function tree(price: number) {
+function tree(ethPrice: number) {
   return (
     <PortfolioProvider>
-      <PaperTradingTerminal assets={[eth(price)]} />
+      <PaperTradingTerminal assets={assets(ethPrice)} />
       <Probe />
     </PortfolioProvider>
   );
@@ -60,7 +73,21 @@ function stat(name: string) {
   return within(screen.getByRole('group', { name }));
 }
 
-describe('Paper Trading Terminal', () => {
+/** Fires an ETH-USD price alert so it lands in the Tactical Signals feed. */
+function fireEthAlert(price: number) {
+  addAlert({ ticker: 'ETH-USD', targetPrice: 2000, condition: 'below' }, 'session');
+  act(() => {
+    runAlertPass({
+      assets: assets(price),
+      livePrices: new Map<string, LivePrice>(),
+      streamConnected: true,
+      now: NOW,
+    });
+  });
+  return screen.getByText('Price Alert').closest('.suggestion-card') as HTMLElement;
+}
+
+describe('Paper Desk', () => {
   beforeEach(() => {
     window.localStorage.clear();
     __resetAlertsStoreForTests();
@@ -68,70 +95,120 @@ describe('Paper Trading Terminal', () => {
   });
   afterEach(cleanup);
 
-  it('books a signal trade into paper_trading only, then closes it in one click', () => {
+  it('clicking a tactical signal charts its ticker and opens a paper-bound ticket', () => {
+    render(tree(1900));
+    const symbol = screen.getByRole('combobox', { name: 'Chart symbol' });
+    expect(symbol).toHaveValue('BTC-USD');
+
+    const card = fireEthAlert(1900);
+    fireEvent.click(within(card).getByText('Triggered at $1,900.00.'));
+    expect(symbol).toHaveValue('ETH-USD');
+    expect(screen.getByRole('region', { name: 'ETH-USD historical chart' })).toBeInTheDocument();
+    const quickOrder = within(screen.getByRole('region', { name: 'Quick order' }));
+    expect(quickOrder.getByRole('button', { name: 'Trade ETH-USD' })).toBeInTheDocument();
+
+    // The card's Trade button opens the ticket on the paper ledger.
+    fireEvent.click(within(card).getByRole('button', { name: 'Trade' }));
+    expect(screen.getByRole('dialog', { name: 'Trade ETH-USD' })).toHaveTextContent(
+      'recorded in your Paper Trading ledger',
+    );
+  });
+
+  it('books, resizes and closes strictly in paper_trading with exact cash, lots and P&L', () => {
     const view = render(tree(1900));
     const realBefore = store.portfolios.real_tracking;
+    const simBefore = store.portfolios.long_term_sim;
+    expect(stat('Paper Cash').getByText('$100,000.00')).toBeInTheDocument();
     expect(screen.getByText('No open paper positions')).toBeInTheDocument();
-    expect(stat('Buying Power').getByText('$10,000.00')).toBeInTheDocument();
 
-    // A fired price alert lands in the terminal's Tactical Signals feed.
-    addAlert({ ticker: 'ETH-USD', targetPrice: 2000, condition: 'below' }, 'session');
-    act(() => {
-      runAlertPass({
-        assets: [eth(1900)],
-        livePrices: new Map<string, LivePrice>(),
-        streamConnected: true,
-        now: NOW,
-      });
-    });
-    const card = screen.getByText('Price Alert').closest('.suggestion-card') as HTMLElement;
+    const card = fireEthAlert(1900);
     fireEvent.click(within(card).getByRole('button', { name: 'Trade' }));
     const ticket = within(screen.getByRole('dialog', { name: 'Trade ETH-USD' }));
     fireEvent.change(ticket.getByLabelText('Order amount (USD)'), { target: { value: '1000' } });
     fireEvent.click(ticket.getByRole('button', { name: 'Buy ETH-USD' }));
     expect(toast.error).not.toHaveBeenCalled();
-    expect(toast.success).toHaveBeenCalledWith('Bought ETH-USD', {
-      description: expect.stringMatching(/Paper Trading ledger/),
-    });
+    expect(stat('Paper Cash').getByText('$98,997.50')).toBeInTheDocument(); // 1,000 + 2.50 fee
 
-    // Booked as a tactical fill in paper_trading; Core ledgers untouched.
-    expect(store.portfolios.paper_trading.transactions).toEqual([
-      expect.objectContaining({ type: 'buy', ticker: 'ETH-USD', intent: 'tactical' }),
-    ]);
-    expect(store.portfolios.long_term_sim.transactions).toEqual([]);
-    expect(store.portfolios.long_term_sim.positions).toEqual([]);
-    expect(store.portfolios.real_tracking).toBe(realBefore);
+    // +25%: 0.1316 sh at 1,900 = 250 + 0.625 fee, as a second FIFO lot.
+    fireEvent.click(screen.getByRole('button', { name: 'Add 25% to ETH-USD' }));
+    expect(stat('Paper Cash').getByText('$98,746.88')).toBeInTheDocument();
+    const [position] = store.portfolios.paper_trading.positions;
+    expect(position?.shares).toBeCloseTo(1250 / 1900, 9);
+    expect(position?.lots).toHaveLength(2);
 
-    // ...and shows up in the terminal: position row, fills ledger, buying power.
-    const positions = within(screen.getByRole('region', { name: 'Open positions' }));
-    expect(positions.getByText('ETH-USD')).toBeInTheDocument();
-    const fills = within(screen.getByRole('region', { name: 'Recent Fills' }));
-    const [fill] = within(fills.getByRole('table')).getAllByRole('row').slice(1);
-    expect(within(fill!).getAllByRole('cell')[1]).toHaveTextContent('BUYTactical');
-    expect(stat('Buying Power').getByText('$8,997.50')).toBeInTheDocument(); // 1,000 + 2.50 fee
-
-    // Price rallies to 2,100: 0.5263 sh worth 1,105.26 against a 1,002.50 cost basis.
+    // Rally to 2,100, trim 25%: FIFO sells from the first lot at 1,904.75/sh cost.
     view.rerender(tree(2100));
-    expect(stat('Open Unrealized P&L').getByText('+$102.76')).toBeInTheDocument();
-    expect(stat("Today's Realized P&L").getByText('$0.00')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Trim ETH-USD by 25%' }));
+    expect(stat('Session Realized P&L').getByText('+$31.25')).toBeInTheDocument();
+    expect(stat('Paper Cash').getByText('$99,091.41')).toBeInTheDocument();
+    const lots = store.portfolios.paper_trading.positions[0]?.lots ?? [];
+    expect(lots.map((lot) => lot.shares)).toEqual([
+      expect.closeTo((1000 / 1900) * 1 - (1250 / 1900) * 0.25, 9),
+      expect.closeTo(250 / 1900, 9),
+    ]);
 
+    // 1-click close of the rest: +93.75, ending exactly 125 above the start.
     fireEvent.click(screen.getByRole('button', { name: 'Close ETH-USD position' }));
     expect(toast.error).not.toHaveBeenCalled();
-
-    // Proceeds 1,105.26 − 2.76 fee = 1,102.50, less the 1,002.50 cost basis.
-    expect(stat("Today's Realized P&L").getByText('+$100.00')).toBeInTheDocument();
-    expect(stat("Today's Realized P&L").getByText(/2 fills today/)).toBeInTheDocument();
-    expect(stat('Open Unrealized P&L').getByText('$0.00')).toBeInTheDocument();
+    expect(stat('Session Realized P&L').getByText('+$125.00')).toBeInTheDocument();
+    expect(stat('Paper Cash').getByText('$100,125.00')).toBeInTheDocument();
+    expect(stat('Win Rate').getByText('100%')).toBeInTheDocument();
+    expect(stat('Win Rate').getByText('2 of 2 closes')).toBeInTheDocument();
+    expect(stat('Execution Drag').getByText('$6.58')).toBeInTheDocument();
+    expect(stat('Execution Drag').getByText(/4 fills/)).toBeInTheDocument();
     expect(screen.getByText('No open paper positions')).toBeInTheDocument();
-    expect(store.portfolios.paper_trading.transactions.map((t) => t.type)).toEqual(['buy', 'sell']);
-    expect(store.portfolios.long_term_sim.transactions).toEqual([]);
+
+    const paper = store.portfolios.paper_trading;
+    expect(paper.realizedPnl).toBeCloseTo(125, 9);
+    expect(paper.transactions.map((t) => [t.type, t.intent])).toEqual([
+      ['buy', 'tactical'],
+      ['buy', 'tactical'],
+      ['sell', 'tactical'],
+      ['sell', 'tactical'],
+    ]);
+    // Core ledgers never saw any of it.
+    expect(store.portfolios.real_tracking).toBe(realBefore);
+    expect(store.portfolios.long_term_sim).toBe(simBefore);
+
+    // The ledger tab lists every fill, newest first.
+    fireEvent.click(screen.getByRole('button', { name: 'Trade Ledger (4)' }));
+    const ledger = within(screen.getByRole('region', { name: 'Paper Trade Ledger' }));
+    const rows = within(ledger.getByRole('table')).getAllByRole('row').slice(1);
+    expect(rows.map((row) => within(row).getAllByRole('cell')[1]?.textContent)).toEqual([
+      'SELLTactical',
+      'SELLTactical',
+      'BUYTactical',
+      'BUYTactical',
+    ]);
   });
 
-  it('cannot close a position without a live price to fill at', () => {
+  it('tops up and resets only the paper account', () => {
+    render(tree(1900));
+    act(() => {
+      store.executeBuy('paper_trading', { ticker: 'ETH-USD', shares: 1, price: 1900 });
+    });
+    const realBefore = store.portfolios.real_tracking;
+    const simBefore = store.portfolios.long_term_sim;
+
+    fireEvent.click(screen.getByRole('button', { name: /Top Up/ }));
+    expect(stat('Paper Cash').getByText('$108,100.00')).toBeInTheDocument(); // 98,100 + 10,000
+
+    fireEvent.click(screen.getByRole('button', { name: /Reset/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to $100,000.00' }));
+    expect(stat('Paper Cash').getByText('$100,000.00')).toBeInTheDocument();
+    expect(screen.getByText('No open paper positions')).toBeInTheDocument();
+    expect(store.portfolios.paper_trading.transactions).toEqual([]);
+    expect(store.portfolios.real_tracking).toBe(realBefore);
+    expect(store.portfolios.long_term_sim).toBe(simBefore);
+  });
+
+  it('cannot resize or close a position without a live price to fill at', () => {
     render(tree(Number.NaN));
     act(() => {
       store.executeBuy('paper_trading', { ticker: 'ETH-USD', shares: 1, price: 1900 });
     });
     expect(screen.getByRole('button', { name: 'Close ETH-USD position' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add 25% to ETH-USD' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Trim ETH-USD by 25%' })).toBeDisabled();
   });
 });

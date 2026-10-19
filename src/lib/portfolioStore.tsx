@@ -66,22 +66,14 @@ const MOCK_POSITIONS: Position[] = [
 ];
 
 const DEMO_OPENING_CASH = 2_500;
-const INITIAL_PAPER_CASH = 10_000;
+/** Virtual cash a new or reset Paper Trading account starts with. */
+export const PAPER_STARTING_CASH = 100_000;
 
 const SEED_CASH_LEDGER: CashTransaction[] = [
   {
     id: 'seed-opening-deposit',
     type: 'deposit',
     amount: DEMO_OPENING_CASH,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  },
-];
-
-const PAPER_CASH_LEDGER: CashTransaction[] = [
-  {
-    id: 'seed-paper-cash',
-    type: 'deposit',
-    amount: INITIAL_PAPER_CASH,
     createdAt: '2026-01-01T00:00:00.000Z',
   },
 ];
@@ -117,6 +109,17 @@ function emptyContainer(type: PortfolioType): PortfolioContainer {
   };
 }
 
+/** A fresh, independent Paper Trading ledger: starting cash, no lots, no fills. */
+function freshPaperContainer(createdAt = '2026-01-01T00:00:00.000Z'): PortfolioContainer {
+  return {
+    ...emptyContainer('paper_trading'),
+    cashBalance: PAPER_STARTING_CASH,
+    cashLedger: [
+      { id: 'seed-paper-cash', type: 'deposit', amount: PAPER_STARTING_CASH, createdAt },
+    ],
+  };
+}
+
 function seedScope(): PortfolioStateV3 {
   return {
     version: 3,
@@ -131,11 +134,7 @@ function seedScope(): PortfolioStateV3 {
         realizedPnl: 0,
       },
       long_term_sim: emptyContainer('long_term_sim'),
-      paper_trading: {
-        ...emptyContainer('paper_trading'),
-        cashBalance: INITIAL_PAPER_CASH,
-        cashLedger: PAPER_CASH_LEDGER.map((transaction) => ({ ...transaction })),
-      },
+      paper_trading: freshPaperContainer(),
     },
   };
 }
@@ -144,9 +143,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** A pre-terminal `paper_trading` selection reopens Core on Simulation. */
+/** The Core dashboard mode; anything that isn't a Core ledger opens the default. */
 function coreModeOf(value: unknown): CorePortfolioType {
-  return value === 'long_term_sim' || value === 'paper_trading' ? 'long_term_sim' : 'real_tracking';
+  return value === 'real_tracking' ? 'real_tracking' : 'long_term_sim';
 }
 
 function normalizePersistedPosition(value: unknown): Position | null {
@@ -419,6 +418,8 @@ interface PortfolioStore {
     build: (container: PortfolioContainer) => PortfolioTransition,
   ) => { ok: boolean; error?: string };
   withdrawPortfolioCash: (type: PortfolioType, amount: number, note?: string) => boolean;
+  /** Wipes the Paper Trading ledger back to starting cash; Core ledgers are untouched. */
+  resetPaperAccount: () => void;
   setTargetAllocations: (type: PortfolioType, targets: Record<string, number>) => void;
   depositCash: (amount: number) => boolean;
   withdrawCash: (amount: number) => boolean;
@@ -542,6 +543,13 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       applyPortfolioCash(type, 'withdrawal', amount, note),
     [applyPortfolioCash],
   );
+
+  const resetPaperAccount = useCallback(() => {
+    const current = scopeRef.current;
+    commit(
+      replaceContainer(current, 'paper_trading', freshPaperContainer(new Date().toISOString())),
+    );
+  }, [commit]);
 
   const depositCash = useCallback(
     (amount: number) => depositPortfolioCash('real_tracking', amount),
@@ -742,6 +750,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       depositPortfolioCash,
       transactPortfolio,
       withdrawPortfolioCash,
+      resetPaperAccount,
       setTargetAllocations,
       depositCash,
       withdrawCash,
@@ -763,6 +772,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       depositPortfolioCash,
       transactPortfolio,
       withdrawPortfolioCash,
+      resetPaperAccount,
       setTargetAllocations,
       depositCash,
       withdrawCash,

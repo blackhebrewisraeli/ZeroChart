@@ -2412,6 +2412,15 @@ body {
 .paper-positions td {
   font-variant-numeric: tabular-nums;
 }
+/* The table outgrows the 420px-side main column even on desktop; pin the
+   actions so 1-click Close never scrolls out of view. */
+.paper-positions th:last-child,
+.paper-positions td:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--card);
+  box-shadow: inset 1px 0 0 var(--border);
+}
 .paper-ticker {
   display: inline-flex;
   align-items: center;

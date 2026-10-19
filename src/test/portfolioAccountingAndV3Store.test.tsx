@@ -305,7 +305,7 @@ describe('portfolio store v3', () => {
     });
 
     expect(store.getPortfolio('paper_trading')).toMatchObject({
-      cashBalance: 9_490,
+      cashBalance: 99_490,
       realizedPnl: 40,
       targetAllocations: { NVDA: 1 },
     });
@@ -314,6 +314,33 @@ describe('portfolio store v3', () => {
     expect(
       store.getPortfolio('paper_trading').transactions.map((transaction) => transaction.type),
     ).toEqual(['buy', 'sell', 'withdrawal']);
+    expect(store.getPortfolio('real_tracking')).toEqual(realBefore);
+    expect(store.getPortfolio('long_term_sim')).toEqual(longTermBefore);
+  });
+
+  it('resets only the Paper Trading ledger back to $100,000', () => {
+    renderStore();
+    act(() => {
+      store.depositPortfolioCash('long_term_sim', 1_000);
+      store.executeBuy('paper_trading', { ticker: 'NVDA', shares: 5, price: 100 });
+      store.depositPortfolioCash('paper_trading', 5_000, 'Paper top-up');
+    });
+    const realBefore = structuredClone(store.getPortfolio('real_tracking'));
+    const longTermBefore = structuredClone(store.getPortfolio('long_term_sim'));
+    expect(store.getPortfolio('paper_trading').cashBalance).toBe(104_500);
+
+    act(() => store.resetPaperAccount());
+
+    expect(store.getPortfolio('paper_trading')).toMatchObject({
+      type: 'paper_trading',
+      cashBalance: 100_000,
+      positions: [],
+      transactions: [],
+      realizedPnl: 0,
+    });
+    expect(store.getPortfolio('paper_trading').cashLedger).toEqual([
+      expect.objectContaining({ type: 'deposit', amount: 100_000 }),
+    ]);
     expect(store.getPortfolio('real_tracking')).toEqual(realBefore);
     expect(store.getPortfolio('long_term_sim')).toEqual(longTermBefore);
   });
@@ -353,7 +380,7 @@ describe('portfolio store v3', () => {
     expect(store.getPortfolio('long_term_sim').positions[0]).toMatchObject({ ticker: 'QQQ' });
     expect(store.positions.map((position) => position.ticker)).toEqual(['MSFT', 'QQQ']);
     expect(store.getPortfolio('real_tracking').cashBalance).toBe(2_500);
-    expect(store.getPortfolio('paper_trading').cashBalance).toBe(10_000);
+    expect(store.getPortfolio('paper_trading').cashBalance).toBe(100_000);
   });
 
   it('folds duplicate Simulation rows into one position per ticker on load', () => {

@@ -183,6 +183,27 @@ describe('portfolio P&L attribution and trade ledger', () => {
     expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
   });
 
+  it('keeps the Bento workspace and lower analytics views grouped without changing tour hooks', () => {
+    const { container } = renderDashboard();
+
+    expect(container.querySelector('.portfolio-workspace-grid')).not.toBeNull();
+    expect(screen.getByRole('region', { name: 'Holdings' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('complementary', { name: 'Allocation and rebalancing' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Portfolio analytics' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Strategy Backtest' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /Trade Ledger \(2\)/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(container.querySelector('[data-tour="wealth"]')).not.toBeNull();
+    expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
+  });
+
   it('shows each holding at its fee-inclusive cost with a date-only Date added', () => {
     const { container } = renderDashboard();
     const holding = within(container.querySelector<HTMLElement>('.holding')!);

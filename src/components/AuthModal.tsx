@@ -236,6 +236,7 @@ export function AuthModal({
             <input
               ref={emailRef}
               className="auth-input"
+              name="email"
               type="email"
               autoComplete="email"
               required
@@ -248,6 +249,7 @@ export function AuthModal({
             <span className="auth-label">Password</span>
             <input
               className="auth-input"
+              name="password"
               type="password"
               autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               required

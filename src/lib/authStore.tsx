@@ -32,6 +32,28 @@ interface AuthStore {
 
 const AuthContext = createContext<AuthStore | null>(null);
 
+const DEV_AUTH_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+
+/**
+ * Local-only user for browser verification. This branch is statically disabled
+ * in production builds and never exposes a real Supabase session.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function readDevAuthUser(): User | null {
+  if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return null;
+  if (typeof location === 'undefined' || !DEV_AUTH_HOSTS.includes(location.hostname)) return null;
+  const flag = new URLSearchParams(location.search).get('devAuth');
+  if (flag !== '1' && flag !== 'pro') return null;
+  return {
+    id: '00000000-0000-4000-8000-000000000001',
+    aud: 'authenticated',
+    email: 'dev@localhost',
+    app_metadata: { is_pro: flag === 'pro' },
+    user_metadata: {},
+    created_at: new Date(0).toISOString(),
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const activeUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const devUser = readDevAuthUser();
+    if (devUser) {
+      setUser(devUser);
+      setLoading(false);
+      return;
+    }
+
     let active = true;
 
     supabase.auth.getSession().then(({ data }) => {

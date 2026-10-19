@@ -86,6 +86,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
             <span className="price-alerts-label">Ticker</span>
             <select
               className="price-alerts-select"
+              name="alert-ticker"
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
             >
@@ -123,6 +124,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
             <span className="price-alerts-label">Target price (USD)</span>
             <input
               className="price-alerts-input"
+              name="alert-target-price"
               type="number"
               min="0"
               step="any"

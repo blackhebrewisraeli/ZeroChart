@@ -208,6 +208,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
             Realistic Friction
             <input
               type="checkbox"
+              name="realistic-friction"
               role="switch"
               className="backtest-toggle"
               checked={settings.friction}
@@ -232,6 +233,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
             Trailing Stop
             <select
               className="backtest-select"
+              name="trailing-stop"
               value={settings.stopMode}
               disabled={!isPro}
               onChange={(event) =>

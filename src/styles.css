@@ -40,10 +40,15 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-soft: var(--brand-blue-soft);
   --color-accent-violet: var(--accent-violet);
+  --color-accent-violet-soft: var(--accent-violet-soft);
   --color-accent-amber: var(--accent-amber);
+  --color-accent-amber-soft: var(--accent-amber-soft);
   --color-signal-green: var(--signal-green);
+  --color-signal-green-soft: var(--signal-green-soft);
   --color-signal-red: var(--signal-red);
+  --color-signal-red-soft: var(--signal-red-soft);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -73,7 +78,7 @@
 
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.965 0.008 240);
+  --background: oklch(0.962 0.008 240);
   --foreground: oklch(0.21 0.02 260);
   --card: #ffffff;
   --card-foreground: var(--foreground);
@@ -83,10 +88,13 @@
   --primary-foreground: oklch(0.13 0.02 230);
   --brand-blue: oklch(0.58 0.17 225);
   --brand-blue-soft: oklch(0.94 0.035 225);
-  --accent-violet: oklch(0.55 0.2 285);
+  --brand-blue-border: oklch(0.8 0.075 225);
+  --accent-violet: oklch(0.53 0.21 285);
   --accent-violet-soft: oklch(0.95 0.028 285);
-  --accent-amber: oklch(0.62 0.16 75);
+  --accent-violet-border: oklch(0.82 0.065 285);
+  --accent-amber: oklch(0.6 0.16 75);
   --accent-amber-soft: oklch(0.96 0.035 75);
+  --accent-amber-border: oklch(0.84 0.07 75);
   --secondary: oklch(0.98 0.005 240);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.98 0.005 240);
@@ -95,14 +103,16 @@
   --accent-foreground: var(--foreground);
   --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.015 240);
+  --border: oklch(0.89 0.014 240);
   --input: var(--border);
   --ring: var(--primary);
   --signal-green: oklch(0.57 0.18 150);
   --signal-green-soft: oklch(0.95 0.035 150);
+  --signal-green-border: oklch(0.82 0.065 150);
   --signal-yellow: oklch(0.72 0.15 90);
   --signal-red: oklch(0.58 0.21 25);
   --signal-red-soft: oklch(0.95 0.035 25);
+  --signal-red-border: oklch(0.83 0.07 25);
   --crypto-ink: oklch(0.55 0.12 290);
   --equity-ink: oklch(0.55 0.12 230);
   --chart-1: oklch(0.646 0.222 41.116);
@@ -131,10 +141,13 @@
   --primary-foreground: oklch(0.13 0.02 230);
   --brand-blue: oklch(0.85 0.145 215);
   --brand-blue-soft: oklch(0.25 0.045 225);
-  --accent-violet: oklch(0.75 0.16 285);
+  --brand-blue-border: oklch(0.46 0.08 225);
+  --accent-violet: oklch(0.74 0.16 285);
   --accent-violet-soft: oklch(0.25 0.045 285);
+  --accent-violet-border: oklch(0.45 0.075 285);
   --accent-amber: oklch(0.8 0.15 75);
   --accent-amber-soft: oklch(0.25 0.04 75);
+  --accent-amber-border: oklch(0.46 0.07 75);
   --secondary: oklch(0.23 0.015 260);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.21 0.015 260);
@@ -148,9 +161,11 @@
   --ring: var(--primary);
   --signal-green: oklch(0.78 0.18 150);
   --signal-green-soft: oklch(0.24 0.04 150);
+  --signal-green-border: oklch(0.44 0.07 150);
   --signal-yellow: oklch(0.85 0.17 90);
   --signal-red: oklch(0.72 0.19 25);
   --signal-red-soft: oklch(0.24 0.045 25);
+  --signal-red-border: oklch(0.44 0.075 25);
   --crypto-ink: oklch(0.77 0.055 290);
   --equity-ink: oklch(0.76 0.065 230);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -1866,6 +1881,9 @@ body {
 }
 
 .kpi-card {
+  --kpi-accent: var(--brand-blue);
+  --kpi-soft: var(--brand-blue-soft);
+  --kpi-border: var(--brand-blue-border);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1873,15 +1891,34 @@ body {
   min-width: 0;
   padding: 20px;
   border: 1px solid var(--border);
+  border-top: 2px solid var(--kpi-accent);
   border-radius: 14px;
   background: var(--card);
   box-shadow: 0 12px 28px color-mix(in oklch, oklch(0.36 0.04 240) 8%, transparent);
+}
+.kpi-card.is-green,
+.kpi-card.health-green {
+  --kpi-accent: var(--signal-green);
+  --kpi-soft: var(--signal-green-soft);
+  --kpi-border: var(--signal-green-border);
+}
+.kpi-card.is-red,
+.kpi-card.health-red {
+  --kpi-accent: var(--signal-red);
+  --kpi-soft: var(--signal-red-soft);
+  --kpi-border: var(--signal-red-border);
+}
+.kpi-card.health-yellow {
+  --kpi-accent: var(--accent-amber);
+  --kpi-soft: var(--accent-amber-soft);
+  --kpi-border: var(--accent-amber-border);
 }
 .kpi-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 34px;
 }
 .kpi-card-icon {
   display: inline-flex;
@@ -1891,9 +1928,9 @@ body {
   height: 34px;
   flex-shrink: 0;
   border-radius: 10px;
-  color: var(--brand-blue);
-  background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 22%, transparent);
+  color: var(--kpi-accent);
+  background: var(--kpi-soft);
+  border: 1px solid var(--kpi-border);
 }
 .kpi-card .overview-value {
   font-size: clamp(22px, 2vw, 28px);
@@ -1904,6 +1941,9 @@ body {
 }
 .kpi-card-health .overview-label {
   align-self: stretch;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
   text-align: left;
 }
 .kpi-card-health .health-ring {
@@ -2101,6 +2141,15 @@ body {
   border-radius: 16px;
   background: var(--card);
   box-shadow: 0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+}
+.portfolio-holdings-pane {
+  border-top: 2px solid var(--brand-blue);
+}
+.portfolio-allocation-card {
+  border-top: 2px solid var(--accent-violet);
+  box-shadow:
+    0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent),
+    inset 0 12px 24px -28px var(--accent-violet);
 }
 .portfolio-side-stack {
   display: grid;
@@ -4824,6 +4873,7 @@ body {
 .asset-details-sheet {
   width: min(560px, 100%);
   border: 1px solid var(--border);
+  border-top: 2px solid var(--accent-violet);
   border-radius: 24px;
   background:
     radial-gradient(
@@ -4977,8 +5027,9 @@ body {
   margin: 16px 24px 0;
   padding: 16px;
   border: 1px solid var(--border);
+  border-top: 2px solid var(--accent-violet);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.02);
+  background: color-mix(in oklch, var(--accent-violet-soft) 42%, var(--card));
 }
 .quant-breakdown-head {
   display: flex;
@@ -5046,7 +5097,7 @@ body {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--brand-blue);
+  background: var(--accent-violet);
 }
 .quant-factor-value,
 .quant-factor-weight {

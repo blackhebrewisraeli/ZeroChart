@@ -112,6 +112,17 @@ describe('Paper Desk', () => {
     expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('ETH-USD');
   });
 
+  it('keeps the default chart on a listed asset when the top alert is for an unlisted ticker', () => {
+    render(
+      <PortfolioProvider>
+        <PaperTradingTerminal assets={[asset('BTC-USD', 'Bitcoin', 60_000)]} />
+      </PortfolioProvider>,
+    );
+    fireEthAlert(1900);
+    expect(screen.getByRole('combobox', { name: 'Chart symbol' })).toHaveValue('BTC-USD');
+    expect(screen.getByRole('region', { name: 'Quick order' })).toBeInTheDocument();
+  });
+
   it('clicking a tactical signal charts its ticker and opens a paper-bound ticket', () => {
     render(tree(1900));
     const symbol = screen.getByRole('combobox', { name: 'Chart symbol' });

@@ -239,14 +239,16 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
   const openCount = paper.positions.length;
 
   // The chart follows the last pick, else the first open position, else the
-  // feed's top card (same ranking as <TacticalSignals>), else the first asset.
+  // feed's top card (same ranking as <TacticalSignals>) if it is a listed
+  // asset (a fired alert may not be), else the first asset.
   const [topItem] = buildSignalFeed(
     generateTacticalSignals(paper.positions, assets, paper.cashBalance),
     triggered,
   );
   const topSignal =
     topItem?.kind === 'alert' ? topItem.trigger.alert.ticker : topItem?.signal.ticker;
-  const ticker = selected ?? paper.positions[0]?.ticker ?? topSignal ?? assets[0]?.ticker;
+  const topAsset = topSignal ? assetByTicker.get(topSignal.toUpperCase()) : undefined;
+  const ticker = selected ?? paper.positions[0]?.ticker ?? topAsset?.ticker ?? assets[0]?.ticker;
   const chartAsset = ticker ? assetByTicker.get(ticker.toUpperCase()) : undefined;
 
   const order = (position: Position, shares: number, price: number) => ({

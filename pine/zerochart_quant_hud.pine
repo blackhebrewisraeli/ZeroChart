@@ -1,0 +1,209 @@
+//@version=6
+// ZeroChart Quant HUD & ATR Risk Engine
+// 1:1 port of the ZeroChart quant engine:
+//   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
+//   src/lib/multiFactor.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
+//   src/lib/risk.ts        - ATR position sizing (budget-capped notional, stop floored at 0)
+// Quantitative analysis is informational. Not financial advice.
+indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay = true)
+
+// ===== Inputs =====
+accountCapital   = input.float(10000, "Account Capital ($)", minval = 1.0, group = "Risk Engine")
+riskPct          = input.float(2.0, "Risk per Trade (%)", minval = 0.01, maxval = 100.0, step = 0.25, group = "Risk Engine")
+atrPeriod        = input.int(14, "ATR Period", minval = 1, group = "Risk Engine")
+atrStopMult      = input.float(2.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
+showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "Display")
+showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")
+showSignals      = input.bool(true, "Show High-Conviction Signal Labels", group = "Display")
+
+// ===== Semantic tokens =====
+color C_BG     = #101828
+color C_BORDER = #1e293b
+color C_BRAND  = #00e5ff
+color C_GREEN  = #00e676
+color C_AMBER  = #ffb300
+color C_RED    = #ff5252
+color C_MUTED  = #94a3b8
+
+// ===== Model constants (multiFactor.ts) =====
+float MOMENTUM_SATURATION      = 0.01   // +/-1% of price saturates the momentum score
+float LOW_VOLATILITY           = 0.005  // ATR/price <= 0.5% reads as maximally quiet
+float HIGH_VOLATILITY          = 0.055  // ATR/price >= 5.5% reads as maximally blown-out
+float REGIME_HIGH_VOLATILITY   = 0.04   // ATR/price >= 4% -> HIGH_VOLATILITY regime
+float CALM_VOLATILITY          = 0.02   // volatility below 2% reads as "calm"
+float REGIME_TRENDING_MOMENTUM = 0.005  // |MACD hist|/price >= 0.5% -> TRENDING regime
+float FLAT_MOMENTUM            = 0.0005 // momentum inside +/-0.05% reads as "flat"
+float RSI_OVERSOLD             = 30.0
+float RSI_OVERBOUGHT           = 70.0
+
+// ===== Factor scores (0-100) =====
+// Mean reversion: piecewise-linear through (0,100) (30,95) (50,55) (70,15) (100,0).
+rsiFactorScore(float r) =>
+    float x = math.max(0.0, math.min(100.0, r))
+    float s = 0.0
+    if x <= 30.0
+        s := 100.0 + (95.0 - 100.0) * (x / 30.0)
+    else if x <= 50.0
+        s := 95.0 + (55.0 - 95.0) * ((x - 30.0) / 20.0)
+    else if x <= 70.0
+        s := 55.0 + (15.0 - 55.0) * ((x - 50.0) / 20.0)
+    else
+        s := 15.0 + (0.0 - 15.0) * ((x - 70.0) / 30.0)
+    s
+
+// Momentum: 0 -> neutral 50, saturates at +/-1% of price.
+momentumFactorScore(float m) =>
+    math.max(0.0, math.min(100.0, 50.0 + 50.0 * (m / MOMENTUM_SATURATION)))
+
+// Volatility regime: 0.5% -> 100, 5.5% -> 0.
+volatilityFactorScore(float v) =>
+    math.max(0.0, math.min(100.0, 100.0 * (1.0 - (v - LOW_VOLATILITY) / (HIGH_VOLATILITY - LOW_VOLATILITY))))
+
+regimeLabel(string r) =>
+    r == "TRENDING" ? "Trending" : r == "MEAN_REVERTING" ? "Mean-reverting" : r == "HIGH_VOLATILITY" ? "High-volatility" : "Neutral"
+
+regimeColor(string r) =>
+    r == "TRENDING" ? C_BRAND : r == "MEAN_REVERTING" ? C_AMBER : r == "HIGH_VOLATILITY" ? C_RED : C_MUTED
+
+scoreColor(int s) =>
+    s >= 78 ? C_GREEN : s >= 50 ? C_BRAND : s > 28 ? C_AMBER : C_RED
+
+fmtScore(float s) =>
+    na(s) ? "-" : str.tostring(math.round(s))
+
+signedPercent(float fraction) =>
+    float pct = math.round(fraction * 100.0, 1)
+    pct := pct == 0 ? 0.0 : pct // fold -0.0 so near-zero readings never print "-0.0%"
+    (pct >= 0 ? "+" : "") + str.tostring(pct, "0.0") + "%"
+
+fmtShares(float s) =>
+    str.tostring(s, s >= 100 ? "0.0" : s >= 1 ? "0.00" : "0.0000")
+
+// ===== Core indicators (normalized by price) =====
+float rsiValue = ta.rsi(close, 14)
+[macdLine, signalLine, macdHist] = ta.macd(close, 12, 26, 9)
+float atrValue = ta.atr(atrPeriod)
+float momentumPct = macdHist / close
+float volatilityPct = atrValue / close
+
+bool hasRsi = not na(rsiValue)
+bool hasMomentum = not na(momentumPct)
+bool hasVolatility = not na(volatilityPct)
+bool ready = hasRsi and hasMomentum and hasVolatility
+
+// ===== Regime detection + regime-tilted weights (first match wins) =====
+string regime = "NEUTRAL"
+float wRsi = 0.4
+float wMomentum = 0.4
+float wVolatility = 0.2
+if hasVolatility and volatilityPct >= REGIME_HIGH_VOLATILITY
+    regime := "HIGH_VOLATILITY"
+    wRsi := 0.35
+    wMomentum := 0.35
+    wVolatility := 0.3
+else if hasMomentum and math.abs(momentumPct) >= REGIME_TRENDING_MOMENTUM
+    regime := "TRENDING"
+    wRsi := 0.3
+    wMomentum := 0.5
+else if hasRsi and (rsiValue <= RSI_OVERSOLD or rsiValue >= RSI_OVERBOUGHT)
+    regime := "MEAN_REVERTING"
+    wRsi := 0.5
+    wMomentum := 0.3
+
+// ===== Composite score: weights renormalized over the factors that have data =====
+float rsiScore = hasRsi ? rsiFactorScore(rsiValue) : na
+float momentumScore = hasMomentum ? momentumFactorScore(momentumPct) : na
+float volatilityScore = hasVolatility ? volatilityFactorScore(volatilityPct) : na
+
+float activeWeight = (hasRsi ? wRsi : 0.0) + (hasMomentum ? wMomentum : 0.0) + (hasVolatility ? wVolatility : 0.0)
+float weightedSum = (hasRsi ? wRsi * rsiScore : 0.0) + (hasMomentum ? wMomentum * momentumScore : 0.0) + (hasVolatility ? wVolatility * volatilityScore : 0.0)
+float weighted = activeWeight == 0.0 ? 0.0 : weightedSum / activeWeight
+int score = math.round(math.max(0.0, math.min(100.0, weighted)))
+
+// ===== Dynamic position sizing (risk.ts) =====
+float riskDollars = accountCapital * (riskPct / 100.0)
+float stopDistance = atrValue * atrStopMult
+float riskShares = stopDistance > 0 ? riskDollars / stopDistance : na
+float budgetShares = accountCapital / close
+// Notional never exceeds the account: quiet assets would otherwise size past 100% of capital.
+float suggestedShares = math.min(riskShares, budgetShares)
+bool sizeCapped = riskShares > budgetShares
+float notional = suggestedShares * close
+float stopPrice = math.max(0.0, close - stopDistance)
+float stopDistancePct = (close - stopPrice) / close
+
+// ===== Adaptive ATR trailing stop =====
+var float trailStop = na
+var int trailDir = 1
+if not na(stopDistance)
+    float longStop = close - stopDistance
+    float shortStop = close + stopDistance
+    if na(trailStop)
+        trailStop := longStop
+    else if trailDir == 1
+        if close < trailStop
+            trailDir := -1
+            trailStop := shortStop
+        else
+            trailStop := math.max(trailStop, longStop)
+    else
+        if close > trailStop
+            trailDir := 1
+            trailStop := longStop
+        else
+            trailStop := math.min(trailStop, shortStop)
+
+bool stopBreached = trailDir == -1 and trailDir[1] == 1
+color trailColor = trailDir == 1 ? (score >= 60 ? C_GREEN : C_BRAND) : C_RED
+// Break the line on the flip bar instead of drawing a vertical jump.
+plot(showTrailingStop and trailDir == trailDir[1] ? trailStop : na, "ZC ATR Trailing Stop", color = trailColor, linewidth = 2, style = plot.style_linebr)
+
+// ===== High-conviction signals (fire on transitions only) =====
+bool bullishMomentum = hasMomentum and momentumPct >= FLAT_MOMENTUM
+bool longSetup = ready and score >= 78 and bullishMomentum
+bool riskSetup = ready and (score <= 28 or regime == "HIGH_VOLATILITY")
+bool longSignal = longSetup and not longSetup[1]
+bool riskSignal = riskSetup and not riskSetup[1]
+
+plotshape(showSignals and longSignal, "ZC LONG", shape.labelup, location.belowbar, color = C_GREEN, text = "ZC LONG", textcolor = C_BG, size = size.tiny)
+plotshape(showSignals and riskSignal, "ZC RISK", shape.labeldown, location.abovebar, color = C_RED, text = "ZC RISK", textcolor = color.white, size = size.tiny)
+
+// ===== TradingView alerts =====
+bool highConviction = ready and score >= 80
+bool isHighVolatility = regime == "HIGH_VOLATILITY"
+alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "ZeroChart Quant: {{ticker}} composite score >= 80 (high-conviction bullish) at {{close}}")
+alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "ZeroChart Quant: {{ticker}} regime shifted to HIGH_VOLATILITY at {{close}}")
+alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "ZeroChart Quant: {{ticker}} closed through the ATR trailing stop at {{close}}")
+
+// ===== On-chart terminal HUD =====
+var table hud = table.new(position.top_right, 2, 7, bgcolor = C_BG, frame_color = C_BORDER, frame_width = 1, border_color = C_BORDER, border_width = 1)
+
+hudRow(int row, string label, string value, color valueColor) =>
+    table.cell(hud, 0, row, label, text_color = C_MUTED, text_halign = text.align_left, text_size = size.small, text_font_family = font.family_monospace)
+    table.cell(hud, 1, row, value, text_color = valueColor, text_halign = text.align_right, text_size = size.small, text_font_family = font.family_monospace)
+
+if showHud and barstate.islast
+    // 1-line thesis, same wording as buildRationale() in multiFactor.ts.
+    string thesis = ""
+    if hasMomentum
+        string bias = momentumPct >= FLAT_MOMENTUM ? "Bullish" : momentumPct <= -FLAT_MOMENTUM ? "Bearish" : "Flat"
+        thesis := bias + " momentum (" + signedPercent(momentumPct) + ")"
+    if hasVolatility
+        string tone = volatilityPct < CALM_VOLATILITY ? "calm" : volatilityPct < REGIME_HIGH_VOLATILITY ? "elevated" : "high"
+        thesis := (thesis == "" ? "" : thesis + " + ") + tone + " volatility (" + str.tostring(volatilityPct * 100.0, "0.0") + "%)"
+    if hasRsi
+        string zone = rsiValue <= RSI_OVERSOLD ? "oversold" : rsiValue >= RSI_OVERBOUGHT ? "overbought" : "neutral"
+        thesis := (thesis == "" ? "" : thesis + " + ") + zone + " RSI " + str.tostring(math.round(rsiValue))
+    thesis := (thesis == "" ? "No factor data" : thesis) + " · " + regimeLabel(regime) + " regime"
+
+    string sizeText = na(suggestedShares) ? "-" : fmtShares(suggestedShares) + " units · $" + str.tostring(math.round(notional)) + (sizeCapped ? " (capped)" : "")
+    string stopText = na(stopDistance) ? "-" : "$" + str.tostring(stopPrice, format.mintick) + " · -" + str.tostring(stopDistancePct * 100.0, "0.0") + "%"
+
+    hudRow(0, "ZEROCHART QUANT", syminfo.ticker, C_BRAND)
+    hudRow(1, "QUANT SCORE", str.tostring(score) + " / 100", scoreColor(score))
+    hudRow(2, "REGIME", regime, regimeColor(regime))
+    hudRow(3, "RSI · MACD · ATR", fmtScore(rsiScore) + " · " + fmtScore(momentumScore) + " · " + fmtScore(volatilityScore), color.white)
+    hudRow(4, "POSITION SIZE", sizeText, color.white)
+    hudRow(5, "ATR STOP", stopText, trailDir == 1 ? C_BRAND : C_RED)
+    hudRow(6, "THESIS", thesis, C_MUTED)
+    table.cell_set_text_color(hud, 0, 0, C_BRAND)

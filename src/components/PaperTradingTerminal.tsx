@@ -13,6 +13,7 @@ import { buildSignalFeed, generateTacticalSignals } from '@/lib/tacticalSignals'
 import { downloadCsv, executionDrag, realizedPnlOn, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
 import { formatShares } from '@/lib/risk';
+import { ActionCenter } from '@/components/ActionCenter';
 import { AssetChart } from '@/components/AssetChart';
 import { AssetIcon } from '@/components/AssetIcon';
 import { TacticalSignals } from '@/components/TacticalSignals';
@@ -300,6 +301,8 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
         </div>
         <PaperAccountControls />
       </header>
+
+      <ActionCenter assets={assets} />
 
       <section className="paper-pnl" aria-label="Paper telemetry">
         <Stat

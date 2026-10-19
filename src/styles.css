@@ -2700,6 +2700,106 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+/* Action Center: one giant TradingView signal card, no charts. */
+.action-center {
+  --action-tone: var(--signal-green);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 22px;
+  padding: 24px;
+  border: 2px solid var(--action-tone);
+  border-radius: 18px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--action-tone) 14%, var(--card)),
+    var(--card) 80%
+  );
+  box-shadow: 0 0 40px color-mix(in oklch, var(--action-tone) 30%, transparent);
+}
+.action-center.is-sell {
+  --action-tone: var(--signal-red);
+}
+.action-center-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--action-tone);
+  font:
+    700 clamp(24px, 5vw, 36px) 'DM Sans',
+    sans-serif;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.action-center-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 0;
+}
+.action-center-facts dt {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.action-center-facts dd {
+  margin: 4px 0 0;
+  font:
+    600 28px 'JetBrains Mono',
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.action-center-actions {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+.action-center-execute,
+.action-center-dismiss {
+  min-height: 64px;
+  border-radius: 14px;
+  font:
+    700 18px 'DM Sans',
+    sans-serif;
+  cursor: pointer;
+  transition: filter 0.2s ease-out;
+}
+.action-center-execute {
+  border: none;
+  color: var(--primary-foreground);
+  background: var(--brand-blue);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 35%, transparent);
+}
+.action-center-dismiss {
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  background: transparent;
+}
+.action-center-execute:hover,
+.action-center-dismiss:hover {
+  filter: brightness(1.08);
+}
+.action-center-execute:disabled,
+.action-center-dismiss:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.action-center-queue {
+  margin: 0;
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+@media (max-width: 500px) {
+  .action-center-actions {
+    grid-template-columns: 1fr;
+  }
+}
 .paper-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 420px);

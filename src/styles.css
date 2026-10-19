@@ -40,6 +40,10 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-brand-blue: var(--brand-blue);
+  --color-accent-violet: var(--accent-violet);
+  --color-accent-amber: var(--accent-amber);
+  --color-signal-green: var(--signal-green);
+  --color-signal-red: var(--signal-red);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -69,29 +73,36 @@
 
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.98 0.004 240);
+  --background: oklch(0.965 0.008 240);
   --foreground: oklch(0.21 0.02 260);
-  --card: oklch(1 0 0);
+  --card: #ffffff;
   --card-foreground: var(--foreground);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --primary: oklch(0.74 0.14 215);
   --primary-foreground: oklch(0.13 0.02 230);
-  --brand-blue: oklch(0.55 0.15 232);
-  --secondary: oklch(0.96 0.004 240);
+  --brand-blue: oklch(0.58 0.17 225);
+  --brand-blue-soft: oklch(0.94 0.035 225);
+  --accent-violet: oklch(0.55 0.2 285);
+  --accent-violet-soft: oklch(0.95 0.028 285);
+  --accent-amber: oklch(0.62 0.16 75);
+  --accent-amber-soft: oklch(0.96 0.035 75);
+  --secondary: oklch(0.98 0.005 240);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.95 0.004 240);
+  --muted: oklch(0.98 0.005 240);
   --muted-foreground: oklch(0.5 0.02 260);
   --accent: oklch(0.92 0.012 210);
   --accent-foreground: var(--foreground);
   --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.008 250);
+  --border: oklch(0.9 0.015 240);
   --input: var(--border);
   --ring: var(--primary);
-  --signal-green: oklch(0.6 0.22 150);
+  --signal-green: oklch(0.57 0.18 150);
+  --signal-green-soft: oklch(0.95 0.035 150);
   --signal-yellow: oklch(0.72 0.15 90);
-  --signal-red: oklch(0.55 0.25 20);
+  --signal-red: oklch(0.58 0.21 25);
+  --signal-red-soft: oklch(0.95 0.035 25);
   --crypto-ink: oklch(0.55 0.12 290);
   --equity-ink: oklch(0.55 0.12 230);
   --chart-1: oklch(0.646 0.222 41.116);
@@ -119,6 +130,11 @@
   --primary: oklch(0.79 0.14 215);
   --primary-foreground: oklch(0.13 0.02 230);
   --brand-blue: oklch(0.85 0.145 215);
+  --brand-blue-soft: oklch(0.25 0.045 225);
+  --accent-violet: oklch(0.75 0.16 285);
+  --accent-violet-soft: oklch(0.25 0.045 285);
+  --accent-amber: oklch(0.8 0.15 75);
+  --accent-amber-soft: oklch(0.25 0.04 75);
   --secondary: oklch(0.23 0.015 260);
   --secondary-foreground: var(--foreground);
   --muted: oklch(0.21 0.015 260);
@@ -130,9 +146,11 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: var(--primary);
-  --signal-green: oklch(0.84 0.28 150);
+  --signal-green: oklch(0.78 0.18 150);
+  --signal-green-soft: oklch(0.24 0.04 150);
   --signal-yellow: oklch(0.85 0.17 90);
-  --signal-red: oklch(0.65 0.28 20);
+  --signal-red: oklch(0.72 0.19 25);
+  --signal-red-soft: oklch(0.24 0.045 25);
   --crypto-ink: oklch(0.77 0.055 290);
   --equity-ink: oklch(0.76 0.065 230);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -959,11 +977,13 @@ body {
   flex-direction: column;
   border-radius: 24px;
   border: 1px solid var(--border);
+  border-top-color: color-mix(in oklch, var(--accent-violet) 68%, var(--border));
   background: var(--card);
   backdrop-filter: blur(28px) saturate(140%);
   -webkit-backdrop-filter: blur(28px) saturate(140%);
   box-shadow:
     0 40px 120px rgba(0, 0, 0, 0.6),
+    0 -1px 30px color-mix(in oklch, var(--accent-violet) 16%, transparent),
     inset 0 0 0 1px rgba(255, 255, 255, 0.02);
   overflow: hidden;
   animation: robo-panel-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
@@ -978,7 +998,7 @@ body {
   pointer-events: none;
   background: radial-gradient(
     520px 240px at 20% -10%,
-    color-mix(in oklch, var(--brand-blue) 12%, transparent),
+    color-mix(in oklch, var(--accent-violet) 14%, transparent),
     transparent 70%
   );
 }
@@ -1006,10 +1026,10 @@ body {
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  color: var(--brand-blue);
-  background: color-mix(in oklch, var(--brand-blue) 12%, transparent);
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 25%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 22%, transparent);
+  color: var(--accent-violet);
+  background: var(--accent-violet-soft);
+  border: 1px solid color-mix(in oklch, var(--accent-violet) 28%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--accent-violet) 22%, transparent);
 }
 .robo-title {
   font:
@@ -1147,16 +1167,16 @@ body {
   transform: scale(0.98);
 }
 .robo-risk-card.is-selected {
-  border-color: color-mix(in oklch, var(--brand-blue) 55%, transparent);
-  background: color-mix(in oklch, var(--brand-blue) 9%, transparent);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 18%, transparent);
+  border-color: color-mix(in oklch, var(--accent-violet) 55%, transparent);
+  background: var(--accent-violet-soft);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--accent-violet) 18%, transparent);
 }
 .robo-risk-icon {
   color: var(--muted-foreground);
   transition: color 0.18s ease-out;
 }
 .robo-risk-card.is-selected .robo-risk-icon {
-  color: var(--brand-blue);
+  color: var(--accent-violet);
 }
 .robo-risk-name {
   font:
@@ -1177,7 +1197,7 @@ body {
   color: var(--muted-foreground);
 }
 .robo-risk-card.is-selected .robo-risk-holdings {
-  color: var(--brand-blue);
+  color: var(--accent-violet);
 }
 
 .robo-footer {
@@ -1284,7 +1304,7 @@ body {
   color: var(--foreground);
 }
 .robo-summary-risk {
-  color: var(--brand-blue);
+  color: var(--accent-violet);
 }
 .robo-results-note {
   margin: 0 0 14px;
@@ -1372,7 +1392,7 @@ body {
   font:
     700 16px 'JetBrains Mono',
     monospace;
-  color: var(--brand-blue);
+  color: var(--accent-violet);
 }
 .robo-alloc-amount {
   font:
@@ -1419,9 +1439,9 @@ body {
 .robo-factors b {
   color: var(--foreground);
 }
-/* Market regime pill — brand blue for trends, semantic signals otherwise. */
+/* Market regime is a quant classification, so every state uses Quant Violet. */
 .regime-badge {
-  --regime: var(--muted-foreground);
+  --regime: var(--accent-violet);
   display: inline-flex;
   align-items: center;
   height: 20px;
@@ -1438,13 +1458,13 @@ body {
   border: 1px solid color-mix(in oklch, var(--regime) 35%, transparent);
 }
 .regime-badge[data-regime='TRENDING'] {
-  --regime: var(--brand-blue);
+  --regime: var(--accent-violet);
 }
 .regime-badge[data-regime='MEAN_REVERTING'] {
-  --regime: var(--signal-yellow);
+  --regime: var(--accent-violet);
 }
 .regime-badge[data-regime='HIGH_VOLATILITY'] {
-  --regime: var(--signal-red);
+  --regime: var(--accent-violet);
 }
 .robo-swap {
   grid-area: swap;
@@ -1855,6 +1875,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
+  box-shadow: 0 12px 28px color-mix(in oklch, oklch(0.36 0.04 240) 8%, transparent);
 }
 .kpi-card-head {
   display: flex;
@@ -1986,6 +2007,191 @@ body {
 .portfolio-section {
   margin-top: 36px;
 }
+.portfolio-telemetry {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 12px 30px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+}
+.portfolio-telemetry-item {
+  --telemetry-accent: var(--brand-blue);
+  --telemetry-soft: var(--brand-blue-soft);
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-top: 2px solid var(--telemetry-accent);
+  box-shadow: inset 0 8px 18px -18px var(--telemetry-accent);
+}
+.portfolio-telemetry-item + .portfolio-telemetry-item {
+  border-left: 1px solid var(--border);
+}
+.portfolio-telemetry-item.is-violet {
+  --telemetry-accent: var(--accent-violet);
+  --telemetry-soft: var(--accent-violet-soft);
+}
+.portfolio-telemetry-item.is-green {
+  --telemetry-accent: var(--signal-green);
+  --telemetry-soft: var(--signal-green-soft);
+}
+.portfolio-telemetry-item.is-amber {
+  --telemetry-accent: var(--accent-amber);
+  --telemetry-soft: var(--accent-amber-soft);
+}
+.portfolio-telemetry-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in oklch, var(--telemetry-accent) 30%, transparent);
+  border-radius: 10px;
+  background: var(--telemetry-soft);
+  color: var(--telemetry-accent);
+}
+.portfolio-telemetry-copy {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+}
+.portfolio-telemetry-copy .overview-label {
+  grid-column: 1;
+}
+.portfolio-telemetry-value {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  font:
+    700 16px 'JetBrains Mono',
+    monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.portfolio-telemetry-sub {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font:
+    500 10px 'JetBrains Mono',
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.portfolio-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 26px;
+}
+.portfolio-workspace-card {
+  min-width: 0;
+  margin-top: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+}
+.portfolio-side-stack {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.portfolio-rebalance-card {
+  border-top: 2px solid var(--accent-amber);
+  box-shadow:
+    0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent),
+    inset 0 12px 24px -28px var(--accent-amber);
+}
+.portfolio-workspace-head {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.portfolio-section-head-compact {
+  margin-bottom: 0;
+}
+.portfolio-cash-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--secondary);
+}
+.analytics-workspace {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 16px 38px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+}
+.analytics-workspace-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--secondary);
+}
+.analytics-workspace-tab {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font:
+    600 12px 'DM Sans',
+    sans-serif;
+  cursor: pointer;
+  transition:
+    background 160ms ease-out,
+    border-color 160ms ease-out,
+    color 160ms ease-out;
+}
+.analytics-workspace-tab:hover {
+  color: var(--foreground);
+}
+.analytics-workspace-tab.is-active {
+  border-color: color-mix(in oklch, var(--brand-blue) 28%, var(--border));
+  background: var(--card);
+  color: var(--brand-blue);
+  box-shadow: 0 5px 14px color-mix(in oklch, var(--brand-blue) 10%, transparent);
+}
+.analytics-workspace-tab:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 1px;
+}
+.analytics-entry-count {
+  margin-left: auto;
+}
+.analytics-export {
+  background: var(--card);
+}
+.analytics-workspace-panel {
+  padding: 18px;
+}
+.analytics-workspace-panel .backtest-card {
+  border: 0;
+  background: transparent;
+}
+.portfolio-section-embedded {
+  margin-top: 0;
+}
 .portfolio-section-head {
   display: flex;
   align-items: center;
@@ -2052,6 +2258,65 @@ body {
 .portfolio-cash-btn:hover {
   border-color: color-mix(in oklch, var(--primary) 55%, transparent);
   background: color-mix(in oklch, var(--primary) 10%, transparent);
+}
+
+@media (max-width: 1023px) {
+  .portfolio-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .portfolio-side-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .portfolio-telemetry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .portfolio-telemetry-item + .portfolio-telemetry-item {
+    border-left: 0;
+    border-top-width: 2px;
+  }
+  .portfolio-side-stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .portfolio-cash-bar,
+  .analytics-workspace-tabs {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .portfolio-cash-bar {
+    flex-direction: column;
+  }
+  .portfolio-cash-controls {
+    width: 100%;
+  }
+  .portfolio-cash-input {
+    flex: 1;
+    width: auto;
+    min-width: 80px;
+  }
+  .analytics-entry-count {
+    margin-left: 0;
+  }
+  .analytics-export {
+    margin-left: auto;
+  }
+}
+@media (max-width: 480px) {
+  .portfolio-workspace-card,
+  .analytics-workspace-panel {
+    padding: 14px;
+  }
+  .analytics-workspace-tab {
+    flex: 1;
+    padding-inline: 8px;
+  }
+  .analytics-entry-count {
+    order: 3;
+  }
+  .analytics-export {
+    order: 4;
+  }
 }
 .portfolio-count {
   font:
@@ -2507,7 +2772,23 @@ body {
 }
 .rebalance-status[data-breached='true'],
 .rebalance-drift-out {
-  color: var(--signal-yellow);
+  color: var(--accent-amber);
+}
+.rebalance-scale-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in oklch, var(--accent-amber) 32%, transparent);
+  border-radius: 11px;
+  background: var(--accent-amber-soft);
+  color: var(--accent-amber);
+  box-shadow: 0 0 20px color-mix(in oklch, var(--accent-amber) 16%, transparent);
+}
+.rebalance-empty .rebalance-scale-icon svg {
+  color: inherit;
 }
 .rebalance-table th:nth-child(n + 2),
 .rebalance-table td:nth-child(n + 2) {
@@ -3210,7 +3491,7 @@ body {
   background:
     radial-gradient(
       400px 200px at 100% 0%,
-      color-mix(in oklch, var(--primary) 10%, transparent),
+      color-mix(in oklch, var(--brand-blue) 9%, transparent),
       transparent 60%
     ),
     var(--card);
@@ -3223,7 +3504,7 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 22px 22px 0;
+  padding: 18px 20px 0;
 }
 .auth-eyebrow {
   font:
@@ -3267,14 +3548,14 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 18px 22px 0;
+  margin: 14px 20px 0;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--secondary);
 }
 .auth-mode-btn {
-  height: 38px;
+  height: 36px;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -3297,13 +3578,13 @@ body {
 .auth-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 22px;
+  gap: 10px;
+  padding: 12px 20px 18px;
 }
 .auth-field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 4px;
 }
 .auth-label {
   font:
@@ -3312,14 +3593,14 @@ body {
   color: var(--muted-foreground);
 }
 .auth-input {
-  height: 44px;
-  padding: 0 14px;
+  height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--background);
   color: var(--foreground);
   font:
-    600 15px 'JetBrains Mono',
+    500 13px 'JetBrains Mono',
     monospace;
   outline: none;
   transition:
@@ -3340,33 +3621,10 @@ body {
   font-size: 12.5px;
   line-height: 1.45;
 }
-.auth-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 0 22px 22px;
-}
-.auth-cancel {
-  height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--muted-foreground);
-  font:
-    600 13px 'DM Sans',
-    sans-serif;
-  cursor: pointer;
-  transition:
-    color 0.15s ease-out,
-    background 0.15s ease-out;
-}
-.auth-cancel:hover {
-  color: var(--foreground);
-  background: var(--muted);
-}
 .auth-submit {
-  height: 40px;
+  width: 100%;
+  height: 38px;
+  margin-top: 2px;
   padding: 0 18px;
   border: none;
   border-radius: 12px;
@@ -6094,14 +6352,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 16px 22px 0;
+  margin: 12px 20px 0;
 }
 .oauth-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  height: 44px;
+  height: 42px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in oklch, var(--background) 60%, transparent);
@@ -6136,7 +6394,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 14px 22px 0;
+  margin: 11px 20px 0;
   color: var(--muted-foreground);
   font:
     600 10.5px 'JetBrains Mono',

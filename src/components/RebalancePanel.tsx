@@ -108,8 +108,10 @@ export function RebalancePanel({
 
   if (!hasTargets) {
     return (
-      <div className="suggestion-empty">
-        <Scale size={22} />
+      <div className="suggestion-empty rebalance-empty">
+        <span className="rebalance-scale-icon">
+          <Scale size={20} />
+        </span>
         <div>
           <span className="suggestion-empty-title">No target allocation yet</span>
           <span className="suggestion-empty-sub">

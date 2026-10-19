@@ -262,16 +262,10 @@ export function AuthModal({
               {error}
             </p>
           )}
-        </div>
-
-        <footer className="auth-footer">
-          <button type="button" className="auth-cancel" onClick={close}>
-            Cancel
-          </button>
           <button type="submit" className="auth-submit" disabled={submitting}>
             {submitting ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
           </button>
-        </footer>
+        </div>
       </motion.form>
     </div>,
     document.body,

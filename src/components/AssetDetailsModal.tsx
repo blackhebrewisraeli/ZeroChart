@@ -33,12 +33,12 @@ export function AssetDetailsModal({
   asset,
   onClose,
   portfolioCapital,
-}: {
+}: Readonly<{
   asset: Asset;
   onClose: () => void;
   /** Active portfolio equity; Pro exports pre-fill it into the Pine Script. */
   portfolioCapital?: number;
-}) {
+}>) {
   const { isPro } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
   const [pineOpen, setPineOpen] = useState(false);

@@ -125,6 +125,6 @@ describe('PineScriptModal', () => {
   it('falls back to the default capital when none is provided', () => {
     render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
     expect(screen.getByText(/defaults to \$10,000\.00/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Pine Script source')).toHaveTextContent(DEFAULT_CAPITAL_INPUT);
+    expect(screen.getByLabelText('Pine Script source')).toHaveValue(buildPineScript());
   });
 });

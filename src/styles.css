@@ -7037,7 +7037,9 @@ button.paper-ticker:hover {
   font-size: 13px;
 }
 .pine-code {
-  max-height: 260px;
+  display: block;
+  width: 100%;
+  height: 260px;
   margin: 16px 0 0;
   padding: 14px 16px;
   overflow: auto;
@@ -7050,6 +7052,7 @@ button.paper-ticker:hover {
     monospace;
   white-space: pre;
   tab-size: 4;
+  resize: none;
 }
 .pine-actions {
   display: grid;

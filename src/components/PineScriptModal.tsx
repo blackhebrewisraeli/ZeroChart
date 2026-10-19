@@ -85,9 +85,14 @@ export function PineScriptModal({ open, onOpenChange, capital }: PineScriptModal
             ))}
           </ol>
 
-          <pre className="pine-code" tabIndex={0} aria-label="Pine Script source">
-            <code>{source}</code>
-          </pre>
+          <textarea
+            className="pine-code"
+            value={source}
+            readOnly
+            wrap="off"
+            spellCheck={false}
+            aria-label="Pine Script source"
+          />
 
           <div className="pine-actions">
             <button type="button" className="pricing-upgrade-button" onClick={copy}>

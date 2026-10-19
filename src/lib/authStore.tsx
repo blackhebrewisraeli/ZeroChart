@@ -136,12 +136,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, switchScope, replacePortfolioState]);
 
   const signOut = useCallback(async () => {
+    const devAuthActive = readDevAuthUser() !== null;
     // Clear the signed-in user's in-memory portfolio and re-scope to guest
     // IMMEDIATELY — before the network sign-out resolves — so a subsequent
     // account can never observe the previous user's positions (F-4.1a).
     activeUserIdRef.current = null;
+    setUser(null);
+    setSandboxPro(false);
     switchScope(null);
     resetHydration();
+    if (devAuthActive) {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('devAuth');
+      window.history.replaceState(window.history.state, '', nextUrl);
+      return;
+    }
     await supabase.auth.signOut();
   }, [switchScope]);
 

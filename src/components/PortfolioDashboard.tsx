@@ -84,16 +84,18 @@ function KpiCard({
   value,
   sub,
   icon,
+  accent = 'blue',
   tone,
 }: {
   label: string;
   value: string;
   sub?: string;
   icon?: ReactNode;
+  accent?: 'blue' | 'green' | 'red';
   tone?: 'pnl-up' | 'pnl-down' | undefined;
 }) {
   return (
-    <div className="kpi-card">
+    <div className={cn('kpi-card', `is-${accent}`)}>
       <div className="kpi-card-head">
         <span className="overview-label">{label}</span>
         {icon && <span className="kpi-card-icon">{icon}</span>}
@@ -317,6 +319,7 @@ function HoldingRow({
                 <span className="holding-edit-label">Shares</span>
                 <input
                   className="holding-edit-input"
+                  name={`shares-${position.id}`}
                   type="number"
                   min="0"
                   step="any"
@@ -328,6 +331,7 @@ function HoldingRow({
                 <span className="holding-edit-label">Buy price</span>
                 <input
                   className="holding-edit-input"
+                  name={`buy-price-${position.id}`}
                   type="number"
                   min="0"
                   step="any"
@@ -773,6 +777,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
               )
             ) : undefined
           }
+          accent={dayTone === 'pnl-up' ? 'green' : dayTone === 'pnl-down' ? 'red' : 'blue'}
           tone={dayTone}
         />
         <KpiCard
@@ -780,9 +785,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           value={formatPnl(valuation.unrealizedPnl)}
           sub={formatSignedPercent(valuation.unrealizedPnlPct)}
           icon={<Briefcase size={18} />}
+          accent={valuation.unrealizedPnl >= 0 ? 'green' : 'red'}
           tone={valuation.unrealizedPnl >= 0 ? 'pnl-up' : 'pnl-down'}
         />
-        <div className="kpi-card kpi-card-health">
+        <div className={cn('kpi-card kpi-card-health', healthTone(stats.healthScore))}>
           <span className="overview-label">Signal Health</span>
           <HealthRing score={stats.healthScore} />
         </div>
@@ -840,6 +846,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
               <div className="portfolio-cash-controls">
                 <input
                   className="portfolio-cash-input"
+                  name="portfolio-cash-amount"
                   type="number"
                   min="0"
                   step="any"
@@ -896,7 +903,10 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         </section>
 
         <aside className="portfolio-side-stack" aria-label="Allocation and rebalancing">
-          <section className="portfolio-section portfolio-workspace-card" aria-label="Allocation">
+          <section
+            className="portfolio-section portfolio-workspace-card portfolio-allocation-card"
+            aria-label="Allocation"
+          >
             <div className="portfolio-section-head">
               <h3 className="portfolio-section-title">Allocation</h3>
             </div>

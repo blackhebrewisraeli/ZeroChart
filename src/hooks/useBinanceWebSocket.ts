@@ -84,7 +84,11 @@ export function useBinanceWebSocket(assets: Asset[]): void {
         scheduleReconnect();
       };
 
-      ws.onerror = () => ws.close();
+      // A failed CONNECTING socket closes itself. Calling close() before the
+      // handshake completes produces a noisy browser warning and adds no value.
+      ws.onerror = () => {
+        if (ws.readyState === WebSocket.OPEN) ws.close();
+      };
     }
 
     connect();
@@ -101,7 +105,19 @@ export function useBinanceWebSocket(assets: Asset[]): void {
       stopped = true;
       window.clearInterval(flushTimer);
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
-      socket?.close();
+      const activeSocket = socket;
+      if (!activeSocket) return;
+      activeSocket.onmessage = null;
+      activeSocket.onclose = null;
+      activeSocket.onerror = null;
+      if (activeSocket.readyState === WebSocket.CONNECTING) {
+        // React StrictMode may clean up immediately after mount. Let the
+        // handshake finish before closing so Chrome does not report a false
+        // "closed before the connection is established" warning.
+        activeSocket.onopen = () => activeSocket.close();
+      } else if (activeSocket.readyState === WebSocket.OPEN) {
+        activeSocket.close();
+      }
     };
   }, []);
 }

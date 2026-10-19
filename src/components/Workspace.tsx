@@ -53,6 +53,8 @@ import { toBinanceSymbol } from '@/lib/binance';
 import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import { useAuth } from '@/lib/authStore';
+import { usePortfolio } from '@/lib/portfolioStore';
+import { computePortfolioValuation } from '@/lib/portfolioAccounting';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
@@ -252,6 +254,7 @@ function Terminal() {
       : navigate({ to: '/', search: next === 'scanner' ? { view: 'scanner' } : {} }));
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const { user, signOut } = useAuth();
+  const { portfolios, activePortfolioType } = usePortfolio();
   const query = useQuery({
     queryKey: ['assets-status'],
     queryFn: fetchAssets,
@@ -531,7 +534,16 @@ function Terminal() {
       </footer>
 
       {selectedAsset && (
-        <AssetDetailsModal asset={selectedAsset} onClose={() => setSelectedAsset(null)} />
+        <AssetDetailsModal
+          asset={selectedAsset}
+          onClose={() => setSelectedAsset(null)}
+          portfolioCapital={
+            computePortfolioValuation(
+              portfolios[activePortfolioType],
+              Object.fromEntries(baseAssets.map((a) => [a.ticker.toUpperCase(), a.current_price])),
+            ).totalEquity
+          }
+        />
       )}
     </div>
   );

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ExternalLink, LockKeyhole, X } from 'lucide-react';
+import { Code2, ExternalLink, LockKeyhole, X } from 'lucide-react';
 import { AssetIcon } from '@/components/AssetIcon';
 import { PricingModal } from '@/components/PricingModal';
 import { AssetChart } from '@/components/AssetChart';
+import { PineScriptModal } from '@/components/PineScriptModal';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { REGIME_LABELS } from '@/lib/multiFactor';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
@@ -28,9 +29,19 @@ const QUANT_FACTORS = [
  * historical candles from Binance (crypto only) and renders a gradient area
  * chart, falling back gracefully for stocks and forex.
  */
-export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+export function AssetDetailsModal({
+  asset,
+  onClose,
+  portfolioCapital,
+}: {
+  asset: Asset;
+  onClose: () => void;
+  /** Active portfolio equity; Pro exports pre-fill it into the Pine Script. */
+  portfolioCapital?: number;
+}) {
   const { isPro } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [pineOpen, setPineOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
@@ -135,7 +146,18 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
               )}
             </div>
 
-            <AssetChart ticker={asset.ticker} />
+            <AssetChart
+              ticker={asset.ticker}
+              actions={
+                <button
+                  type="button"
+                  className="pine-export-button"
+                  onClick={() => setPineOpen(true)}
+                >
+                  <Code2 size={14} /> TradingView Indicator
+                </button>
+              }
+            />
 
             <section className="quant-breakdown" aria-labelledby="quant-breakdown-title">
               <div className="quant-breakdown-head">
@@ -223,6 +245,11 @@ export function AssetDetailsModal({ asset, onClose }: { asset: Asset; onClose: (
         document.body,
       )}
       <PricingModal open={pricingOpen} onOpenChange={setPricingOpen} />
+      <PineScriptModal
+        open={pineOpen}
+        onOpenChange={setPineOpen}
+        capital={isPro ? (portfolioCapital ?? null) : null}
+      />
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { UTCTimestamp } from 'lightweight-charts';
 import { LineChart } from 'lucide-react';
 import { Segmented, type SegmentOption } from '@/components/Segmented';
@@ -34,9 +34,12 @@ const CHART_MODES: SegmentOption<ChartMode>[] = [
 export function AssetChart({
   ticker,
   quantHeight = 276,
+  actions,
 }: {
   ticker: string;
   quantHeight?: number;
+  /** Extra controls shown beside the chart-mode toggle. */
+  actions?: ReactNode;
 }) {
   const isCrypto = isBinanceCrypto(ticker);
   // Our own candles are crypto-only, so other assets open on TradingView.
@@ -93,6 +96,7 @@ export function AssetChart({
           onChange={setChartMode}
           ariaLabel="Chart mode"
         />
+        {actions}
       </div>
 
       {chartMode === 'quant' && isCrypto && status === 'success' && (

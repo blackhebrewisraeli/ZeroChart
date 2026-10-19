@@ -6450,6 +6450,11 @@ button.paper-ticker:hover {
 
 /* ===== Chart mode (ZeroChart Quant / TradingView Pro) ===== */
 .chart-mode-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin: 14px 24px 0;
 }
 .asset-details-chart.is-tradingview {
@@ -6979,6 +6984,83 @@ button.paper-ticker:hover {
   text-align: center;
   color: oklch(0.62 0.015 250);
   font-size: 11px;
+}
+
+/* ===== TradingView Pine Script export (reuses the pricing modal shell) ===== */
+.pine-export-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
+  color: var(--brand-blue);
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    box-shadow 0.2s ease-out,
+    transform 0.15s ease-out;
+}
+.pine-export-button:hover {
+  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 30%, transparent);
+}
+.pine-export-button:active {
+  transform: scale(0.97);
+}
+.pine-export-button:focus-visible,
+.pine-code:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+.pine-capital {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 0;
+  color: oklch(0.82 0.01 250);
+  font-size: 13px;
+}
+.pine-steps {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding-left: 20px;
+  list-style: decimal;
+  color: oklch(0.82 0.01 250);
+  font-size: 13px;
+}
+.pine-code {
+  max-height: 260px;
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  background: #0b1220;
+  color: #cbd5e1;
+  font:
+    400 11.5px/1.55 'JetBrains Mono',
+    monospace;
+  white-space: pre;
+  tab-size: 4;
+}
+.pine-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+@media (max-width: 500px) {
+  .pine-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Basic-tier interstitial: reuses the pricing modal shell, sits just below it. */

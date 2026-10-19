@@ -76,4 +76,16 @@ describe('AssetDetailsModal chart mode', () => {
     );
     expect(screen.getByTestId('tradingview-placeholder')).toHaveTextContent('NASDAQ:AAPL');
   });
+
+  it('opens the TradingView Pine export pre-filled with Pro portfolio capital', () => {
+    render(
+      <AssetDetailsModal asset={makeAsset('BTC')} onClose={() => {}} portfolioCapital={50_000} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'TradingView Indicator' }));
+    expect(
+      screen.getByRole('dialog', { name: 'ZeroChart Quant HUD for TradingView' }),
+    ).toBeVisible();
+    expect(screen.getByText(/pre-filled from your portfolio: \$50,000\.00/)).toBeInTheDocument();
+  });
 });

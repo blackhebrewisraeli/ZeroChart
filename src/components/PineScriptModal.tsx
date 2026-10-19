@@ -22,7 +22,7 @@ const STEPS = [
 ] as const;
 
 /** One-click export of the ZeroChart Quant HUD Pine Script v6 indicator. */
-export function PineScriptModal({ open, onOpenChange, capital }: PineScriptModalProps) {
+export function PineScriptModal({ open, onOpenChange, capital }: Readonly<PineScriptModalProps>) {
   const prefilled = capital != null && Number.isFinite(capital) && capital > 0 ? capital : null;
   const source = buildPineScript(prefilled);
 

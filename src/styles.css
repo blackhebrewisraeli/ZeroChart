@@ -1719,7 +1719,7 @@ body {
   opacity: 1;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .terminal-header .page-width {
     padding-inline: 16px;
   }
@@ -1743,30 +1743,31 @@ body {
     font-size: 12px;
   }
 }
-@media (max-width: 380px) {
-  .terminal-header .page-width {
-    padding-inline: 12px;
-  }
-}
 
 /* ===== Header responsive tiers =====
    The 72px terminal header must fit viewports ≥360px, so it sheds
-   secondary chrome in tiers instead of overflowing. Each tier was
-   measured (CDP) to keep ≥15px of slack: tag ≤840, status + tab icons
-   ≤760, refresh ≤640, wordmark ≤520, compact sizing ≤480. The tour
+   secondary chrome in tiers instead of overflowing. The three workspace
+   tabs must also never shrink below their max-content width: squeezed
+   1fr columns go unequal and the --segments thumb drifts off the active
+   tab. Tiers were measured at every 5px from 360–1300 with the longest
+   status label ("Reconnecting…"): tag ≤1140, tab icons + tags ≤1060,
+   status ≤880, segment compaction ≤720 (segment styles above), refresh
+   ≤640, wordmark ≤580, compact sizing ≤480, avatar ≤420. The tour
    trigger tiers live with the tour styles below (they must override the
    base .tour-trigger rules). */
-@media (max-width: 840px) {
+@media (max-width: 1140px) {
   .terminal-tag {
     display: none;
   }
 }
-@media (max-width: 760px) {
-  .connection-status {
-    display: none;
-  }
+@media (max-width: 1060px) {
   .terminal-header .segment-option svg,
   .terminal-header .segment-tag {
+    display: none;
+  }
+}
+@media (max-width: 880px) {
+  .connection-status {
     display: none;
   }
 }
@@ -1775,7 +1776,7 @@ body {
     display: none;
   }
 }
-@media (max-width: 520px) {
+@media (max-width: 580px) {
   .brand-wordmark {
     display: none;
   }
@@ -1806,6 +1807,17 @@ body {
   .terminal-header .segment-option {
     padding: 4px 8px;
     font-size: 11px;
+  }
+}
+@media (max-width: 420px) {
+  .terminal-header .page-width {
+    padding-inline: 12px;
+  }
+  .terminal-header .header-avatar {
+    display: none;
+  }
+  .terminal-header .segment-option {
+    padding: 4px 6px;
   }
 }
 
@@ -2399,6 +2411,15 @@ body {
 }
 .paper-positions td {
   font-variant-numeric: tabular-nums;
+}
+/* The table outgrows the 420px-side main column even on desktop; pin the
+   actions so 1-click Close never scrolls out of view. */
+.paper-positions th:last-child,
+.paper-positions td:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--card);
+  box-shadow: inset 1px 0 0 var(--border);
 }
 .paper-ticker {
   display: inline-flex;
@@ -5091,7 +5112,7 @@ body {
 .tour-next:active {
   transform: scale(0.98);
 }
-@media (max-width: 760px) {
+@media (max-width: 880px) {
   .tour-trigger-label {
     display: none;
   }

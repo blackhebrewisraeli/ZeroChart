@@ -50,8 +50,23 @@ export function TradingViewWidget({ symbol }: { symbol: string }) {
       studies: ['STD;RSI', 'STD;MACD'],
       support_host: 'https://www.tradingview.com',
     });
+    const settled = new Promise<void>((resolve) => {
+      script.onload = script.onerror = () => resolve();
+    });
     host.replaceChildren(widget, script);
-    return () => host.replaceChildren();
+    // The async embed script reads `script.parentNode` and its iframe's
+    // contentWindow when it runs, and throws/logs if a fast unmount (chart
+    // toggle, modal close) detached them first. Park the old nodes in a hidden,
+    // attached holder (same class, so the script builds its iframe in place)
+    // until the script has run, then drop them.
+    return () => {
+      const parked = document.createElement('div');
+      parked.className = 'tradingview-widget-container';
+      parked.hidden = true;
+      parked.append(...host.childNodes);
+      document.body.append(parked);
+      void settled.then(() => parked.remove());
+    };
   }, [symbol, theme]);
 
   return (

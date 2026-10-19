@@ -433,14 +433,6 @@ body {
   margin-top: 32px;
   border-top: 1px solid var(--border);
 }
-.hero-chart > div > div:not(.tradingview-widget-copyright) {
-  width: 100%;
-  height: 100%;
-}
-.hero-chart iframe {
-  width: 100%;
-  max-width: 100%;
-}
 
 .trade-button {
   display: inline-flex;

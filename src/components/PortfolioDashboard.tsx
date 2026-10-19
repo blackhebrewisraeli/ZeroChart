@@ -593,6 +593,9 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       ? 'pnl-up'
       : 'pnl-down'
     : undefined;
+  let dayIcon = <Activity size={18} />;
+  if (dayTone === 'pnl-up') dayIcon = <TrendingUp size={18} />;
+  else if (dayTone === 'pnl-down') dayIcon = <TrendingDown size={18} />;
 
   async function handleShare() {
     if (!user) {
@@ -769,15 +772,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           label="Current Value"
           value={formatPrice(valuation.marketValue)}
           sub={hasDayChange ? `24h ${formatPnl(dayChange)}` : 'Live prices'}
-          icon={
-            dayTone === 'pnl-up' ? (
-              <TrendingUp size={18} />
-            ) : dayTone === 'pnl-down' ? (
-              <TrendingDown size={18} />
-            ) : (
-              <Activity size={18} />
-            )
-          }
+          icon={dayIcon}
           accent={dayTone === 'pnl-up' ? 'green' : dayTone === 'pnl-down' ? 'red' : 'blue'}
           tone={dayTone}
         />

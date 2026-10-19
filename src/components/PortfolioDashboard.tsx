@@ -75,6 +75,7 @@ import {
 } from '@/lib/sharedPortfolio';
 
 type PortfolioMode = 'simulation' | 'live';
+type AnalyticsTab = 'backtest' | 'ledger';
 
 const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
 
@@ -99,6 +100,33 @@ function KpiCard({
       </div>
       <span className={cn('overview-value', tone)}>{value}</span>
       {sub && <span className={cn('overview-sub', tone)}>{sub}</span>}
+    </div>
+  );
+}
+
+function TelemetryItem({
+  label,
+  value,
+  sub,
+  icon,
+  accent,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: ReactNode;
+  accent: 'violet' | 'green' | 'amber';
+  tone?: 'pnl-up' | 'pnl-down' | undefined;
+}) {
+  return (
+    <div className={cn('portfolio-telemetry-item', `is-${accent}`)}>
+      <span className="portfolio-telemetry-icon">{icon}</span>
+      <span className="portfolio-telemetry-copy">
+        <span className="overview-label">{label}</span>
+        <span className={cn('portfolio-telemetry-value', tone)}>{value}</span>
+        <span className="portfolio-telemetry-sub">{sub}</span>
+      </span>
     </div>
   );
 }
@@ -365,45 +393,52 @@ export function TradeLedger({
   filename,
   title = 'Trade Ledger',
   defaultOpen = false,
+  embedded = false,
 }: {
   transactions: PortfolioTransaction[];
   filename: string;
   title?: string;
   defaultOpen?: boolean;
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const newestFirst = [...transactions].reverse();
 
   return (
-    <section className="portfolio-section" aria-label={title}>
-      <div className="portfolio-section-head">
-        <h3 className="portfolio-section-title">
-          <button
-            type="button"
-            className="ledger-toggle"
-            aria-expanded={open}
-            aria-controls="trade-ledger-panel"
-            onClick={() => setOpen((value) => !value)}
-          >
-            {title}
-            <ChevronDown size={18} className={cn('holding-chevron', open && 'is-open')} />
-          </button>
-        </h3>
-        <div className="portfolio-section-actions">
-          <span className="portfolio-count">
-            {transactions.length} ENTR{transactions.length === 1 ? 'Y' : 'IES'}
-          </span>
-          <button
-            type="button"
-            className="portfolio-cash-btn ledger-export"
-            disabled={transactions.length === 0}
-            onClick={() => downloadCsv(filename, tradeLedgerCsv(transactions))}
-          >
-            <Download size={13} /> Export CSV
-          </button>
+    <section
+      className={cn('portfolio-section', embedded && 'portfolio-section-embedded')}
+      aria-label={title}
+    >
+      {!embedded && (
+        <div className="portfolio-section-head">
+          <h3 className="portfolio-section-title">
+            <button
+              type="button"
+              className="ledger-toggle"
+              aria-expanded={open}
+              aria-controls="trade-ledger-panel"
+              onClick={() => setOpen((value) => !value)}
+            >
+              {title}
+              <ChevronDown size={18} className={cn('holding-chevron', open && 'is-open')} />
+            </button>
+          </h3>
+          <div className="portfolio-section-actions">
+            <span className="portfolio-count">
+              {transactions.length} ENTR{transactions.length === 1 ? 'Y' : 'IES'}
+            </span>
+            <button
+              type="button"
+              className="portfolio-cash-btn ledger-export"
+              disabled={transactions.length === 0}
+              onClick={() => downloadCsv(filename, tradeLedgerCsv(transactions))}
+            >
+              <Download size={13} /> Export CSV
+            </button>
+          </div>
         </div>
-      </div>
-      {open && (
+      )}
+      {(embedded || open) && (
         <div id="trade-ledger-panel">
           {newestFirst.length > 0 ? (
             <div className="ledger-scroll">
@@ -489,6 +524,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   const [authOpen, setAuthOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [cashAmount, setCashAmount] = useState('');
+  const [analyticsTab, setAnalyticsTab] = useState<AnalyticsTab>('backtest');
   const { user } = useAuth();
   const {
     removePosition,
@@ -753,129 +789,184 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
       </div>
 
       <section
-        className="portfolio-section"
+        className="portfolio-telemetry"
         aria-label="P&L attribution"
         data-tour="pnl-attribution"
       >
-        <div className="portfolio-section-head">
-          <h3 className="portfolio-section-title">P&amp;L Attribution</h3>
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <KpiCard
-            label="Unrealized P&L"
-            value={formatPnl(valuation.unrealizedPnl)}
-            sub={`${formatSignedPercent(valuation.unrealizedPnlPct)} · open lots, net of fees`}
-            icon={<TrendingUp size={18} />}
-            tone={pnlTone(valuation.unrealizedPnl)}
-          />
-          <KpiCard
-            label="Realized P&L"
-            value={formatPnl(valuation.realizedPnl)}
-            sub={`${closedCount} closed ${closedCount === 1 ? 'trade' : 'trades'} · FIFO lots`}
-            icon={<CheckCircle2 size={18} />}
-            tone={pnlTone(valuation.realizedPnl)}
-          />
-          <KpiCard
-            label="Execution Drag"
-            value={formatPrice(drag)}
-            sub={`Fees + slippage · ${tradeCount} ${tradeCount === 1 ? 'fill' : 'fills'}`}
-            icon={<Gauge size={18} />}
-          />
-        </div>
+        <TelemetryItem
+          label="Unrealized P&L"
+          value={formatPnl(valuation.unrealizedPnl)}
+          sub={`${formatSignedPercent(valuation.unrealizedPnlPct)} · open lots, net of fees`}
+          icon={<TrendingUp size={16} />}
+          accent="violet"
+          tone={pnlTone(valuation.unrealizedPnl)}
+        />
+        <TelemetryItem
+          label="Realized P&L"
+          value={formatPnl(valuation.realizedPnl)}
+          sub={`${closedCount} closed ${closedCount === 1 ? 'trade' : 'trades'} · FIFO lots`}
+          icon={<CheckCircle2 size={16} />}
+          accent="green"
+          tone={pnlTone(valuation.realizedPnl)}
+        />
+        <TelemetryItem
+          label="Execution Drag"
+          value={formatPrice(drag)}
+          sub={`Fees + slippage · ${tradeCount} ${tradeCount === 1 ? 'fill' : 'fills'}`}
+          icon={<Gauge size={16} />}
+          accent="amber"
+        />
       </section>
 
-      <section className="portfolio-section" aria-label="Allocation">
-        <div className="portfolio-section-head">
-          <h3 className="portfolio-section-title">Allocation</h3>
-        </div>
-        <AllocationChart positions={visible} assets={assets} />
-      </section>
-
-      <section className="portfolio-section" aria-label="Historical simulation">
-        {/* Keyed so one portfolio's result never shows under another. */}
-        <BacktestChart key={ledgerType} positions={visible} assets={assets} />
-      </section>
-
-      <section className="portfolio-section" aria-label="Rebalancing">
-        <div className="portfolio-section-head">
-          <h3 className="portfolio-section-title">Rebalancing</h3>
-          <div className="portfolio-cash-controls">
-            <span className="portfolio-cash">
-              <Wallet size={14} /> {formatPrice(cashBalance)} available
-            </span>
-            <input
-              className="portfolio-cash-input"
-              type="number"
-              min="0"
-              step="any"
-              inputMode="decimal"
-              placeholder="Amount"
-              aria-label="Cash amount"
-              value={cashAmount}
-              onChange={(event) => setCashAmount(event.target.value)}
-            />
-            <button
-              type="button"
-              className="portfolio-cash-btn"
-              onClick={() => handleCashAction('deposit')}
-            >
-              Deposit
-            </button>
-            <button
-              type="button"
-              className="portfolio-cash-btn"
-              onClick={() => handleCashAction('withdrawal')}
-            >
-              Withdraw
-            </button>
-          </div>
-        </div>
-        <RebalancePanel portfolioType={ledgerType} assets={assets} />
-      </section>
-
-      <section className="portfolio-section" aria-label="Holdings">
-        <div className="portfolio-section-head">
-          <h3 className="portfolio-section-title">Holdings</h3>
-          <div className="portfolio-section-actions">
-            <span className="portfolio-count">
-              {visible.length} POSITION{visible.length === 1 ? '' : 'S'}
-            </span>
-            {mode === 'live' && <AddPositionModal />}
-          </div>
-        </div>
-        {visible.length > 0 ? (
-          <div className="holdings-list">
-            <AnimatePresence>
-              {visible.map((position) => (
-                <HoldingRow
-                  key={position.id}
-                  position={position}
-                  assets={assets}
-                  onClose={handleClosePosition}
-                  onUpdate={updatePosition}
+      <div className="portfolio-workspace-grid">
+        <section
+          className="portfolio-section portfolio-workspace-card portfolio-holdings-pane"
+          aria-label="Holdings"
+        >
+          <div className="portfolio-workspace-head">
+            <div className="portfolio-section-head portfolio-section-head-compact">
+              <h3 className="portfolio-section-title">Holdings</h3>
+              <div className="portfolio-section-actions">
+                <span className="portfolio-count">
+                  {visible.length} POSITION{visible.length === 1 ? '' : 'S'}
+                </span>
+                {mode === 'live' && <AddPositionModal />}
+              </div>
+            </div>
+            <div className="portfolio-cash-bar" aria-label="Cash controls">
+              <span className="portfolio-cash">
+                <Wallet size={14} /> {formatPrice(cashBalance)} available
+              </span>
+              <div className="portfolio-cash-controls">
+                <input
+                  className="portfolio-cash-input"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="Amount"
+                  aria-label="Cash amount"
+                  value={cashAmount}
+                  onChange={(event) => setCashAmount(event.target.value)}
                 />
-              ))}
-            </AnimatePresence>
+                <button
+                  type="button"
+                  className="portfolio-cash-btn"
+                  onClick={() => handleCashAction('deposit')}
+                >
+                  Deposit
+                </button>
+                <button
+                  type="button"
+                  className="portfolio-cash-btn"
+                  onClick={() => handleCashAction('withdrawal')}
+                >
+                  Withdraw
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="holdings-empty">
-            <Briefcase size={26} />
-            <span className="holdings-empty-title">
-              {mode === 'simulation' ? 'No simulation positions' : 'No live positions yet'}
-            </span>
-            <span className="holdings-empty-sub">
-              {mode === 'simulation'
-                ? 'Your paper portfolio is empty. Add a position to start simulating.'
-                : 'Connect your broker to start tracking real holdings.'}
-            </span>
-          </div>
-        )}
-      </section>
+          {visible.length > 0 ? (
+            <div className="holdings-list">
+              <AnimatePresence>
+                {visible.map((position) => (
+                  <HoldingRow
+                    key={position.id}
+                    position={position}
+                    assets={assets}
+                    onClose={handleClosePosition}
+                    onUpdate={updatePosition}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="holdings-empty">
+              <Briefcase size={26} />
+              <span className="holdings-empty-title">
+                {mode === 'simulation' ? 'No simulation positions' : 'No live positions yet'}
+              </span>
+              <span className="holdings-empty-sub">
+                {mode === 'simulation'
+                  ? 'Your paper portfolio is empty. Add a position to start simulating.'
+                  : 'Connect your broker to start tracking real holdings.'}
+              </span>
+            </div>
+          )}
+        </section>
 
-      <TradeLedger
-        transactions={ledger.transactions}
-        filename={`zerochart-ledger-${mode === 'simulation' ? 'simulation' : 'live'}.csv`}
-      />
+        <aside className="portfolio-side-stack" aria-label="Allocation and rebalancing">
+          <section className="portfolio-section portfolio-workspace-card" aria-label="Allocation">
+            <div className="portfolio-section-head">
+              <h3 className="portfolio-section-title">Allocation</h3>
+            </div>
+            <AllocationChart positions={visible} assets={assets} />
+          </section>
+          <section
+            className="portfolio-section portfolio-workspace-card portfolio-rebalance-card"
+            aria-label="Rebalancing"
+          >
+            <div className="portfolio-section-head">
+              <h3 className="portfolio-section-title">Rebalancing</h3>
+            </div>
+            <RebalancePanel portfolioType={ledgerType} assets={assets} />
+          </section>
+        </aside>
+      </div>
+
+      <section className="portfolio-section analytics-workspace" aria-label="Portfolio analytics">
+        <div className="analytics-workspace-tabs" aria-label="Portfolio analytics views">
+          <button
+            type="button"
+            className={cn('analytics-workspace-tab', analyticsTab === 'backtest' && 'is-active')}
+            aria-pressed={analyticsTab === 'backtest'}
+            onClick={() => setAnalyticsTab('backtest')}
+          >
+            Strategy Backtest
+          </button>
+          <button
+            type="button"
+            className={cn('analytics-workspace-tab', analyticsTab === 'ledger' && 'is-active')}
+            aria-expanded={analyticsTab === 'ledger'}
+            aria-controls="portfolio-ledger-workspace"
+            onClick={() => setAnalyticsTab('ledger')}
+          >
+            Trade Ledger ({ledger.transactions.length})
+          </button>
+          <span className="portfolio-count analytics-entry-count">
+            {ledger.transactions.length} ENTR{ledger.transactions.length === 1 ? 'Y' : 'IES'}
+          </span>
+          <button
+            type="button"
+            className="portfolio-cash-btn ledger-export analytics-export"
+            disabled={ledger.transactions.length === 0}
+            onClick={() =>
+              downloadCsv(
+                `zerochart-ledger-${mode === 'simulation' ? 'simulation' : 'live'}.csv`,
+                tradeLedgerCsv(ledger.transactions),
+              )
+            }
+          >
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
+        <div className="analytics-workspace-panel">
+          {analyticsTab === 'backtest' ? (
+            <div aria-label="Historical simulation">
+              {/* Keyed so one portfolio's result never shows under another. */}
+              <BacktestChart key={ledgerType} positions={visible} assets={assets} />
+            </div>
+          ) : (
+            <div id="portfolio-ledger-workspace">
+              <TradeLedger
+                embedded
+                transactions={ledger.transactions}
+                filename={`zerochart-ledger-${mode === 'simulation' ? 'simulation' : 'live'}.csv`}
+              />
+            </div>
+          )}
+        </div>
+      </section>
 
       <section className="portfolio-section" aria-label="Price alerts">
         <PriceAlerts assets={assets} user={user} />

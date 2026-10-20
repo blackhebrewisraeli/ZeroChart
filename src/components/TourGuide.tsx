@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
-import { Joyride, STATUS, type Styles } from 'react-joyride';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import type { Styles } from 'react-joyride';
 import { Compass } from 'lucide-react';
 import { tourSteps, withViewSwitching, type TourView } from '@/lib/tourSteps';
+
+// react-joyride loads on the first Tour click, not with the workspace.
+const Joyride = lazy(() => import('react-joyride').then((m) => ({ default: m.Joyride })));
 
 const joyrideStyles: Partial<Styles> = {
   tooltip: {
@@ -48,31 +51,35 @@ export function TourGuide({ onViewChange }: { onViewChange: (view: TourView) => 
         <span className="tour-trigger-label">Tour</span>
       </button>
 
-      <Joyride
-        run={run}
-        steps={steps}
-        continuous
-        scrollToFirstStep
-        styles={joyrideStyles}
-        onEvent={(data) => {
-          if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
-            setRun(false);
-          }
-        }}
-        options={{
-          showProgress: true,
-          buttons: ['back', 'skip', 'primary'],
-          primaryColor: '#00e5ff',
-          backgroundColor: '#101828',
-          textColor: '#e6edf3',
-          overlayColor: 'rgba(2, 6, 16, 0.72)',
-          arrowColor: '#101828',
-          zIndex: 10000,
-          width: 360,
-          spotlightRadius: 12,
-          spotlightPadding: 8,
-        }}
-      />
+      {run && (
+        <Suspense fallback={null}>
+          <Joyride
+            run
+            steps={steps}
+            continuous
+            scrollToFirstStep
+            styles={joyrideStyles}
+            onEvent={(data) => {
+              if (data.status === 'finished' || data.status === 'skipped') {
+                setRun(false);
+              }
+            }}
+            options={{
+              showProgress: true,
+              buttons: ['back', 'skip', 'primary'],
+              primaryColor: '#00e5ff',
+              backgroundColor: '#101828',
+              textColor: '#e6edf3',
+              overlayColor: 'rgba(2, 6, 16, 0.72)',
+              arrowColor: '#101828',
+              zIndex: 10000,
+              width: 360,
+              spotlightRadius: 12,
+              spotlightPadding: 8,
+            }}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

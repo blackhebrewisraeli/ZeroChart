@@ -16,12 +16,14 @@ type Signal = Database['public']['Tables']['trading_signals']['Row'];
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** The scanner asset a signal's ticker refers to ("BTCUSDT" or "BTC-USD"). */
+/** The scanner asset a signal's ticker refers to ("BTCUSDT", "BTCUSD" or "BTC-USD"). */
 function findAsset(assets: Asset[], ticker: string): Asset | undefined {
   const wanted = ticker.toUpperCase();
-  return assets.find(
-    (a) => a.ticker.toUpperCase() === wanted || toBinanceSymbol(a.ticker) === wanted,
-  );
+  return assets.find((a) => {
+    const usdt = toBinanceSymbol(a.ticker);
+    // TradingView's USD charts (BINANCE:BTCUSD, COINBASE:BTCUSD) send the bare "BTCUSD".
+    return a.ticker.toUpperCase() === wanted || usdt === wanted || usdt?.slice(0, -1) === wanted;
+  });
 }
 
 /** Appends fetched rows that aren't already listed or known to be resolved. */

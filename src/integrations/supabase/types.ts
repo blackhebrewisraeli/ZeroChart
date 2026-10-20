@@ -187,6 +187,10 @@ export type Database = {
           snapshot: Json;
         }[];
       };
+      rotate_signal_webhook_token: {
+        Args: never;
+        Returns: string;
+      };
     };
     Enums: {
       [_ in never]: never;

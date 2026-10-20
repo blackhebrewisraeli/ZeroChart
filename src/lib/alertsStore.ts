@@ -8,9 +8,10 @@ import { useSyncExternalStore } from 'react';
  * Supabase `user_alerts` table (`scope: 'cloud'`, id = the row id). Evaluation
  * happens in ONE place — `runAlertPass` driven by `useAlertEngine` — so a
  * threshold can never fire twice or through divergent pipelines. Firing claims
- * the alert atomically via `takeAlert`, and fired cloud ids are suppressed for
- * the user's session so a failed `deactivateAlert` can never refire after the
- * next refetch.
+ * the alert atomically in this tab via `takeAlert`; a cloud alert then needs
+ * its server-side claim (`claimAlert`) before it notifies, which holds across
+ * tabs and reloads. Fired cloud ids stay suppressed for the user's session, so
+ * a refetch during or after a failed claim never re-adds them.
  */
 
 export type AlertCondition = 'above' | 'below';

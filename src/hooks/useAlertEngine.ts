@@ -16,11 +16,11 @@ import {
   type AlertsSyncState,
   type PriceAlert,
 } from '@/lib/alertsStore';
-import { runAlertPass, withRetry } from '@/lib/alertEngine';
+import { runAlertPass, withRetry, type AlertFiring } from '@/lib/alertEngine';
 import { useConnectionState, useLivePrices } from '@/lib/livePriceStore';
 import {
+  claimAlert,
   createAlert as insertCloudAlert,
-  deactivateAlert,
   deleteAlert as deleteCloudAlert,
   fetchActiveAlerts,
   type UserAlert,
@@ -47,9 +47,9 @@ export function fromCloudRow(row: UserAlert): PriceAlert {
  *     stale-response guard when the user changes mid-flight;
  *  2. runs one evaluation pass (`runAlertPass`) over BOTH scopes against the
  *     live-merged price stream, skipping non-alertable freshness states;
- *  3. notifies through one channel (sonner) and deactivates fired cloud
- *     alerts with bounded retry — the store's suppression set guarantees no
- *     refire even if every retry fails.
+ *  3. notifies through one channel (sonner). A cloud alert notifies only
+ *     after its server-side claim (`claimAlert`) wins, so a reload or a
+ *     second tab that sees the same crossing stays silent.
  *
  * WebSocket downtime degrades gracefully: the 60s provider refetch still
  * feeds `baseAssets`, so alerts keep evaluating against Delayed data instead
@@ -83,18 +83,34 @@ export function useAlertEngine(baseAssets: Asset[], user: User | null): void {
 
   // One evaluation pass per price/alert change.
   useEffect(() => {
-    const fired = runAlertPass({ assets: baseAssets, livePrices, streamConnected });
-    for (const { alert, price, freshness } of fired) {
-      toast.success(`${toDisplayTicker(alert.ticker)} reached ${formatPrice(alert.targetPrice)}!`, {
-        description: `${
-          alert.condition === 'above' ? 'Price rose to your target' : 'Price fell to your target'
-        } (${formatPrice(price)} · ${freshness}).`,
-      });
-      if (alert.scope === 'cloud') {
-        void withRetry(() => deactivateAlert(alert.id));
-      }
+    for (const firing of runAlertPass({ assets: baseAssets, livePrices, streamConnected })) {
+      if (firing.alert.scope === 'session') notify(firing);
+      else void claimThenNotify(firing);
     }
   }, [baseAssets, livePrices, streamConnected, alerts, sync.status]);
+}
+
+function notify({ alert, price, freshness }: AlertFiring): void {
+  toast.success(`${toDisplayTicker(alert.ticker)} reached ${formatPrice(alert.targetPrice)}!`, {
+    description: `${
+      alert.condition === 'above' ? 'Price rose to your target' : 'Price fell to your target'
+    } (${formatPrice(price)} · ${freshness}).`,
+  });
+}
+
+/**
+ * Notifies only when this tab's server claim wins. A claim that keeps failing
+ * stays suppressed for the session (the store's fired-id set) and the row
+ * stays unclaimed, so it fires after the next reload. A retry after a claim
+ * that committed but lost its response reads as lost: one missed toast
+ * rather than a duplicate.
+ */
+async function claimThenNotify(firing: AlertFiring): Promise<void> {
+  let claimed = false;
+  await withRetry(async () => {
+    claimed = await claimAlert(firing.alert.id);
+  });
+  if (claimed) notify(firing);
 }
 
 export interface AlertsController {

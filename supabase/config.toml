@@ -1,3 +1,6 @@
 project_id = "klzgalgvlstodtgygnzf"
 [functions.tv-webhook]
 verify_jwt = false
+
+[functions.crypto-price-feed]
+verify_jwt = false

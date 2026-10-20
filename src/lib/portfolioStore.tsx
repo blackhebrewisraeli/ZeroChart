@@ -33,6 +33,8 @@ import {
   loadPaperTransactions,
   type PaperTransactionInsert,
 } from '@/lib/db';
+import { paperOrderRow } from '@/lib/brokers/binancePaperAdapter';
+import type { BrokerOrder } from '@/lib/brokers/brokerInterface';
 
 export type {
   BuyTransactionInput,
@@ -395,13 +397,7 @@ function replaceContainer(
 }
 
 /** A Paper Trading market order; the fill books at `price`. */
-export interface PaperOrder {
-  side: 'buy' | 'sell';
-  ticker: string;
-  shares: number;
-  price: number;
-  fee: number;
-}
+export type PaperOrder = BrokerOrder;
 
 export interface PaperBooking {
   ok: boolean;
@@ -604,14 +600,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   );
 
   const executePaperTrade = useCallback(
-    (order: PaperOrder) =>
-      bookPaperRow({
-        action: order.side === 'buy' ? 'BUY' : 'SELL',
-        ticker: order.ticker.trim().toUpperCase(),
-        quantity: order.shares,
-        price: order.price,
-        fees: order.fee,
-      }),
+    (order: PaperOrder) => bookPaperRow(paperOrderRow(order)),
     [bookPaperRow],
   );
 

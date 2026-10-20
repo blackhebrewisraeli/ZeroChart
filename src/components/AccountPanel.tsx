@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/authStore';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { LEDGER_NAMES, type PortfolioType } from '@/lib/portfolioAccounting';
 import { downloadCsv, tradeLedgerCsv } from '@/lib/tradeLedger';
+import { loadWalkForward, walkForwardCsv } from '@/lib/engine/walkForwardLogger';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
@@ -96,6 +97,17 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
                 <Download size={13} /> {LEDGER_NAMES[type]}
               </button>
             ))}
+            {user && (
+              <button
+                type="button"
+                className="portfolio-cash-btn"
+                onClick={() =>
+                  downloadCsv('zerochart-beta-audit.csv', walkForwardCsv(loadWalkForward(user.id)))
+                }
+              >
+                <Download size={13} /> Export Beta Audit CSV
+              </button>
+            )}
           </div>
         </section>
       </div>

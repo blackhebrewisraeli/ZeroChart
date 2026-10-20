@@ -80,6 +80,43 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Mirrors 20261020120000_create_trading_signals.sql; rows arrive via the tv-webhook function.
+      trading_signals: {
+        Row: {
+          action: string;
+          conviction_score: number;
+          created_at: string;
+          id: string;
+          status: string;
+          stop_loss: number | null;
+          suggested_size: number;
+          ticker: string;
+          user_id: string;
+        };
+        Insert: {
+          action: string;
+          conviction_score: number;
+          created_at?: string;
+          id?: string;
+          status?: string;
+          stop_loss?: number | null;
+          suggested_size: number;
+          ticker: string;
+          user_id: string;
+        };
+        Update: {
+          action?: string;
+          conviction_score?: number;
+          created_at?: string;
+          id?: string;
+          status?: string;
+          stop_loss?: number | null;
+          suggested_size?: number;
+          ticker?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       // M1-T1 (F-3.1b): typed tables so `db.ts` / `priceAlerts.ts` queries are
       // strictly typed instead of relying on manual row casts. Mirrors the
       // idempotent baseline migration `0002_reconcile_schema_baseline.sql`.

@@ -250,6 +250,18 @@ describe('Action Center', () => {
     expect(store.portfolios.long_term_sim.transactions.some((t) => t.type === 'buy')).toBe(false);
   });
 
+  it('books a TradingView USD pair (BTCUSD) against the app’s crypto asset', async () => {
+    db.pending = [signal({ ticker: 'BTCUSD' })];
+    renderSignedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
+    expect(store.portfolios.paper_trading.positions[0]).toMatchObject({
+      ticker: 'BTC-USD',
+      shares: 0.01,
+    });
+  });
+
   it('warns when another tab claimed the signal while this one booked it', async () => {
     db.pending = [signal()];
     db.claimed = [];

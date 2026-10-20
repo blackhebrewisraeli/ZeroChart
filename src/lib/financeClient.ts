@@ -1,6 +1,7 @@
 import { computeFinance, type FinanceRequest, type FinanceResult } from './financeCompute';
 import type { MacdResult } from './indicators';
 import type { BacktestOptions, BacktestResult } from './backtestManager';
+import type { CanonicalResult, EngineCandle } from './canonicalModel';
 
 let worker: Worker | null | undefined;
 let nextId = 0;
@@ -80,4 +81,9 @@ export function atrAsync(
 /** Async, worker-backed backtest (cached in the worker). */
 export function computeBacktestAsync(options: BacktestOptions): Promise<BacktestResult> {
   return request<BacktestResult>({ kind: 'backtest', ...options });
+}
+
+/** Async, worker-backed canonical engine pass over a candle series (cached in the worker). */
+export function evaluateCandlesAsync(candles: readonly EngineCandle[]): Promise<CanonicalResult> {
+  return request<CanonicalResult>({ kind: 'canonical', candles });
 }

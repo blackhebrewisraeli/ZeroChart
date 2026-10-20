@@ -1,4 +1,5 @@
-import { calculateSignalScore, type Asset } from '@/lib/assets';
+import type { Asset } from '@/lib/assets';
+import { scoreOf, type CanonicalResult } from '@/lib/canonicalModel';
 import type { Position } from '@/lib/portfolioAccounting';
 
 export type { Position } from '@/lib/portfolioAccounting';
@@ -8,24 +9,24 @@ export interface PortfolioStats {
   totalInvested: number;
   unrealizedPnL: number;
   pnlPercent: number;
-  healthScore: number;
+  /** Value-weighted canonical Signal Score; null when no holding has one. */
+  healthScore: number | null;
 }
 
 /**
  * Calculates portfolio-level statistics by mapping each position to its live
  * market price. Positions without a valid live price fall back to their buy
  * price so they never report phantom profit or loss. `healthScore` is the
- * market-value-weighted average Signal Score of the held assets we can resolve
- * to live data.
+ * market-value-weighted average canonical Signal Score of the holdings the
+ * engine could score; holdings without enough data are left out, not zeroed.
  */
 export function calculatePortfolioStats(
   positions: Position[],
   liveAssets: Asset[],
+  scores: ReadonlyMap<string, CanonicalResult>,
 ): PortfolioStats {
   const priceByTicker = new Map<string, number>();
-  const assetByTicker = new Map<string, Asset>();
   for (const asset of liveAssets) {
-    assetByTicker.set(asset.ticker, asset);
     if (
       asset.current_price !== null &&
       Number.isFinite(asset.current_price) &&
@@ -49,9 +50,8 @@ export function calculatePortfolioStats(
     totalInvested += invested;
     totalValue += currentValue;
 
-    const asset = assetByTicker.get(position.ticker);
-    if (asset) {
-      const score = calculateSignalScore(asset);
+    const score = scoreOf(scores.get(position.ticker));
+    if (score !== null) {
       weightedScoreSum += score * currentValue;
       scoreWeightSum += currentValue;
     }
@@ -59,7 +59,7 @@ export function calculatePortfolioStats(
 
   const unrealizedPnL = totalValue - totalInvested;
   const pnlPercent = totalInvested > 0 ? (unrealizedPnL / totalInvested) * 100 : 0;
-  const healthScore = scoreWeightSum > 0 ? weightedScoreSum / scoreWeightSum : 0;
+  const healthScore = scoreWeightSum > 0 ? weightedScoreSum / scoreWeightSum : null;
 
   return { totalValue, totalInvested, unrealizedPnL, pnlPercent, healthScore };
 }

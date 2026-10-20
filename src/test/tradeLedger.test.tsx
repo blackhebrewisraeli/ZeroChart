@@ -26,6 +26,7 @@ vi.mock('@/components/BacktestChart', () => ({ BacktestChart: () => null }));
 vi.mock('@/components/PriceAlerts', () => ({ PriceAlerts: () => null }));
 vi.mock('@/components/TradeTicket', () => ({ FEE_RATE: 0.0025, TradeTicket: () => null }));
 vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 
 import { AuthProvider } from '@/lib/authStore';
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';

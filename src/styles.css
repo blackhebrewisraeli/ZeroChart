@@ -389,6 +389,38 @@ body {
 .score-low {
   color: var(--signal-red);
 }
+/* Canonical engine returned INSUFFICIENT_DATA: muted, never a red "0". */
+.score-none {
+  color: var(--muted-foreground);
+}
+.insufficient-data-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font:
+    600 9.5px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--muted-foreground) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+}
+.score-ring .insufficient-data-badge {
+  max-width: 78%;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+}
+.insufficient-data-badge.is-compact {
+  padding: 2px 6px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+}
 .hero-stats {
   display: flex;
   align-items: center;
@@ -1987,6 +2019,9 @@ body {
 }
 .health-red {
   --health-color: var(--signal-red);
+}
+.health-none {
+  --health-color: var(--muted-foreground);
 }
 .health-ring {
   position: relative;

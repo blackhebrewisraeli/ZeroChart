@@ -6,6 +6,16 @@ import {
   type Position,
 } from '@/lib/portfolioManager';
 import type { Asset } from '@/lib/assets';
+import { evaluateCandles, type CanonicalResult } from '@/lib/canonicalModel';
+import { okResult, STRONG_INPUTS } from './canonicalFixtures';
+
+/** A canonical OK result carrying `score` (the factor detail is irrelevant here). */
+const scored = (score: number): CanonicalResult => ({
+  ...okResult(STRONG_INPUTS),
+  signal_score: score,
+});
+
+const NO_SCORES = new Map<string, CanonicalResult>();
 
 function makeAsset(
   ticker: string,
@@ -51,7 +61,7 @@ describe('calculatePortfolioStats', () => {
     ];
     const assets = [makeAsset('WIN', 0.1, 0.1, 150), makeAsset('LOSE', 0.1, 0.1, 40)];
 
-    const stats = calculatePortfolioStats(positions, assets);
+    const stats = calculatePortfolioStats(positions, assets, NO_SCORES);
 
     expect(stats.totalInvested).toBe(2000);
     expect(stats.totalValue).toBe(2300);
@@ -64,12 +74,13 @@ describe('calculatePortfolioStats', () => {
       makePosition({ id: 'a', ticker: 'A', buyPrice: 100, shares: 1 }),
       makePosition({ id: 'b', ticker: 'B', buyPrice: 100, shares: 3 }),
     ];
-    const assets = [
-      makeAsset('A', 0.1, 0.1, 100), // Signal Score 40
-      makeAsset('B', 0.3, 0.1, 100), // Signal Score 80
-    ];
+    const assets = [makeAsset('A', 0.1, 0.1, 100), makeAsset('B', 0.3, 0.1, 100)];
+    const scores = new Map([
+      ['A', scored(40)],
+      ['B', scored(80)],
+    ]);
 
-    const stats = calculatePortfolioStats(positions, assets);
+    const stats = calculatePortfolioStats(positions, assets, scores);
 
     // (40 * 100 + 80 * 300) / 400 = 70
     expect(stats.healthScore).toBeCloseTo(70, 5);
@@ -77,37 +88,43 @@ describe('calculatePortfolioStats', () => {
 
   it('falls back to buy price when a position has no live price', () => {
     const positions = [makePosition({ id: 'x', ticker: 'MISSING', buyPrice: 100, shares: 5 })];
-    const stats = calculatePortfolioStats(positions, []);
+    const stats = calculatePortfolioStats(positions, [], NO_SCORES);
 
     expect(stats.totalInvested).toBe(500);
     expect(stats.totalValue).toBe(500);
     expect(stats.unrealizedPnL).toBe(0);
     expect(stats.pnlPercent).toBe(0);
-    expect(stats.healthScore).toBe(0);
+    // No canonical score anywhere → no health reading, never a fake 0.
+    expect(stats.healthScore).toBeNull();
   });
 
-  it('excludes unresolved assets from the health score but still values them at cost', () => {
+  it('leaves unscored holdings out of the health score but still values them at cost', () => {
     const positions = [
       makePosition({ id: 'a', ticker: 'A', buyPrice: 100, shares: 1 }),
       makePosition({ id: 'ghost', ticker: 'GHOST', buyPrice: 50, shares: 4 }),
+      makePosition({ id: 'new', ticker: 'NEW', buyPrice: 50, shares: 4 }),
     ];
-    const assets = [makeAsset('A', 0.3, 0.1, 100)]; // Signal Score 80
+    const assets = [makeAsset('A', 0.3, 0.1, 100)];
+    const scores = new Map([
+      ['A', scored(80)],
+      ['NEW', evaluateCandles([])], // INSUFFICIENT_DATA
+    ]);
 
-    const stats = calculatePortfolioStats(positions, assets);
+    const stats = calculatePortfolioStats(positions, assets, scores);
 
-    expect(stats.totalInvested).toBe(300);
-    expect(stats.totalValue).toBe(300);
+    expect(stats.totalInvested).toBe(500);
+    expect(stats.totalValue).toBe(500);
     expect(stats.unrealizedPnL).toBe(0);
     expect(stats.healthScore).toBe(80);
   });
 
   it('returns zeroed stats for an empty portfolio', () => {
-    expect(calculatePortfolioStats([], [])).toEqual({
+    expect(calculatePortfolioStats([], [], NO_SCORES)).toEqual({
       totalValue: 0,
       totalInvested: 0,
       unrealizedPnL: 0,
       pnlPercent: 0,
-      healthScore: 0,
+      healthScore: null,
     });
   });
 });

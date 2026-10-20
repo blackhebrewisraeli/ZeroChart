@@ -4,17 +4,13 @@ import {
   generateTacticalSignals,
   type TacticalSignal,
 } from '@/lib/tacticalSignals';
-import { scoreAssetStatic } from '@/lib/roboAdvisor';
+import { evaluateCandles, type CanonicalResult } from '@/lib/canonicalModel';
+import { okResult, STRONG_INPUTS, WEAK_INPUTS } from './canonicalFixtures';
 import type { TriggeredAlert } from '@/lib/alertsStore';
 import type { Asset } from '@/lib/assets';
 import type { Position } from '@/lib/portfolioAccounting';
 
-function asset(
-  ticker: string,
-  rsi: number | null,
-  change: number | null,
-  risk: number | null,
-): Asset {
+function asset(ticker: string): Asset {
   return {
     ticker,
     name: null,
@@ -25,11 +21,12 @@ function asset(
     radar_signal: null,
     stable_explanation: null,
     radar_explanation: null,
-    risk_pct: risk,
-    reward_pct: null,
-    volume_spike: null,
-    rsi_14: rsi,
-    change_24h: change,
+    // Static provider columns are ignored: only the canonical result counts.
+    risk_pct: 0.02,
+    reward_pct: 0.5,
+    volume_spike: 3,
+    rsi_14: 50,
+    change_24h: 0.01,
     updated_at: null,
   };
 }
@@ -45,35 +42,42 @@ function held(ticker: string): Position {
   };
 }
 
-// Oversold + bullish + quiet → top of the Multi-Factor scale; the mirror image → bottom.
-const STRONG = asset('STRONG', 25, 0.02, 0.004);
-const WEAK = asset('WEAK', 85, -0.02, 0.08);
-const NODATA = asset('NODATA', null, null, null);
+const STRONG_RESULT = okResult(STRONG_INPUTS);
+const WEAK_RESULT = okResult(WEAK_INPUTS);
+const SCORES = new Map<string, CanonicalResult>([
+  ['STRONG', STRONG_RESULT],
+  ['IDEA', STRONG_RESULT],
+  ['WEAK', WEAK_RESULT],
+  ['NODATA', evaluateCandles([])],
+]);
+const STRONG = asset('STRONG');
+const WEAK = asset('WEAK');
+const NODATA = asset('NODATA');
 
 describe('generateTacticalSignals', () => {
-  it('scores with the Multi-Factor engine and carries its regime and rationale', () => {
-    const [signal] = generateTacticalSignals([], [STRONG], 1000);
-    const { breakdown } = scoreAssetStatic(STRONG);
+  it('uses the canonical score and carries its regime and rationale', () => {
+    const [signal] = generateTacticalSignals([], [STRONG], 1000, SCORES);
 
-    expect(breakdown.score).toBeGreaterThanOrEqual(85);
+    expect(STRONG_RESULT.signal_score).toBeGreaterThanOrEqual(85);
     expect(signal).toEqual({
       type: 'BUY',
       ticker: 'STRONG',
-      score: breakdown.score,
-      regime: breakdown.regime,
-      rationale: breakdown.rationale,
+      score: STRONG_RESULT.signal_score,
+      regime: STRONG_RESULT.regime,
+      rationale: STRONG_RESULT.rationale,
       asOf: null,
     });
   });
 
-  it('sells weak holdings, never an asset with no factor data, and lists sells first', () => {
+  it('sells weak holdings, never an asset without enough data, and lists sells first', () => {
     const signals = generateTacticalSignals(
-      [held('WEAK'), held('NODATA'), held('STRONG')],
-      [STRONG, NODATA, WEAK, asset('IDEA', 25, 0.02, 0.004)],
+      [held('WEAK'), held('NODATA'), held('LOADING'), held('STRONG')],
+      [STRONG, NODATA, WEAK, asset('LOADING'), asset('IDEA')],
       1000,
+      SCORES,
     );
 
-    expect(scoreAssetStatic(WEAK).breakdown.score).toBeLessThan(50);
+    expect(WEAK_RESULT.signal_score).toBeLessThan(50);
     expect(signals.map((signal) => `${signal.type} ${signal.ticker}`)).toEqual([
       'SELL WEAK',
       'BUY IDEA',
@@ -81,7 +85,7 @@ describe('generateTacticalSignals', () => {
   });
 
   it('suggests no buys without cash to deploy', () => {
-    expect(generateTacticalSignals([held('WEAK')], [STRONG, WEAK], 0)).toMatchObject([
+    expect(generateTacticalSignals([held('WEAK')], [STRONG, WEAK], 0, SCORES)).toMatchObject([
       { type: 'SELL', ticker: 'WEAK' },
     ]);
   });
@@ -114,7 +118,7 @@ describe('buildSignalFeed', () => {
 
   it('stamps quant signals with their market snapshot time', () => {
     const dated = { ...STRONG, updated_at: new Date(T).toISOString() };
-    expect(generateTacticalSignals([], [dated], 1000)[0]?.asOf).toBe(T);
+    expect(generateTacticalSignals([], [dated], 1000, SCORES)[0]?.asOf).toBe(T);
   });
 
   it('interleaves both signal types newest first', () => {

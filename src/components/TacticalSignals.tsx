@@ -1,11 +1,12 @@
 import { BellRing, CheckCircle2, TrendingDown, TrendingUp } from 'lucide-react';
 import { useAlerts } from '@/lib/alertsStore';
 import { formatPrice, type Asset } from '@/lib/assets';
-import { REGIME_LABELS } from '@/lib/multiFactor';
+import { REGIME_LABELS } from '@/lib/canonicalModel';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { buildSignalFeed, generateTacticalSignals } from '@/lib/tacticalSignals';
 import { TradeTicket } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
+import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 
 function FeedTime({ at }: { at: number | null }) {
   if (at === null) return null;
@@ -22,7 +23,7 @@ function FeedTime({ at }: { at: number | null }) {
 }
 
 /**
- * Tactical feed (M2-T2/T3): Multi-Factor BUY/SELL ideas against the Paper
+ * Tactical feed (M2-T2/T3): canonical-engine BUY/SELL ideas against the Paper
  * Trading holdings, merged newest-first with price alerts fired this session.
  * Fills book into Paper Trading as tactical trades, never into Core. With
  * `onSelect`, clicking a card (its Trade button included, so keyboard users get
@@ -40,7 +41,8 @@ export function TacticalSignals({
   const { portfolios } = usePortfolio();
   const { triggered } = useAlerts();
   const ledger = portfolios.paper_trading;
-  const signals = generateTacticalSignals(ledger.positions, assets, ledger.cashBalance);
+  const scores = useCanonicalScores(assets.map((asset) => asset.ticker));
+  const signals = generateTacticalSignals(ledger.positions, assets, ledger.cashBalance, scores);
   const feed = buildSignalFeed(signals, triggered);
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker, asset]));
   const selectable = (ticker: string) =>

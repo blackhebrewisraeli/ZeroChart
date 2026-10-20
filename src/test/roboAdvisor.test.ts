@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildQuantPortfolio, type QuantDeps } from '@/lib/roboAdvisor';
+import { buildQuantPortfolio, scoreTicker, type QuantDeps } from '@/lib/roboAdvisor';
 import type { Asset } from '@/lib/assets';
+import { evaluateCandles, MIN_CANDLES, type EngineCandle } from '@/lib/canonicalModel';
+import { recommendPositionSize } from '@/lib/risk';
 
 function makeAsset(ticker: string, currentPrice: number | null = 100): Asset {
   return {
@@ -13,40 +15,57 @@ function makeAsset(ticker: string, currentPrice: number | null = 100): Asset {
     radar_signal: null,
     stable_explanation: null,
     radar_explanation: null,
-    // Static Multi-Factor inputs: mid RSI, +1% momentum, 2% daily risk.
-    risk_pct: 0.02,
-    reward_pct: null,
-    volume_spike: null,
-    rsi_14: 50,
-    change_24h: 0.01,
+    // Static provider columns the old proxy path read — the engine must ignore them.
+    risk_pct: 0.5,
+    reward_pct: 9,
+    volume_spike: 9,
+    rsi_14: 1,
+    change_24h: 0.5,
     updated_at: null,
   };
 }
 
-function makeDeps(): QuantDeps {
+/** Deterministic daily candles around $100 with a ±`range` intraday spread. */
+function makeCandles(count: number, range = 0.5, drift = 0.1): EngineCandle[] {
+  return Array.from({ length: count }, (_, i) => {
+    const close = 100 + Math.sin(i / 5) + drift * i;
+    return { high: close + range, low: close - range, close };
+  });
+}
+
+function depsFor(candlesByTicker: Record<string, EngineCandle[] | Error>): QuantDeps {
   return {
-    fetchHistory: vi.fn(async () => ({
-      closes: Float64Array.from([90, 100, 110]),
-      highs: Float64Array.from([92, 102, 112]),
-      lows: Float64Array.from([88, 98, 108]),
-    })),
-    computeIndicators: vi.fn(async () => ({
-      rsi14: Float64Array.from([25]),
-      macd: {
-        macd: Float64Array.from([NaN]),
-        signal: Float64Array.from([NaN]),
-        // Histogram of 1.0 on a $100 price = +1% momentum (saturating).
-        histogram: Float64Array.from([1]),
-      },
-      // ATR of 5 on a $100 price = 5% daily range (blown-out regime).
-      atr14: Float64Array.from([5]),
-    })),
+    fetchCandles: vi.fn(async (ticker: string) => {
+      const candles = candlesByTicker[ticker] ?? [];
+      if (candles instanceof Error) throw candles;
+      return candles;
+    }),
   };
 }
 
+function engineScore(candles: EngineCandle[]) {
+  const result = evaluateCandles(candles);
+  if (result.status !== 'OK') throw new Error('fixture must be scoreable');
+  return result;
+}
+
+describe('scoreTicker', () => {
+  it('returns the canonical result for the fetched candles', async () => {
+    const candles = makeCandles(200);
+    expect(await scoreTicker('BTC', depsFor({ BTC: candles }))).toEqual(evaluateCandles(candles));
+  });
+
+  it('never rejects: a failed fetch is INSUFFICIENT_DATA with zero candles', async () => {
+    const result = await scoreTicker('BTC', depsFor({ BTC: new Error('network down') }));
+    expect(result).toMatchObject({ status: 'INSUFFICIENT_DATA', received: 0 });
+  });
+});
+
 describe('buildQuantPortfolio', () => {
-  it('ranks allocations by Multi-Factor score and sizes positions at 2% risk', async () => {
-    const deps = makeDeps();
+  it('ranks by the canonical score and caps the 2%-risk size at the allocation', async () => {
+    const candles = makeCandles(200);
+    const engine = engineScore(candles);
+    const deps = depsFor({ A: candles, B: candles, C: candles, D: candles });
     const assets = [makeAsset('A'), makeAsset('B'), makeAsset('C'), makeAsset('D')];
 
     const result = await buildQuantPortfolio(
@@ -58,49 +77,53 @@ describe('buildQuantPortfolio', () => {
     for (const allocation of result) {
       expect(allocation.weight).toBeCloseTo(1 / 3, 5);
       expect(allocation.allocatedAmount).toBeCloseTo(10000, 2);
-      // Static path: RSI 50 → 55, +1% momentum → 100, 2% risk → 70. +1%
-      // momentum is a TRENDING regime (momentum tilted 0.4 → 0.5):
-      // 0.3×55 + 0.5×100 + 0.2×70 = 80.5 → 81.
-      expect(allocation.score).toBe(81);
-      expect(allocation.regime).toBe('TRENDING');
-      // ATR proxy = 100 × 0.02 = 2 → risk 2% × 30,000 = 600 → 300 risk-optimal
-      // shares ($30,000 notional!) — capped at the $10,000 allocation → 100
-      // shares (M1-T2, F-1.2a). Notional must never exceed the allocation.
+      // The exact engine score — never a static-table proxy.
+      expect(allocation.score).toBe(engine.signal_score);
+      expect(allocation.regime).toBe(engine.regime);
+      // ATR ≈ 1 on $100: 2% × 30,000 = $600 risk → ~600 risk-optimal shares
+      // ($60,000 notional) — capped at the $10,000 allocation → 100 shares.
       expect(allocation.suggestedShares).toBe(100);
       expect((allocation.suggestedShares ?? 0) * 100).toBeLessThanOrEqual(
         allocation.allocatedAmount,
       );
     }
-    expect(deps.fetchHistory).not.toHaveBeenCalled();
-    expect(deps.computeIndicators).not.toHaveBeenCalled();
   });
 
-  it('caps the suggested size at the per-asset allocation when volatility is low', async () => {
-    const deps = makeDeps();
-    // 0.5% daily risk → ATR proxy 0.5 on a $100 price: risk-optimal shares
-    // = 200/0.5 = 400 ($40,000 notional on a $10,000 allocation) — must cap.
-    const assets = [
-      { ...makeAsset('LOWVOL'), risk_pct: 0.005 },
-      { ...makeAsset('LOWVOL2'), risk_pct: 0.005 },
-      { ...makeAsset('LOWVOL3'), risk_pct: 0.005 },
-    ];
+  it('skips assets the engine reports as INSUFFICIENT_DATA', async () => {
+    const candles = makeCandles(200);
+    const deps = depsFor({
+      BTC: candles,
+      NEW: makeCandles(MIN_CANDLES - 1),
+      DOWN: new Error('network down'),
+      // AAPL: no candle source → []
+    });
+    const assets = [makeAsset('BTC'), makeAsset('NEW'), makeAsset('DOWN'), makeAsset('AAPL')];
 
     const result = await buildQuantPortfolio(
-      { preferences: { totalCapital: 30000, riskProfile: 'aggressive' }, availableAssets: assets },
+      { preferences: { totalCapital: 1000, riskProfile: 'conservative' }, availableAssets: assets },
       deps,
     );
 
-    expect(result).toHaveLength(3);
-    for (const allocation of result) {
-      expect(allocation.suggestedShares).toBe(100); // 10,000 / 100
-      expect((allocation.suggestedShares ?? 0) * 100).toBeLessThanOrEqual(
-        allocation.allocatedAmount,
-      );
-    }
+    expect(result.map((allocation) => allocation.ticker)).toEqual(['BTC']);
+    expect(result[0]?.weight).toBeCloseTo(1, 5);
+    expect(deps.fetchCandles).toHaveBeenCalledTimes(4);
+  });
+
+  it('returns no portfolio when no asset has enough data', async () => {
+    const deps = depsFor({ ETH: makeCandles(10) });
+    const result = await buildQuantPortfolio(
+      {
+        preferences: { totalCapital: 1000, riskProfile: 'aggressive' },
+        availableAssets: [makeAsset('ETH'), makeAsset('AAPL')],
+      },
+      deps,
+    );
+    expect(result).toEqual([]);
   });
 
   it('respects excluded tickers', async () => {
-    const deps = makeDeps();
+    const candles = makeCandles(200);
+    const deps = depsFor({ A: candles, B: candles, C: candles, D: candles });
     const assets = [makeAsset('A'), makeAsset('B'), makeAsset('C'), makeAsset('D')];
 
     const result = await buildQuantPortfolio(
@@ -115,98 +138,50 @@ describe('buildQuantPortfolio', () => {
     expect(result.map((a) => a.ticker)).toEqual(['B', 'C', 'D']);
   });
 
-  it('uses worker indicators for crypto and applies the ATR sizing model', async () => {
-    const deps = makeDeps();
-    const btc = { ...makeAsset('BTC-USD'), rsi_14: null, change_24h: null, risk_pct: null };
+  it('sizes on the engine ATR, at the live price or else the last close', async () => {
+    const candles = makeCandles(200, 5);
+    const engine = engineScore(candles);
+    const deps = depsFor({ LIVE: candles, CLOSE: candles });
 
-    const result = await buildQuantPortfolio(
-      { preferences: { totalCapital: 10000, riskProfile: 'aggressive' }, availableAssets: [btc] },
+    const [live] = await buildQuantPortfolio(
+      {
+        preferences: { totalCapital: 10000, riskProfile: 'aggressive' },
+        availableAssets: [makeAsset('LIVE', 120)],
+      },
+      deps,
+    );
+    const [close] = await buildQuantPortfolio(
+      {
+        preferences: { totalCapital: 10000, riskProfile: 'aggressive' },
+        availableAssets: [makeAsset('CLOSE', null)],
+      },
       deps,
     );
 
-    expect(deps.fetchHistory).toHaveBeenCalledTimes(1);
-    expect(deps.computeIndicators).toHaveBeenCalledTimes(1);
-
-    const allocation = result[0];
-    expect(allocation).toBeDefined();
-    // RSI 25 → 95.83, MACD +1% → 100, ATR 5% → 10. ATR/price 5% is a
-    // HIGH_VOLATILITY regime: 0.35×95.83 + 0.35×100 + 0.3×10 = 71.54 → 72.
-    expect(allocation?.score).toBe(72);
-    expect(allocation?.regime).toBe('HIGH_VOLATILITY');
-    // Risk = 2% × 10,000 = $200; shares = 200 / ATR 5 = 40 (stop at 100 − 5).
-    expect(allocation?.suggestedShares).toBe(40);
+    const size = (price: number) =>
+      recommendPositionSize({ capital: 10000, price, atr: engine.atr, allocatedCapital: 10000 })
+        .shares;
+    expect(live?.suggestedShares).toBe(size(120));
+    expect(close?.suggestedShares).toBe(size(engine.close));
   });
 
-  it('falls back to the static multi-factor inputs for non-crypto assets', async () => {
-    const deps = makeDeps();
-    const stock = makeAsset('AAPL');
-
-    const result = await buildQuantPortfolio(
-      { preferences: { totalCapital: 1000, riskProfile: 'aggressive' }, availableAssets: [stock] },
-      deps,
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0]?.ticker).toBe('AAPL');
-    expect(result[0]?.weight).toBeCloseTo(1, 5);
-    expect(result[0]?.score).toBe(81);
-    expect(deps.fetchHistory).not.toHaveBeenCalled();
-    expect(deps.computeIndicators).not.toHaveBeenCalled();
-  });
-
-  it('treats signed provider risk as a volatility magnitude for sizing', async () => {
-    const deps = makeDeps();
-    const asset = { ...makeAsset('WEAK'), risk_pct: -0.02 };
-
-    const result = await buildQuantPortfolio(
-      { preferences: { totalCapital: 10000, riskProfile: 'aggressive' }, availableAssets: [asset] },
-      deps,
-    );
-
-    const allocation = result[0];
-    // |−0.02| behaves exactly like +0.02: same factor inputs, same score…
-    expect(allocation?.score).toBe(81);
-    // …and sizing still works: 2% × 10,000 = $200 ÷ (100 × 0.02) = 100 shares.
-    expect(allocation?.suggestedShares).toBe(100);
-  });
-
-  it('attaches the white-box breakdown (components, regime, rationale) to each row', async () => {
-    const deps = makeDeps();
-    const btc = { ...makeAsset('BTC-USD'), rsi_14: null, change_24h: null, risk_pct: null };
+  it('attaches the engine breakdown (components, regime, rationale) to each row', async () => {
+    const candles = makeCandles(200, 3);
+    const engine = engineScore(candles);
 
     const [allocation] = await buildQuantPortfolio(
-      { preferences: { totalCapital: 10000, riskProfile: 'aggressive' }, availableAssets: [btc] },
-      deps,
+      {
+        preferences: { totalCapital: 10000, riskProfile: 'aggressive' },
+        availableAssets: [makeAsset('BTC')],
+      },
+      depsFor({ BTC: candles }),
     );
 
-    expect(allocation?.components?.rsiScore).toBeCloseTo(95.83, 2);
-    expect(allocation?.components?.momentumScore).toBe(100);
-    expect(allocation?.components?.volatilityScore).toBeCloseTo(10, 6);
-    expect(allocation?.components?.weights).toEqual({ rsi: 0.35, momentum: 0.35, volatility: 0.3 });
-    expect(allocation?.rationale).toBe(
-      'Bullish momentum (+1.0%) + high volatility (5.0%) + oversold RSI 25 · High-volatility regime',
-    );
-  });
-
-  it('drops assets with no usable signal data', async () => {
-    const deps: QuantDeps = {
-      fetchHistory: vi.fn(async () => ({
-        closes: Float64Array.from([100]),
-        highs: Float64Array.from([100]),
-        lows: Float64Array.from([100]),
-      })),
-      computeIndicators: vi.fn(),
-    };
-    const asset = { ...makeAsset('ETH-USD'), rsi_14: null, change_24h: null, risk_pct: null };
-
-    const result = await buildQuantPortfolio(
-      { preferences: { totalCapital: 1000, riskProfile: 'aggressive' }, availableAssets: [asset] },
-      deps,
-    );
-
-    // A single close skips the worker bundle and the static path has no
-    // factor data → score 0 → filtered out.
-    expect(result).toEqual([]);
-    expect(deps.computeIndicators).not.toHaveBeenCalled();
+    expect(allocation).toMatchObject({
+      score: engine.signal_score,
+      components: engine.components,
+      regime: engine.regime,
+      rationale: engine.rationale,
+    });
   });
 });

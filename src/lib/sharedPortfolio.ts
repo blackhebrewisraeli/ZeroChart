@@ -1,8 +1,9 @@
 import type { Asset } from '@/lib/assets';
 import { computeBacktest, deriveWeights, type AssetPriceSeries } from '@/lib/backtestManager';
 import { fetchHistoricalKlines, isBinanceCrypto } from '@/lib/binance';
-import { computeMultiFactorBreakdown, type MarketRegime } from '@/lib/multiFactor';
+import type { MarketRegime } from '@/lib/canonicalModel';
 import type { Position } from '@/lib/portfolioManager';
+import { scoreTicker } from '@/lib/roboAdvisor';
 import { supabase } from '@/lib/supabaseClient';
 import type { Json } from '@/integrations/supabase/types';
 
@@ -21,8 +22,9 @@ export interface SharedPortfolioHolding {
   name: string;
   allocationPercent: number;
   pnlPercent: number;
-  quantScore: number;
-  regime: MarketRegime;
+  /** Canonical Signal Score and regime; null when the engine had too few candles. */
+  quantScore: number | null;
+  regime: MarketRegime | null;
 }
 
 export interface SharedPortfolioRisk {
@@ -36,7 +38,8 @@ export interface SharedPortfolioSnapshot extends SharedPortfolioRisk {
   version: 3;
   createdAt: string;
   pnlPercent: number;
-  quantScore: number;
+  /** Allocation-weighted score over the holdings that have one; null when none do. */
+  quantScore: number | null;
   holdings: SharedPortfolioHolding[];
 }
 
@@ -52,6 +55,11 @@ function finiteOrNull(value: number | null | undefined): number | null {
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** A score field: finite, or null for "not enough data" (older v3 rows always hold a number). */
+function finiteOrNullField(value: unknown): value is number | null {
+  return value === null || finite(value);
 }
 
 function isRegime(value: unknown): value is MarketRegime {
@@ -166,36 +174,34 @@ export async function buildSharedPortfolioSnapshot(
 
   const totalValue = [...grouped.values()].reduce((sum, holding) => sum + holding.value, 0);
   const totalInvested = [...grouped.values()].reduce((sum, holding) => sum + holding.invested, 0);
+  const results = await Promise.all([...grouped.keys()].map((ticker) => scoreTicker(ticker)));
 
   const holdings = [...grouped.entries()]
-    .map(([ticker, holding]): SharedPortfolioHolding => {
+    .map(([ticker, holding], index): SharedPortfolioHolding => {
       const asset = assetByTicker.get(ticker);
-      const breakdown = computeMultiFactorBreakdown({
-        rsi: finiteOrNull(asset?.rsi_14),
-        momentumPercent: finiteOrNull(asset?.change_24h),
-        volatilityPercent: (() => {
-          const risk = finiteOrNull(asset?.risk_pct);
-          return risk === null ? null : Math.abs(risk);
-        })(),
-      });
+      const result = results[index];
+      const scored = result?.status === 'OK' ? result : null;
       return {
         ticker: ticker.slice(0, 24),
         name: (asset?.name || ticker).slice(0, 120),
         allocationPercent: totalValue > 0 ? (holding.value / totalValue) * 100 : 0,
         pnlPercent:
           holding.invested > 0 ? ((holding.value - holding.invested) / holding.invested) * 100 : 0,
-        quantScore: breakdown.score,
-        regime: breakdown.regime,
+        quantScore: scored?.signal_score ?? null,
+        regime: scored?.regime ?? null,
       };
     })
     .sort((a, b) => b.allocationPercent - a.allocationPercent);
 
-  const quantWeight = holdings.reduce((sum, holding) => sum + holding.allocationPercent, 0);
-  const quantScore =
-    quantWeight > 0
-      ? holdings.reduce((sum, holding) => sum + holding.quantScore * holding.allocationPercent, 0) /
-        quantWeight
-      : 0;
+  // Holdings without a canonical score are left out of the blend, not zeroed.
+  let quantWeight = 0;
+  let quantSum = 0;
+  for (const holding of holdings) {
+    if (holding.quantScore === null) continue;
+    quantWeight += holding.allocationPercent;
+    quantSum += holding.quantScore * holding.allocationPercent;
+  }
+  const quantScore = quantWeight > 0 ? quantSum / quantWeight : null;
 
   return {
     version: 3,
@@ -240,7 +246,7 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
     (candidate.version !== 2 && candidate.version !== 3) ||
     typeof candidate.createdAt !== 'string' ||
     !finite(candidate.pnlPercent) ||
-    !finite(candidate.quantScore) ||
+    !finiteOrNullField(candidate.quantScore) ||
     !Array.isArray(candidate.holdings)
   ) {
     return null;
@@ -258,8 +264,8 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
       holding.name.length > 120 ||
       !finite(holding.allocationPercent) ||
       !finite(holding.pnlPercent) ||
-      !finite(holding.quantScore) ||
-      !isRegime(holding.regime)
+      !finiteOrNullField(holding.quantScore) ||
+      (holding.regime !== null && !isRegime(holding.regime))
     ) {
       return null;
     }

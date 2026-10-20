@@ -1,12 +1,11 @@
 import type { TriggeredAlert } from '@/lib/alertsStore';
 import type { Asset } from '@/lib/assets';
-import type { MarketRegime } from '@/lib/multiFactor';
+import type { CanonicalResult, MarketRegime } from '@/lib/canonicalModel';
 import type { Position } from '@/lib/portfolioAccounting';
-import { scoreAssetStatic } from '@/lib/roboAdvisor';
 
 /**
  * Active Research Lab signal advisor (M2-T2): tactical, alpha-seeking ideas
- * from the Multi-Factor engine (RSI · momentum · volatility regime). Core
+ * from the canonical engine (RSI · MACD · ATR regime). Core
  * Portfolio never calls this — its trades come from `rebalance.ts`.
  */
 
@@ -28,21 +27,17 @@ export type SignalFeedItem =
 const SELL_BELOW = 50;
 const BUY_AT = 85;
 
-/** Multi-Factor score, or null when the asset has no factor data (no signal, never a SELL). */
-function breakdownOf(asset: Asset) {
-  const { breakdown } = scoreAssetStatic(asset);
-  const { rsiScore, momentumScore, volatilityScore } = breakdown.components;
-  return rsiScore === null && momentumScore === null && volatilityScore === null ? null : breakdown;
-}
-
 /**
- * - SELL: a held asset whose Multi-Factor score is below 50.
+ * - SELL: a held asset whose canonical score is below 50.
  * - BUY: a non-held asset scoring 85+ while the ledger has cash to deploy.
+ * An asset without a canonical score (loading, or INSUFFICIENT_DATA) yields
+ * no signal — missing data is silence, never a SELL.
  */
 export function generateTacticalSignals(
   positions: readonly Position[],
   assets: readonly Asset[],
   availableCash: number,
+  scores: ReadonlyMap<string, CanonicalResult>,
 ): TacticalSignal[] {
   const held = new Set(positions.map((position) => position.ticker.toUpperCase()));
   const signals: TacticalSignal[] = [];
@@ -54,9 +49,9 @@ export function generateTacticalSignals(
     seen.add(ticker);
     const isHeld = held.has(ticker);
     if (!isHeld && availableCash <= 0) continue;
-    const breakdown = breakdownOf(asset);
-    if (!breakdown) continue;
-    const { score, regime, rationale } = breakdown;
+    const result = scores.get(asset.ticker);
+    if (result?.status !== 'OK') continue;
+    const { signal_score: score, regime, rationale } = result;
     const updatedAt = asset.updated_at ? Date.parse(asset.updated_at) : NaN;
     const asOf = Number.isFinite(updatedAt) ? updatedAt : null;
     const base = { ticker: asset.ticker, score, regime, rationale, asOf };

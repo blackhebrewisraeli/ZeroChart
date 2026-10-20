@@ -15,7 +15,6 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 import {
-  calculateSignalScore,
   fetchAssets,
   formatChange,
   formatPrice,
@@ -89,66 +88,6 @@ describe('asset data', () => {
     expect(formatTradingViewSymbol('BTC-USD')).toBe('BINANCE:BTCUSDT');
     expect(formatTradingViewSymbol('AAPL')).toBe('NASDAQ:AAPL');
     expect(formatTradingViewSymbol('MSFT')).toBe('NASDAQ:MSFT');
-  });
-  it('scores assets from reward-to-risk ratio and signal bonuses', () => {
-    const base: Asset = {
-      ticker: 'TEST',
-      name: null,
-      current_price: 100,
-      sma_50: 90,
-      sma_200: null,
-      stable_signal: null,
-      radar_signal: null,
-      stable_explanation: null,
-      radar_explanation: null,
-      risk_pct: 0.05,
-      reward_pct: 0.1,
-      volume_spike: null,
-      rsi_14: null,
-      change_24h: null,
-      updated_at: null,
-    };
-    // ratio = 2 -> base 60, no volume spike, trend positive -> +10 = 70
-    expect(calculateSignalScore(base)).toBe(70);
-    // ratio = 3 -> base 80, volume spike +15, trend positive +10 -> capped at 100
-    expect(calculateSignalScore({ ...base, reward_pct: 0.15, volume_spike: 1.8 })).toBe(100);
-    // ratio = 1 -> base 40, no bonuses
-    expect(calculateSignalScore({ ...base, risk_pct: 0.1, reward_pct: 0.1, sma_50: null })).toBe(
-      40,
-    );
-    // missing risk/reward -> NEUTRAL 50 (was a penalized 20 that capped the
-    // score at 45 and forced permanent false SELL signals — M1-T2, F-1.1b)
-    expect(calculateSignalScore({ ...base, risk_pct: null, reward_pct: null, sma_50: null })).toBe(
-      50,
-    );
-  });
-
-  it('respects missing-data resilience: neutral base plus real bonuses', () => {
-    const base: Asset = {
-      ticker: 'TEST',
-      name: null,
-      current_price: 100,
-      sma_50: null,
-      sma_200: null,
-      stable_signal: null,
-      radar_signal: null,
-      stable_explanation: null,
-      radar_explanation: null,
-      risk_pct: null,
-      reward_pct: null,
-      volume_spike: null,
-      rsi_14: null,
-      change_24h: null,
-      updated_at: null,
-    };
-    // Missing risk/reward only: neutral 50, no bonuses.
-    expect(calculateSignalScore(base)).toBe(50);
-    // Missing risk/reward but a real volume surge still earns its bonus: 65.
-    expect(calculateSignalScore({ ...base, volume_spike: 1.8 })).toBe(65);
-    // Volume present but <= 1 is real "no surge" data, not a penalty.
-    expect(calculateSignalScore({ ...base, volume_spike: 0.9 })).toBe(50);
-    // Neutral 50 is exactly at the SELL threshold and must never trigger one.
-    expect(calculateSignalScore(base)).toBeGreaterThanOrEqual(50);
   });
   it('routes tickers to external brokers', () => {
     expect(getBrokerRoute('BTC-USD')).toEqual({

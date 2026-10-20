@@ -1,14 +1,16 @@
 import { atr, macd, rsi, sma, type MacdResult } from './indicators';
 import { computeBacktest, type BacktestOptions, type BacktestResult } from './backtestManager';
+import { evaluateCandles, type CanonicalResult, type EngineCandle } from './canonicalModel';
 
 export type FinanceRequest =
   | { kind: 'sma'; values: number[]; period: number }
   | { kind: 'rsi'; values: number[]; period: number }
   | { kind: 'macd'; values: number[]; fast: number; slow: number; signalPeriod: number }
   | { kind: 'atr'; highs: number[]; lows: number[]; closes: number[]; period: number }
-  | ({ kind: 'backtest' } & BacktestOptions);
+  | ({ kind: 'backtest' } & BacktestOptions)
+  | { kind: 'canonical'; candles: readonly EngineCandle[] };
 
-export type FinanceResult = Float64Array | MacdResult | BacktestResult;
+export type FinanceResult = Float64Array | MacdResult | BacktestResult | CanonicalResult;
 
 /** Dispatches a request to the matching pure core function. */
 export function computeFinance(request: FinanceRequest): FinanceResult {
@@ -23,6 +25,8 @@ export function computeFinance(request: FinanceRequest): FinanceResult {
       return atr(request.highs, request.lows, request.closes, request.period);
     case 'backtest':
       return computeBacktest(request);
+    case 'canonical':
+      return evaluateCandles(request.candles);
   }
 }
 

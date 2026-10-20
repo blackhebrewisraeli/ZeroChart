@@ -140,40 +140,6 @@ export function generateTrendData(
   return series;
 }
 
-/**
- * Deterministic 0–100 Signal Score from the provider's reward/risk ratio plus
- * two optional bonuses (volume surge +15, price above SMA-50 +10).
- *
- * Missing-data policy (M1-T2, F-1.1b) — aligned with the Multi-Factor model's
- * weight re-normalization: an asset whose `risk_pct`/`reward_pct` the provider
- * omitted scores a NEUTRAL midpoint (50) instead of the old penalized floor of
- * 20. Previously such assets could never exceed 45 (< the 50 SELL threshold),
- * so every held asset lacking those two columns drew a permanent false
- * "cut losses" suggestion. Missing data is now silence, never a sell signal.
- */
-export function calculateSignalScore(asset: Asset): number {
-  const usableRatio =
-    asset.reward_pct !== null &&
-    asset.risk_pct !== null &&
-    asset.risk_pct > 0 &&
-    Number.isFinite(asset.reward_pct) &&
-    Number.isFinite(asset.risk_pct);
-  const ratio = usableRatio ? asset.reward_pct! / asset.risk_pct! : 0;
-  // Neutral midpoint when the ratio inputs are missing (never a penalty).
-  let score = usableRatio ? 20 * ratio + 20 : 50;
-  if (asset.volume_spike !== null && asset.volume_spike > 1) score += 15;
-  if (
-    asset.current_price !== null &&
-    asset.sma_50 !== null &&
-    Number.isFinite(asset.current_price) &&
-    Number.isFinite(asset.sma_50) &&
-    asset.current_price > asset.sma_50
-  ) {
-    score += 10;
-  }
-  return Math.min(100, Math.max(0, Math.round(score)));
-}
-
 export interface BrokerRoute {
   label: string;
   url: string;

@@ -2,7 +2,7 @@
 // ZeroChart Quant HUD & ATR Risk Engine
 // 1:1 port of the ZeroChart quant engine:
 //   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
-//   src/lib/multiFactor.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
+//   src/lib/canonicalModel.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
 //   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 1x ATR stop floored at 0)
 // HUD shows plain-English actions. Alerts emit JSON for the tv-webhook pipeline.
 // Quantitative analysis is informational. Not financial advice.
@@ -27,7 +27,7 @@ color C_RED    = #ff5252
 
 hudPos = hudPosition == "Bottom Right" ? position.bottom_right : hudPosition == "Bottom Left" ? position.bottom_left : hudPosition == "Top Left" ? position.top_left : position.top_right
 
-// ===== Model constants (multiFactor.ts) =====
+// ===== Model constants (canonicalModel.ts) =====
 float MOMENTUM_SATURATION      = 0.01   // +/-1% of price saturates the momentum score
 float LOW_VOLATILITY           = 0.005  // ATR/price <= 0.5% reads as maximally quiet
 float HIGH_VOLATILITY          = 0.055  // ATR/price >= 5.5% reads as maximally blown-out

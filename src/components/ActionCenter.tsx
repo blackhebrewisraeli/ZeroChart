@@ -33,17 +33,6 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   useEffect(() => {
     if (!userId) return;
     let live = true;
-    // Signals that fired while the app was closed; realtime covers everything after.
-    void supabase
-      .from('trading_signals')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'PENDING')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (!live || !data) return;
-        setPending((list) => appendNew(list, data));
-      });
     const channel = supabase
       .channel(`trading-signals:${userId}`)
       .on(
@@ -58,7 +47,22 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        // Backlog only once the channel is live, so a signal inserted during the
+        // join can't fall between the snapshot and the stream (appendNew dedupes).
+        // Re-runs on reconnect, which also picks up anything missed while offline.
+        void supabase
+          .from('trading_signals')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('status', 'PENDING')
+          .order('created_at', { ascending: false })
+          .then(({ data }) => {
+            if (!live || !data) return;
+            setPending((list) => appendNew(list, data));
+          });
+      });
     return () => {
       live = false;
       setPending([]);

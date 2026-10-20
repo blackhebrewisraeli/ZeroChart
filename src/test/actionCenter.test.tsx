@@ -33,7 +33,10 @@ vi.mock('@/lib/supabaseClient', () => {
       db.emit = callback;
       return channel;
     },
-    subscribe: () => channel,
+    subscribe: (callback: (status: string) => void) => {
+      callback('SUBSCRIBED');
+      return channel;
+    },
   };
   return {
     supabase: {

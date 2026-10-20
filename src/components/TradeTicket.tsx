@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { AssetIcon } from '@/components/AssetIcon';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { usePortfolio, type PortfolioType } from '@/lib/portfolioStore';
-import { LEDGER_NAMES, type TradeIntent } from '@/lib/portfolioAccounting';
+import { LEDGER_NAMES, type CorePortfolioType, type TradeIntent } from '@/lib/portfolioAccounting';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { useLivePrice } from '@/lib/livePriceStore';
 import { toBinanceSymbol } from '@/lib/ticker';
@@ -38,9 +38,11 @@ export function TradeTicket({
   /** Compact trigger text; defaults to "Trade". */
   label?: string;
 }) {
-  const { executeBuy, executeSell, portfolios } = usePortfolio();
+  const { executeBuy, executeSell, executePaperTrade, portfolios } = usePortfolio();
   const recordsFills = portfolioType !== undefined;
   const [open, setOpen] = useState(false);
+  /** A paper fill is in flight to the server. */
+  const [booking, setBooking] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [side, setSide] = useState<Side>('buy');
   const [amount, setAmount] = useState('');
@@ -96,8 +98,43 @@ export function TradeTicket({
     };
   }, [open]);
 
-  function handleSubmit() {
-    if (!canSubmit) return;
+  /** Books a Paper Trading fill on the server. */
+  async function bookPaperFill(shares: number, fillPrice: number) {
+    setBooking(true);
+    const result = await executePaperTrade({
+      side,
+      ticker: asset.ticker,
+      shares,
+      price: fillPrice,
+      fee,
+    });
+    setBooking(false);
+    return result;
+  }
+
+  /** Records a fill in a Core ledger, synchronously. */
+  function bookCoreFill(type: CorePortfolioType, shares: number, fillPrice: number) {
+    const input = {
+      ticker: asset.ticker,
+      shares,
+      price: fillPrice,
+      fee,
+      timestamp: new Date().toISOString(),
+      intent,
+    };
+    return side === 'buy'
+      ? // Every ledger's cash moves with its fills, Live Tracking's included:
+        // it mirrors the broker cash a real trade spends or frees.
+        executeBuy(type, {
+          ...input,
+          requireCash: true,
+          ...(asset.name ? { name: asset.name } : {}),
+        })
+      : executeSell(type, input);
+  }
+
+  async function handleSubmit() {
+    if (!canSubmit || booking) return;
     if (recordsFills) {
       const heldShares = portfolios[portfolioType].positions
         .filter((position) => position.ticker.toUpperCase() === asset.ticker.toUpperCase())
@@ -108,24 +145,10 @@ export function TradeTicket({
         side === 'sell' && Math.abs(orderShares - heldShares) * price < 0.01
           ? heldShares
           : orderShares;
-      const input = {
-        ticker: asset.ticker,
-        shares,
-        price,
-        fee,
-        timestamp: new Date().toISOString(),
-        intent,
-      };
       const result =
-        side === 'buy'
-          ? // Every ledger's cash moves with its fills, Live Tracking's included:
-            // it mirrors the broker cash a real trade spends or frees.
-            executeBuy(portfolioType, {
-              ...input,
-              requireCash: true,
-              ...(asset.name ? { name: asset.name } : {}),
-            })
-          : executeSell(portfolioType, input);
+        portfolioType === 'paper_trading'
+          ? await bookPaperFill(shares, price)
+          : bookCoreFill(portfolioType, shares, price);
       if (!result.ok) {
         toast.error(result.error ?? 'Order rejected');
         return;
@@ -286,8 +309,8 @@ export function TradeTicket({
                         'ticket-submit',
                         side === 'buy' ? 'ticket-submit-buy' : 'ticket-submit-sell',
                       )}
-                      disabled={!canSubmit}
-                      onClick={handleSubmit}
+                      disabled={!canSubmit || booking}
+                      onClick={() => void handleSubmit()}
                     >
                       {side === 'buy' ? 'Buy' : 'Sell'} {asset.ticker}
                     </button>

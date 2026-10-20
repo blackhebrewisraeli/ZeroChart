@@ -35,7 +35,7 @@ function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>
  * signal's quantity (units) in the `paper_trading` ledger at the live price.
  */
 export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
-  const { scopeUserId: userId, getPortfolio, executeBuy, executeSell } = usePortfolio();
+  const { scopeUserId: userId, getPortfolio, executePaperTrade } = usePortfolio();
   const [pending, setPending] = useState<Signal[]>([]);
   const [busy, setBusy] = useState(false);
   // Resolution is one-way (RLS only updates PENDING rows), so a backlog snapshot
@@ -138,12 +138,11 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
     const quantity = Number(signal.quantity);
     const shares = buying ? quantity : Math.min(quantity, held);
     const order = {
+      side: buying ? ('buy' as const) : ('sell' as const),
       ticker: asset.ticker,
       shares,
       price,
       fee: shares * price * FEE_RATE,
-      timestamp: new Date().toISOString(),
-      intent: 'tactical' as const,
     };
 
     // Book first, claim second: the signal turns EXECUTED only after the ledger
@@ -151,9 +150,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
     setBusy(true);
     let booked = false;
     try {
-      const result = buying
-        ? executeBuy('paper_trading', order)
-        : executeSell('paper_trading', order);
+      const result = await executePaperTrade(order);
       if (!result.ok) throw new Error(result.error ?? 'Order rejected');
       booked = true;
       toast.success(

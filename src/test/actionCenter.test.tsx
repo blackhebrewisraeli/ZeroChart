@@ -72,11 +72,16 @@ vi.mock('@/lib/supabaseClient', () => {
     },
   };
 });
-vi.mock('@/lib/db', () => ({
-  loadPortfolio: vi.fn(),
-  savePortfolioStateV3: vi.fn(),
-  PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
-}));
+vi.mock('@/lib/db', async () => {
+  const { paperDb } = await import('./paperDbFake');
+  return {
+    loadPortfolio: vi.fn(),
+    savePortfolioStateV3: vi.fn(),
+    insertPaperTransaction: paperDb.insertPaperTransaction,
+    loadPaperTransactions: paperDb.loadPaperTransactions,
+    PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
+  };
+});
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
@@ -85,6 +90,7 @@ import { PAPER_STARTING_CASH, PortfolioProvider, usePortfolio } from '@/lib/port
 import { ActionCenter } from '@/components/ActionCenter';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { toast } from 'sonner';
+import { paperDb } from './paperDbFake';
 
 const btc: Asset = {
   ticker: 'BTC-USD',
@@ -141,6 +147,7 @@ describe('Action Center', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
+    paperDb.rows.length = 0;
     db.pending = [];
     db.claimed = [{ id: 'sig-1' }];
     db.updateError = null;
@@ -235,6 +242,9 @@ describe('Action Center', () => {
       price: 50_000,
       intent: 'tactical',
     });
+    // Booked as a server row, and the account is its replay.
+    expect(paperDb.rows).toEqual([expect.objectContaining({ action: 'BUY', ticker: 'BTC-USD' })]);
+    expect(paper.transactions.at(-1)?.id).toBe(paperDb.rows[0]?.id);
     // Core ledgers never see it.
     expect(store.portfolios.long_term_sim.transactions.some((t) => t.type === 'buy')).toBe(false);
   });
@@ -275,7 +285,8 @@ describe('Action Center', () => {
     renderSignedIn();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
-    expect(toast.error).toHaveBeenCalledWith('Insufficient cash');
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Insufficient cash'));
+    expect(paperDb.insertPaperTransaction).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
     expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
     expect(store.portfolios.paper_trading.positions).toHaveLength(0);

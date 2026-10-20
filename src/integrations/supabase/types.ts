@@ -59,6 +59,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      paper_transactions: {
+        Row: {
+          action: string;
+          created_at: string;
+          fees: number;
+          id: string;
+          price: number | null;
+          quantity: number | null;
+          ticker: string | null;
+          user_id: string;
+        };
+        Insert: {
+          action: string;
+          created_at?: string;
+          fees?: number;
+          id?: string;
+          price?: number | null;
+          quantity?: number | null;
+          ticker?: string | null;
+          user_id?: string;
+        };
+        Update: {
+          action?: string;
+          created_at?: string;
+          fees?: number;
+          id?: string;
+          price?: number | null;
+          quantity?: number | null;
+          ticker?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       shared_portfolios: {
         Row: {
           created_at: string;
@@ -176,6 +209,27 @@ export type Database = {
           created_at?: string;
           id?: string;
           positions?: Json;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      user_subscriptions: {
+        Row: {
+          status: string;
+          tier: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          status?: string;
+          tier?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          status?: string;
+          tier?: string;
           updated_at?: string;
           user_id?: string;
         };

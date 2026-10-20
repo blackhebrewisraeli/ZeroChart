@@ -1,5 +1,5 @@
 import { act, cleanup, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   applyBuyTransaction,
   applySellTransaction,
@@ -7,6 +7,15 @@ import {
   type PortfolioContainer,
 } from '@/lib/portfolioAccounting';
 import { PortfolioProvider, usePortfolio, type PortfolioStateV3 } from '@/lib/portfolioStore';
+import { paperDb } from './paperDbFake';
+
+vi.mock('@/lib/db', async () => {
+  const { paperDb } = await import('./paperDbFake');
+  return {
+    insertPaperTransaction: paperDb.insertPaperTransaction,
+    loadPaperTransactions: paperDb.loadPaperTransactions,
+  };
+});
 
 function emptyContainer(
   type: PortfolioContainer['type'] = 'paper_trading',
@@ -273,63 +282,66 @@ function renderStore() {
 
 beforeEach(() => {
   window.localStorage.clear();
+  paperDb.rows.length = 0;
+  vi.clearAllMocks();
 });
 
 afterEach(cleanup);
 
+const paperBuy = (ticker: string, shares: number, price: number) => ({
+  side: 'buy' as const,
+  ticker,
+  shares,
+  price,
+  fee: 0,
+});
+
 describe('portfolio store v3', () => {
-  it('strictly isolates cash and trades between all three containers', () => {
+  it('strictly isolates cash and trades between all three containers', async () => {
     renderStore();
     const realBefore = structuredClone(store.getPortfolio('real_tracking'));
     const longTermBefore = structuredClone(store.getPortfolio('long_term_sim'));
 
-    act(() => {
+    await act(async () => {
+      expect((await store.executePaperTrade(paperBuy('NVDA', 5, 100))).ok).toBe(true);
       expect(
-        store.executeBuy('paper_trading', {
-          ticker: 'NVDA',
-          shares: 5,
-          price: 100,
-          timestamp: '2026-03-01T00:00:00.000Z',
-        }).ok,
-      ).toBe(true);
-      expect(
-        store.executeSell('paper_trading', {
+        await store.executePaperTrade({
+          side: 'sell',
           ticker: 'NVDA',
           shares: 2,
           price: 120,
-          timestamp: '2026-03-02T00:00:00.000Z',
-        }).ok,
-      ).toBe(true);
-      expect(store.withdrawPortfolioCash('paper_trading', 250, 'reserve')).toBe(true);
-      store.setTargetAllocations('paper_trading', { NVDA: 1 });
+          fee: 0,
+        }),
+      ).toEqual({ ok: true, realizedPnl: 40 });
     });
 
     expect(store.getPortfolio('paper_trading')).toMatchObject({
-      cashBalance: 99_490,
+      cashBalance: 99_740,
       realizedPnl: 40,
-      targetAllocations: { NVDA: 1 },
     });
     expect(store.getPortfolio('paper_trading').positions).toHaveLength(1);
     expect(store.getPortfolio('paper_trading').positions[0]?.shares).toBe(3);
     expect(
       store.getPortfolio('paper_trading').transactions.map((transaction) => transaction.type),
-    ).toEqual(['buy', 'sell', 'withdrawal']);
+    ).toEqual(['buy', 'sell']);
     expect(store.getPortfolio('real_tracking')).toEqual(realBefore);
     expect(store.getPortfolio('long_term_sim')).toEqual(longTermBefore);
   });
 
-  it('resets only the Paper Trading ledger back to $100,000', () => {
+  it('resets only the Paper Trading ledger back to $100,000', async () => {
     renderStore();
-    act(() => {
+    await act(async () => {
       store.depositPortfolioCash('long_term_sim', 1_000);
-      store.executeBuy('paper_trading', { ticker: 'NVDA', shares: 5, price: 100 });
-      store.depositPortfolioCash('paper_trading', 5_000, 'Paper top-up');
+      await store.executePaperTrade(paperBuy('NVDA', 5, 100));
+      await store.topUpPaperCash(5_000);
     });
     const realBefore = structuredClone(store.getPortfolio('real_tracking'));
     const longTermBefore = structuredClone(store.getPortfolio('long_term_sim'));
     expect(store.getPortfolio('paper_trading').cashBalance).toBe(104_500);
 
-    act(() => store.resetPaperAccount());
+    await act(async () => {
+      await store.resetPaperAccount();
+    });
 
     expect(store.getPortfolio('paper_trading')).toMatchObject({
       type: 'paper_trading',
@@ -521,22 +533,15 @@ describe('portfolio store v3', () => {
     expect(store.getPortfolio('paper_trading').cashBalance).toBe(333);
   });
 
-  it('keeps every portfolio isolated across user A, sign-out, and user B scope changes', () => {
+  it('keeps every portfolio isolated across user A, sign-out, and user B scope changes', async () => {
     renderStore();
 
     act(() => {
       store.switchScope('user-a');
     });
-    act(() => {
+    await act(async () => {
       expect(store.depositPortfolioCash('long_term_sim', 2_000, 'plan')).toBe(true);
-      expect(
-        store.executeBuy('paper_trading', {
-          ticker: 'BTC-USD',
-          shares: 0.01,
-          price: 50_000,
-          timestamp: '2026-01-01T00:00:00.000Z',
-        }).ok,
-      ).toBe(true);
+      expect((await store.executePaperTrade(paperBuy('btc-usd', 0.01, 50_000))).ok).toBe(true);
       expect(
         store.executeBuy('real_tracking', {
           ticker: 'TSLA',
@@ -547,6 +552,16 @@ describe('portfolio store v3', () => {
         }).ok,
       ).toBe(true);
     });
+
+    // Signed in, the fill is a server row and the account is its replay.
+    expect(paperDb.insertPaperTransaction).toHaveBeenCalledWith({
+      action: 'BUY',
+      ticker: 'BTC-USD',
+      quantity: 0.01,
+      price: 50_000,
+      fees: 0,
+    });
+    expect(store.getPortfolio('paper_trading').transactions.map(({ id }) => id)).toEqual(['row-0']);
 
     act(() => {
       store.switchScope(null); // sign-out path
@@ -567,6 +582,23 @@ describe('portfolio store v3', () => {
     expect(
       store.getPortfolio('real_tracking').positions.some((position) => position.ticker === 'TSLA'),
     ).toBe(true);
+  });
+
+  it('surfaces a fill the server ledger rejects and books nothing', async () => {
+    renderStore();
+    act(() => {
+      store.switchScope('user-a');
+    });
+    paperDb.insertPaperTransaction.mockRejectedValueOnce(new Error('Insufficient cash'));
+
+    let result: Awaited<ReturnType<typeof store.executePaperTrade>> | undefined;
+    await act(async () => {
+      result = await store.executePaperTrade(paperBuy('NVDA', 1, 100));
+    });
+
+    expect(result).toEqual({ ok: false, error: 'Insufficient cash' });
+    expect(store.getPortfolio('paper_trading').positions).toEqual([]);
+    expect(paperDb.loadPaperTransactions).not.toHaveBeenCalled();
   });
 
   it('preserves lot history across unchanged and aggregate holding edits', () => {

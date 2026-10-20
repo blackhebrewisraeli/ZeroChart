@@ -47,7 +47,9 @@ Two product domains over one financial/technical substrate, governed by: _Determ
 
 ### 3.1 Current state after M2-T1
 
-Cloud compatibility remains one row per user in `user_portfolios(user_id UNIQUE, positions jsonb)`. The JSONB value may be either a legacy `Position[]` or the v3 snapshot envelope `{ version: 3, activePortfolioType, portfolios }`; `db.ts` preserves the legacy array API and adds explicit v3 save/load helpers.
+Cloud compatibility remains one row per user in `user_portfolios(user_id UNIQUE, positions jsonb)` for the Core ledgers. The JSONB value may be either a legacy `Position[]` or the v3 snapshot envelope `{ version: 3, activePortfolioType, portfolios }`; `db.ts` preserves the legacy array API and adds explicit v3 save/load helpers.
+
+Paper Trading has left the snapshot: every fill, top-up and reset is an append-only `paper_transactions` row (RLS: read/insert own rows; no update/delete). A `BEFORE INSERT` trigger replays the account's cash and open shares since its last `RESET` under a per-user advisory lock and rejects fills it can't cover. The client rebuilds the account with `replayPaperLedger` (FIFO lots, cash, realized P&L) on hydration and after each booking. Pro entitlement likewise lives server-side in `user_subscriptions`, readable by its owner and written only by the service role.
 
 Locally, `portfolioStore.tsx` now owns three strictly isolated containers keyed by `real_tracking`, `long_term_sim`, and `paper_trading`. Each container has independent positions, cash, cash ledger, unified transactions, realized P&L, and optional target allocations. Bare v1 arrays and v2 cash-ledger payloads migrate deterministically on hydration; legacy UI consumers continue to receive the combined Core position view.
 

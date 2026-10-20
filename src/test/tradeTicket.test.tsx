@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import type { Asset } from '@/lib/assets';
@@ -216,7 +216,7 @@ describe('tactical Trade Ticket on the active ledger', () => {
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 
-  it('never shows Paper Trading fills in Core, even when paper_trading was the saved mode', () => {
+  it('never shows Paper Trading fills in Core, even when paper_trading was the saved mode', async () => {
     window.localStorage.setItem(
       'zerochart:portfolio-positions',
       JSON.stringify({ version: 3, activePortfolioType: 'paper_trading', portfolios: {} }),
@@ -232,9 +232,11 @@ describe('tactical Trade Ticket on the active ledger', () => {
     const ticket = within(screen.getByRole('dialog', { name: 'Trade AAPL' }));
     fireEvent.change(ticket.getByLabelText('Order amount (USD)'), { target: { value: '100' } });
     fireEvent.click(ticket.getByRole('button', { name: 'Buy AAPL' }));
-    expect(toast.success).toHaveBeenCalledWith('Bought AAPL', {
-      description: expect.stringMatching(/Paper Trading ledger/),
-    });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Bought AAPL', {
+        description: expect.stringMatching(/Paper Trading ledger/),
+      }),
+    );
 
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
     expect(screen.getByText('No simulation positions')).toBeInTheDocument();

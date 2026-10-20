@@ -3,7 +3,7 @@ import { Activity, Download, Minus, Plus, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAlerts } from '@/lib/alertsStore';
 import { formatPnl, formatPrice, formatSignedPercent, pnlTone, type Asset } from '@/lib/assets';
-import { PAPER_STARTING_CASH, usePortfolio } from '@/lib/portfolioStore';
+import { PAPER_STARTING_CASH, usePortfolio, type PaperOrder } from '@/lib/portfolioStore';
 import {
   computePortfolioValuation,
   positionCostBasis,
@@ -142,22 +142,30 @@ function PositionRow({
 
 /** Top-up input and a confirmed reset, scoped to the Paper Trading ledger. */
 function PaperAccountControls() {
-  const { portfolios, depositPortfolioCash, resetPaperAccount } = usePortfolio();
+  const { portfolios, topUpPaperCash, resetPaperAccount } = usePortfolio();
   const [amount, setAmount] = useState('10000');
   const paper = portfolios.paper_trading;
 
-  function topUp() {
+  async function topUp() {
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) {
       toast.error('Enter an amount greater than $0.');
       return;
     }
-    depositPortfolioCash('paper_trading', value, 'Paper top-up');
+    const result = await topUpPaperCash(value);
+    if (!result.ok) {
+      toast.error(result.error ?? 'Top-up rejected');
+      return;
+    }
     toast.success(`Added ${formatPrice(value)} paper cash`);
   }
 
-  function reset() {
-    resetPaperAccount();
+  async function reset() {
+    const result = await resetPaperAccount();
+    if (!result.ok) {
+      toast.error(result.error ?? 'Reset rejected');
+      return;
+    }
     toast.success('Paper account reset', {
       description: `${formatPrice(PAPER_STARTING_CASH)} paper cash, no positions, empty ledger.`,
     });
@@ -175,7 +183,7 @@ function PaperAccountControls() {
         value={amount}
         onChange={(event) => setAmount(event.target.value)}
       />
-      <button type="button" className="portfolio-cash-btn" onClick={topUp}>
+      <button type="button" className="portfolio-cash-btn" onClick={() => void topUp()}>
         <Plus size={13} /> Top Up
       </button>
       <AlertDialog>
@@ -198,7 +206,7 @@ function PaperAccountControls() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={reset}>
+            <AlertDialogAction onClick={() => void reset()}>
               Reset to {formatPrice(PAPER_STARTING_CASH)}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -214,7 +222,7 @@ function PaperAccountControls() {
  * the Core Simulation and Live Tracking ledgers never see it.
  */
 export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }) {
-  const { portfolios, executeBuy, executeSell } = usePortfolio();
+  const { portfolios, executePaperTrade } = usePortfolio();
   const { triggered } = useAlerts();
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
@@ -254,21 +262,22 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
   const ticker = selected ?? paper.positions[0]?.ticker ?? topAsset?.ticker ?? assets[0]?.ticker;
   const chartAsset = ticker ? assetByTicker.get(ticker.toUpperCase()) : undefined;
 
-  const order = (position: Position, shares: number, price: number) => ({
+  const order = (
+    side: PaperOrder['side'],
+    position: Position,
+    shares: number,
+    price: number,
+  ): PaperOrder => ({
+    side,
     ticker: position.ticker,
     shares,
     price,
     fee: shares * price * FEE_RATE,
-    timestamp: new Date().toISOString(),
-    intent: 'tactical' as const,
   });
 
-  function resizePosition(position: Position, price: number, side: 'buy' | 'sell') {
+  async function resizePosition(position: Position, price: number, side: 'buy' | 'sell') {
     const shares = position.shares * SIZE_STEP;
-    const result =
-      side === 'buy'
-        ? executeBuy('paper_trading', { ...order(position, shares, price), requireCash: true })
-        : executeSell('paper_trading', order(position, shares, price));
+    const result = await executePaperTrade(order(side, position, shares, price));
     if (!result.ok) {
       toast.error(result.error ?? 'Order rejected');
       return;
@@ -278,8 +287,8 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
     });
   }
 
-  function closePosition(position: Position, price: number) {
-    const result = executeSell('paper_trading', order(position, position.shares, price));
+  async function closePosition(position: Position, price: number) {
+    const result = await executePaperTrade(order('sell', position, position.shares, price));
     if (!result.ok) {
       toast.error(result.error ?? 'Close rejected');
       return;

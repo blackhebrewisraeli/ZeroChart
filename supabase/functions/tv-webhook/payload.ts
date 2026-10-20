@@ -28,6 +28,8 @@ function num(value: unknown): number {
   return typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN;
 }
 
+const positive = (n: number) => Number.isFinite(n) && n > 0;
+
 /** Non-strings become '' so objects can't sneak through as "[object Object]". */
 function upper(value: unknown): string {
   return typeof value === 'string' ? value.trim().toUpperCase() : '';
@@ -56,15 +58,15 @@ export function parseSignal(body: unknown, now = new Date()): ParsedSignal {
   const score = num(fields['signal_score']);
   if (!(score >= 0 && score <= 100)) return { ok: false, error: 'signal_score must be 0-100' };
   const price = num(fields['price']);
-  if (!(Number.isFinite(price) && price > 0)) {
+  if (!positive(price)) {
     return { ok: false, error: 'price must be greater than zero' };
   }
   const quantity = num(fields['quantity']);
-  if (!(Number.isFinite(quantity) && quantity > 0)) {
+  if (!positive(quantity)) {
     return { ok: false, error: 'quantity must be greater than zero' };
   }
   const stop = fields['stop_loss'] == null ? null : num(fields['stop_loss']);
-  if (stop !== null && !(Number.isFinite(stop) && stop > 0)) {
+  if (stop !== null && !positive(stop)) {
     return { ok: false, error: 'stop_loss must be greater than zero' };
   }
   const rawEventId = fields['event_id'] ?? '';

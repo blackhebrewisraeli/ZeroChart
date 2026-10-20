@@ -90,7 +90,7 @@ async function confirmInvest() {
   fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
   const dialog = await screen.findByRole('dialog');
   fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
-  fireEvent.click(await screen.findByRole('button', { name: /confirm & invest/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /simulate on paper desk/i }));
 }
 
 async function investOnce() {
@@ -116,7 +116,7 @@ describe('RoboAdvisor invest', () => {
       ['buy', 'BTC'],
       ['buy', 'ETH'],
     ]);
-    expect(ledger[0]).toMatchObject({ amount: 10000, note: 'Robo Advisor funding' });
+    expect(ledger[0]).toMatchObject({ amount: 10000, note: 'Quant Analyzer funding' });
     for (const [buy, allocated] of [
       [ledger[1]!, 6000],
       [ledger[2]!, 4000],

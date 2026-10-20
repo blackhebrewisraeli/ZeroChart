@@ -65,9 +65,7 @@ function AdDialog({ onUpgrade }: { onUpgrade: () => void }) {
               <TrendingUp size={18} />
             </span>
             <div>
-              <Dialog.Title className="pricing-title">
-                Institutional tick data at retail prices
-              </Dialog.Title>
+              <Dialog.Title className="pricing-title">Tick data for your research</Dialog.Title>
               <Dialog.Description id="ad-description" className="pricing-description">
                 Stream 20 years of order-book history straight into your models. First month on us.
               </Dialog.Description>

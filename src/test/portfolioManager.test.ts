@@ -151,7 +151,7 @@ describe('generateShareText', () => {
         '• 40% BTC-USD',
         '• 30% ETH-USD',
         '• 30% AAPL',
-        'Built with zero financial knowledge using ZeroChart.',
+        'Simulated with ZeroChart.',
       ].join('\n'),
     );
   });
@@ -162,12 +162,9 @@ describe('generateShareText', () => {
     const text = generateShareText(positions, []);
 
     expect(text).toBe(
-      [
-        'My ZeroChart Portfolio 🚀',
-        'Risk: Moderate',
-        '• 100% X',
-        'Built with zero financial knowledge using ZeroChart.',
-      ].join('\n'),
+      ['My ZeroChart Portfolio 🚀', 'Risk: Moderate', '• 100% X', 'Simulated with ZeroChart.'].join(
+        '\n',
+      ),
     );
   });
 
@@ -177,7 +174,7 @@ describe('generateShareText', () => {
         'My ZeroChart Portfolio 🚀',
         'Risk: Moderate',
         '• No positions yet',
-        'Built with zero financial knowledge using ZeroChart.',
+        'Simulated with ZeroChart.',
       ].join('\n'),
     );
   });

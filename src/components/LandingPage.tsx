@@ -19,9 +19,9 @@ interface Feature {
 const FEATURES: Feature[] = [
   {
     icon: Bot,
-    title: 'Quant Robo-Advisor',
+    title: 'Quant Analyzer',
     description:
-      'A deterministic multi-factor engine turns a risk profile and capital into a balanced, signal-ranked portfolio in one click.',
+      'A deterministic multi-factor engine ranks assets by RSI, MACD and ATR and drafts a risk-weighted portfolio you can simulate.',
   },
   {
     icon: Activity,
@@ -33,7 +33,7 @@ const FEATURES: Feature[] = [
     icon: History,
     title: '1-Year Backtesting',
     description:
-      'Replay any allocation against a year of daily history to see how it would have grown.',
+      'Replay an allocation against a year of daily history, with fees, slippage and trailing stops.',
   },
   {
     icon: Cloud,
@@ -99,16 +99,16 @@ export function LandingPage({
           <div className="landing-hero-glow" aria-hidden="true" />
           <div className="page-width landing-hero-inner">
             <span className="landing-badge">
-              <Sparkles size={14} /> The zero-knowledge terminal
+              <Sparkles size={14} /> Quantitative research and paper trading environment
             </span>
             <h1 className="landing-headline">
-              Algorithmic Portfolio Management.
-              <span className="landing-headline-accent"> Zero Knowledge Required.</span>
+              Understand, backtest, and simulate
+              <span className="landing-headline-accent"> multifactor signals.</span>
             </h1>
             <p className="landing-subheadline">
-              ZeroChart turns raw market data into one high-signal workspace — multi-factor quant
-              portfolios, live Binance prices, and one-year backtests, wrapped in a terminal
-              you&apos;ll actually enjoy using.
+              Research assets with an explainable multi-factor score, replay strategies against a
+              year of history, and test them on a paper desk with simulated money. No real orders,
+              no real funds.
             </p>
             <div className="landing-cta">
               <button
@@ -136,10 +136,10 @@ export function LandingPage({
         <section id="features" className="landing-features">
           <div className="page-width">
             <div className="landing-section-head">
-              <h2 className="landing-section-title">Built for the signal, not the noise</h2>
+              <h2 className="landing-section-title">Research first, then simulate</h2>
               <p className="landing-section-sub">
-                Everything you need to research, build, and stress-test a portfolio — without
-                touching a single spreadsheet.
+                Score signals, stress-test an allocation, and paper trade it before any real
+                decision.
               </p>
             </div>
             <div className="landing-grid">
@@ -160,7 +160,7 @@ export function LandingPage({
           <div className="page-width">
             <div className="landing-final-card">
               <ShieldCheck size={22} className="landing-final-icon" />
-              <h2 className="landing-final-title">Your terminal is one click away</h2>
+              <h2 className="landing-final-title">Start in simulation mode</h2>
               <p className="landing-final-sub">
                 Create a free account and start simulating your first portfolio in seconds.
               </p>
@@ -180,7 +180,7 @@ export function LandingPage({
         <div className="page-width landing-footer-inner">
           <div className="flex items-center gap-2">
             <Zap size={13} />
-            <span>Algorithmic signals. Live charts. Zero noise.</span>
+            <span>Quantitative research and paper trading environment.</span>
           </div>
           <span>Quantitative analysis is informational. Not financial advice.</span>
           <span className="font-mono text-[10px]">ZEROCHART</span>

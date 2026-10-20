@@ -15,11 +15,12 @@ describe('App routing', () => {
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
 
-  it('matches the Paper Trading Terminal as its own route', () => {
+  it('matches each workspace zone as its own route', () => {
     const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
 
+    expect(router.matchRoutes('/').at(-1)?.routeId).toBe('/');
     expect(router.matchRoutes('/paper-trading').at(-1)?.routeId).toBe('/paper-trading');
-    expect(router.matchRoutes('/', { view: 'scanner' }).at(-1)?.routeId).toBe('/');
+    expect(router.matchRoutes('/account').at(-1)?.routeId).toBe('/account');
   });
 
   it('matches the public shared portfolio route without an auth-only route wrapper', () => {

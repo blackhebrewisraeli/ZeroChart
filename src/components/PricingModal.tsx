@@ -57,7 +57,7 @@ export function PricingModal({ open, onOpenChange }: PricingModalProps) {
             <div>
               <Dialog.Title className="pricing-title">Unlock the full quant stack</Dialog.Title>
               <Dialog.Description id="pricing-description" className="pricing-description">
-                Go beyond signals with institutional-grade portfolio intelligence.
+                Deeper factor analysis and more realistic backtests.
               </Dialog.Description>
             </div>
           </header>

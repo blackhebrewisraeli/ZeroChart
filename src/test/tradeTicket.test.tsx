@@ -38,7 +38,8 @@ vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
 vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 
 import { AuthProvider } from '@/lib/authStore';
-import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
+import { PortfolioProvider } from '@/lib/portfolioStore';
+import type { CorePortfolioType } from '@/lib/portfolioAccounting';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { TradeTicket } from '@/components/TradeTicket';
 
@@ -61,24 +62,19 @@ function aapl(price: number): Asset {
   };
 }
 
-/** A ticket booking into whichever Core ledger the dashboard has active. */
-function ActiveTicket({ asset }: { asset: Asset }) {
-  const { activePortfolioType } = usePortfolio();
-  return <TradeTicket asset={asset} portfolioType={activePortfolioType} intent="tactical" />;
-}
-
-function tree(price: number) {
+/** A ticket and the dashboard on the same Core ledger, as its zone mounts them. */
+function tree(price: number, ledger: CorePortfolioType = 'long_term_sim') {
   return (
     <PortfolioProvider>
       <AuthProvider>
-        <ActiveTicket asset={aapl(price)} />
+        <TradeTicket asset={aapl(price)} portfolioType={ledger} intent="tactical" />
         <TradeTicket
           asset={aapl(price)}
           portfolioType="paper_trading"
           intent="tactical"
           label="Paper trade"
         />
-        <PortfolioDashboard assets={[aapl(price)]} />
+        <PortfolioDashboard assets={[aapl(price)]} portfolioType={ledger} />
       </AuthProvider>
     </PortfolioProvider>
   );
@@ -92,7 +88,7 @@ function trade(side: 'Buy' | 'Sell', amount: string) {
   fireEvent.click(ticket.getByRole('button', { name: `${side} AAPL` }));
 }
 
-describe('tactical Trade Ticket on the active ledger', () => {
+describe('tactical Trade Ticket on the zone ledger', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
@@ -174,22 +170,21 @@ describe('tactical Trade Ticket on the active ledger', () => {
     expect(within(rows[0]!).getByText('+$194.50')).toHaveClass('pnl-up');
   });
 
-  it('scopes the backtest to the active portfolio and resets it on a switch', () => {
-    render(tree(100));
+  it('scopes the backtest to the mounted portfolio and resets it on a switch', () => {
+    const view = render(tree(100));
     fireEvent.change(screen.getByLabelText('Cash amount'), { target: { value: '500' } });
     fireEvent.click(screen.getByRole('button', { name: 'Deposit' }));
     trade('Buy', '100');
     expect(screen.getByTestId('backtest')).toHaveTextContent(/^AAPL$/);
 
     const mounts = backtestMounts.count;
-    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    view.rerender(tree(100, 'real_tracking'));
     expect(screen.getByTestId('backtest')).toHaveTextContent(/^NVDA,AAPL$/); // the demo live holdings
     expect(backtestMounts.count).toBe(mounts + 1); // fresh chart: no Simulation result carried over
   });
 
   it('closing a Live Tracking holding only removes it, even without a live price', () => {
-    render(tree(100));
-    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    render(tree(100, 'real_tracking'));
 
     // Demo NVDA has no asset row, so no live price.
     fireEvent.click(screen.getAllByRole('button', { name: /close position/i })[0]!);
@@ -197,9 +192,8 @@ describe('tactical Trade Ticket on the active ledger', () => {
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 
-  it('books into Live Tracking once it is active, moving its cash like a broker would', () => {
-    render(tree(100));
-    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+  it('books into Live Tracking under Account, moving its cash like a broker would', () => {
+    const view = render(tree(100, 'real_tracking'));
 
     trade('Buy', '100');
     trade('Sell', '50');
@@ -212,7 +206,7 @@ describe('tactical Trade Ticket on the active ledger', () => {
     expect(screen.getByText(/\$2,449\.6\d available/)).toBeInTheDocument();
 
     // The Simulation ledger never saw these trades.
-    fireEvent.click(screen.getByRole('tab', { name: 'Simulation' }));
+    view.rerender(tree(100, 'long_term_sim'));
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 
@@ -221,11 +215,8 @@ describe('tactical Trade Ticket on the active ledger', () => {
       'zerochart:portfolio-positions',
       JSON.stringify({ version: 3, activePortfolioType: 'paper_trading', portfolios: {} }),
     );
-    render(tree(100));
-    expect(screen.getByRole('tab', { name: 'Simulation' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    const view = render(tree(100));
+    expect(screen.getByRole('region', { name: 'Simulated portfolio' })).toBeInTheDocument();
 
     // Paper starts with $10,000 of its own cash; Core Simulation has none.
     fireEvent.click(screen.getByRole('button', { name: 'Paper trade' }));
@@ -241,7 +232,7 @@ describe('tactical Trade Ticket on the active ledger', () => {
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
     expect(screen.getByText('No simulation positions')).toBeInTheDocument();
     expect(screen.getByText(/\$0\.00 available/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: 'Live Tracking' }));
+    view.rerender(tree(100, 'real_tracking'));
     expect(screen.getByText('0 ENTRIES')).toBeInTheDocument();
   });
 

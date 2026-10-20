@@ -8,10 +8,10 @@ export const Route = createFileRoute('/paper-trading')({
       {
         name: 'description',
         content:
-          'Trade tactical signals with simulated fills: realized and open P&L, positions and fills in one paper terminal.',
+          'Simulation mode: trade tactical signals with simulated fills, track paper P&L and backtest a simulated portfolio. No real money.',
       },
     ],
   }),
-  // Same component as `/`, so switching workspaces keeps the shell (and its live feed) mounted.
+  // Same component as `/`, so switching zones keeps the shell (and its live feed) mounted.
   component: Workspace,
 });

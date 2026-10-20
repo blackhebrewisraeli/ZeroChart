@@ -180,7 +180,7 @@ describe('portfolio P&L attribution and trade ledger', () => {
     expect(strip.getByText(/2 fills/)).toBeInTheDocument();
 
     // Tour targets on the Portfolio workspace are mounted.
-    expect(container.querySelector('[data-tour="wealth"]')).not.toBeNull();
+    expect(container.querySelector('[data-tour="sim-portfolio"]')).not.toBeNull();
     expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
   });
 
@@ -201,7 +201,7 @@ describe('portfolio P&L attribution and trade ledger', () => {
       'aria-expanded',
       'false',
     );
-    expect(container.querySelector('[data-tour="wealth"]')).not.toBeNull();
+    expect(container.querySelector('[data-tour="sim-portfolio"]')).not.toBeNull();
     expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
   });
 

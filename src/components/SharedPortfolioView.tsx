@@ -197,7 +197,7 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
             <div className="shared-panel-heading">
               <div>
                 <span className="shared-panel-kicker">ALGORITHMIC READOUT</span>
-                <h2 id="shared-scores-title">Robo-Advisor scores</h2>
+                <h2 id="shared-scores-title">Quant scores</h2>
               </div>
               <Zap size={18} aria-hidden="true" />
             </div>

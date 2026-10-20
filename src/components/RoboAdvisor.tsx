@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
-  ExternalLink,
   Gauge,
   LockKeyhole,
   RefreshCw,
@@ -25,8 +24,6 @@ import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { applyBuyTransaction, applyCashTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { FEE_RATE } from '@/components/TradeTicket';
-import { isBinanceCrypto } from '@/lib/binance';
-import { getBrokerUrl } from '@/lib/tradeRouter';
 import { cn } from '@/lib/utils';
 
 const RISK_OPTIONS: {
@@ -100,11 +97,6 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
 
   const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
   const { transactPortfolio } = usePortfolio();
-
-  const topAllocation =
-    result && result.length > 0
-      ? ([...result].sort((a, b) => b.weight - a.weight)[0] ?? null)
-      : null;
 
   function openModal() {
     closingRef.current = false;
@@ -232,7 +224,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
       const funded = applyCashTransaction(container, {
         type: 'deposit',
         amount: total,
-        note: 'Robo Advisor funding',
+        note: 'Quant Analyzer funding',
         timestamp,
       });
       if (!funded.ok) return funded;
@@ -307,7 +299,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                   </span>
                   <div>
                     <h2 id="robo-title" className="robo-title">
-                      Robo-Advisor
+                      Quant Analyzer
                     </h2>
                     <p className="robo-subtitle">Quantitative Multi-Factor Engine</p>
                   </div>
@@ -433,7 +425,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                       <>
                         <div className="robo-summary">
                           <div className="robo-summary-item">
-                            <span className="robo-summary-label">Total invested</span>
+                            <span className="robo-summary-label">Simulated capital</span>
                             <span className="robo-summary-value">{formatPrice(total)}</span>
                           </div>
                           <div className="robo-summary-item">
@@ -450,7 +442,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
 
                         <div className="robo-projection">
                           <div className="robo-projection-head">
-                            <span className="robo-projection-title">Wealth Projection</span>
+                            <span className="robo-projection-title">Growth Projection</span>
                             <span className="robo-projection-rate">
                               {(ANNUAL_RETURN_BY_RISK[riskProfile] * 100).toFixed(0)}% assumed
                               return
@@ -599,18 +591,6 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                   </span>
                                 </div>
                                 <div className="robo-actions">
-                                  <a
-                                    className="robo-trade"
-                                    href={getBrokerUrl(
-                                      allocation.ticker,
-                                      isBinanceCrypto(allocation.ticker) ? 'crypto' : 'stock',
-                                    )}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    aria-label={`Trade ${allocation.ticker}`}
-                                  >
-                                    <ExternalLink size={13} /> Trade
-                                  </a>
                                   <button
                                     type="button"
                                     className="robo-swap"
@@ -640,20 +620,6 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                             );
                           })}
                         </ul>
-
-                        {topAllocation && (
-                          <a
-                            className="robo-buy-portfolio"
-                            href={getBrokerUrl(
-                              topAllocation.ticker,
-                              isBinanceCrypto(topAllocation.ticker) ? 'crypto' : 'stock',
-                            )}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <Rocket size={16} /> Buy Portfolio
-                          </a>
-                        )}
                       </>
                     ) : (
                       <div className="robo-empty">
@@ -684,7 +650,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                       className="robo-submit robo-submit-invest"
                       onClick={handleConfirmInvest}
                     >
-                      Confirm & Invest <Rocket size={16} />
+                      Simulate on Paper Desk <Rocket size={16} />
                     </button>
                   </footer>
                 </>

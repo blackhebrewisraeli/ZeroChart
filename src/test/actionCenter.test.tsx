@@ -7,6 +7,8 @@ import type { Asset } from '@/lib/assets';
 const db = vi.hoisted(() => ({
   pending: [] as unknown[],
   claimed: [] as unknown[],
+  // Error the status update resolves with (a failed claim).
+  updateError: null as { message: string } | null,
   update: vi.fn(),
   eq: vi.fn(),
   channel: vi.fn(),
@@ -22,7 +24,7 @@ const db = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/supabaseClient', () => {
-  const query = (rows: () => unknown[]) => {
+  const query = (rows: () => unknown[], error: () => unknown = () => null) => {
     const q = {
       select: () => q,
       order: () => q,
@@ -31,7 +33,7 @@ vi.mock('@/lib/supabaseClient', () => {
         return q;
       },
       then: (done: (result: { data: unknown[]; error: null }) => void) => {
-        const finish = () => done({ data: rows(), error: null });
+        const finish = () => done({ data: rows(), error: error() as null });
         if (db.hold) db.release = finish;
         else finish();
       },
@@ -56,7 +58,10 @@ vi.mock('@/lib/supabaseClient', () => {
         select: () => query(() => db.pending),
         update: (values: unknown) => {
           db.update(values);
-          return query(() => db.claimed);
+          return query(
+            () => db.claimed,
+            () => db.updateError,
+          );
         },
       }),
       channel: (name: string, options: unknown) => {
@@ -73,12 +78,13 @@ vi.mock('@/lib/db', () => ({
   PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
 }));
 vi.mock('sonner', () => ({
-  toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
+  toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
 
 import { PAPER_STARTING_CASH, PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { ActionCenter } from '@/components/ActionCenter';
 import { FEE_RATE } from '@/components/TradeTicket';
+import { toast } from 'sonner';
 
 const btc: Asset = {
   ticker: 'BTC-USD',
@@ -104,9 +110,11 @@ function signal(overrides: Record<string, unknown> = {}) {
     user_id: 'user-1',
     ticker: 'BTCUSDT',
     action: 'BUY',
-    conviction_score: 85,
-    suggested_size: 500,
+    signal_score: 85,
+    quantity: 0.01,
+    price: 49_000,
     stop_loss: 48_000,
+    event_id: '2026-10-20T12:00:00Z',
     status: 'PENDING',
     created_at: '2026-10-20T12:00:00.000Z',
     ...overrides,
@@ -135,6 +143,7 @@ describe('Action Center', () => {
     vi.clearAllMocks();
     db.pending = [];
     db.claimed = [{ id: 'sig-1' }];
+    db.updateError = null;
     db.hold = false;
     db.status = 'SUBSCRIBED';
     db.holdStatus = false;
@@ -154,7 +163,9 @@ describe('Action Center', () => {
     act(() => db.emit({ eventType: 'INSERT', new: signal() }));
 
     expect(screen.getByRole('alert')).toHaveTextContent('BUY SIGNAL: BTCUSDT');
-    expect(screen.getByText('85%')).toBeInTheDocument();
+    expect(screen.getByText('85 / 100')).toBeInTheDocument();
+    expect(screen.getByText('0.01 units')).toBeInTheDocument();
+    // Notional at the live price, not the alert's $49,000.
     expect(screen.getByText('$500.00')).toBeInTheDocument();
 
     // Resolved elsewhere (another tab): the card goes away.
@@ -199,7 +210,7 @@ describe('Action Center', () => {
     expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
   });
 
-  it('Execute claims the signal and books the fill in the paper_trading ledger', async () => {
+  it('Execute books the fill in the paper_trading ledger, then claims the signal', async () => {
     db.pending = [signal()];
     renderSignedIn();
 
@@ -207,6 +218,10 @@ describe('Action Center', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
 
     expect(db.update).toHaveBeenCalledWith({ status: 'EXECUTED' });
+    // The ledger accepted the fill before the row was claimed.
+    expect(vi.mocked(toast.success).mock.invocationCallOrder[0]).toBeLessThan(
+      db.update.mock.invocationCallOrder[0]!,
+    );
     expect(db.eq).toHaveBeenCalledWith('id', 'sig-1');
     expect(db.eq).toHaveBeenCalledWith('status', 'PENDING');
 
@@ -224,21 +239,43 @@ describe('Action Center', () => {
     expect(store.portfolios.long_term_sim.transactions.some((t) => t.type === 'buy')).toBe(false);
   });
 
-  it('does not book a fill when another tab already claimed the signal', async () => {
+  it('warns when another tab claimed the signal while this one booked it', async () => {
     db.pending = [signal()];
     db.claimed = [];
     renderSignedIn();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
-    expect(store.portfolios.paper_trading.positions).toHaveLength(0);
+    expect(store.portfolios.paper_trading.positions).toHaveLength(1);
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Another tab already resolved this signal',
+      expect.anything(),
+    );
   });
 
-  it('rejects an unaffordable order without consuming the signal', async () => {
-    db.pending = [signal({ suggested_size: PAPER_STARTING_CASH * 2 })];
+  it('keeps the fill and hides the card when the claim fails after booking', async () => {
+    db.pending = [signal()];
+    db.updateError = { message: 'network down' };
     renderSignedIn();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
+    expect(store.portfolios.paper_trading.positions).toHaveLength(1);
+    expect(toast.error).toHaveBeenCalledWith(
+      'Trade booked, but the signal could not be marked executed',
+      { description: 'network down. Dismiss it if it shows up again.' },
+    );
+    // A late realtime echo can't bring it back for a second booking.
+    act(() => db.emit({ eventType: 'INSERT', new: signal() }));
+    expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
+  });
+
+  it('rejects an unaffordable order without consuming the signal', async () => {
+    db.pending = [signal({ quantity: (PAPER_STARTING_CASH * 2) / btc.current_price! })];
+    renderSignedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
+    expect(toast.error).toHaveBeenCalledWith('Insufficient cash');
     expect(db.update).not.toHaveBeenCalled();
     expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
     expect(store.portfolios.paper_trading.positions).toHaveLength(0);

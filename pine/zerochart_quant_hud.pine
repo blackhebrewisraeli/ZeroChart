@@ -3,7 +3,7 @@
 // 1:1 port of the ZeroChart quant engine:
 //   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
 //   src/lib/multiFactor.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
-//   src/lib/risk.ts        - ATR position sizing (budget-capped notional, stop floored at 0)
+//   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 1x ATR stop floored at 0)
 // HUD shows plain-English actions. Alerts emit JSON for the tv-webhook pipeline.
 // Quantitative analysis is informational. Not financial advice.
 indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay = true)
@@ -12,7 +12,7 @@ indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay 
 accountCapital   = input.float(10000, "Account Capital ($)", minval = 1.0, group = "Risk Engine")
 riskPct          = input.float(2.0, "Risk per Trade (%)", minval = 0.01, maxval = 100.0, step = 0.25, group = "Risk Engine")
 atrPeriod        = input.int(14, "ATR Period", minval = 1, group = "Risk Engine")
-atrStopMult      = input.float(2.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
+atrStopMult      = input.float(1.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
 showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "Display")
 hudPosition      = input.string("Top Right", "HUD Position", options = ["Top Right", "Bottom Right", "Bottom Left", "Top Left"], group = "Display")
 showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")
@@ -165,23 +165,31 @@ string stopText = na(stopDistance) ? "-" : "Exit at $" + str.tostring(stopPrice,
 
 // Hidden plots so {{plot("…")}} placeholders in alertcondition JSON resolve.
 plot(score, "ZC Score", display = display.none)
-plot(suggestedShares, "ZC Size", display = display.none)
+plot(suggestedShares, "ZC Quantity", display = display.none)
 plot(stopPrice, "ZC Stop", display = display.none)
 
-// alert() sends live values. alertcondition messages are const JSON; TradingView fills placeholders.
+// ===== Webhook alerts: the tv-webhook JSON contract =====
+// quantity is in units (shares / coins), never dollars. ZeroChart swaps
+// USER_SECRET_PLACEHOLDER for your webhook token when you copy the script.
+const string WEBHOOK_SECRET = "USER_SECRET_PLACEHOLDER"
+
+// alert() sends live values; event_id is the fire time in {{timenow}}'s format.
 webhookJson(string side) =>
-    "{\"ticker\":\"" + syminfo.ticker + "\",\"action\":\"" + side + "\",\"score\":" + str.tostring(score) + ",\"confidence\":" + str.tostring(score) + ",\"price\":" + str.tostring(close) + ",\"size\":" + str.tostring(suggestedShares) + ",\"stop_loss\":" + str.tostring(stopPrice) + "}"
+    "{\"ticker\": \"" + syminfo.ticker + "\", \"action\": \"" + side + "\", \"signal_score\": " + str.tostring(score) + ", \"price\": " + str.tostring(close) + ", \"quantity\": " + str.tostring(suggestedShares) + ", \"stop_loss\": " + str.tostring(stopPrice) + ", \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"" + str.format_time(timenow, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\"}"
 
-if longSignal
-    alert(webhookJson("BUY"), alert.freq_once_per_bar_close)
-if riskSignal
-    alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
-if stopBreached
-    alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
+// A NaN quantity would break the JSON, so a bar without a size sends nothing.
+if not na(suggestedShares)
+    if longSignal
+        alert(webhookJson("BUY"), alert.freq_once_per_bar_close)
+    if riskSignal or stopBreached
+        alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
 
-alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\", \"score\": {{plot(\"ZC Score\")}}, \"confidence\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"size\": {{plot(\"ZC Size\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}}")
-alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\", \"score\": {{plot(\"ZC Score\")}}, \"confidence\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"size\": {{plot(\"ZC Size\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}}")
-alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\", \"score\": {{plot(\"ZC Score\")}}, \"confidence\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"size\": {{plot(\"ZC Size\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}}")
+// alertcondition() only takes a const string, so TradingView placeholders carry the live
+// values. Each condition is one side of the trade, which fixes its action.
+const string ALERT_FIELDS = ", \"signal_score\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"quantity\": {{plot(\"ZC Quantity\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}, \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"{{timenow}}\"}"
+alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\"" + ALERT_FIELDS)
+alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
+alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
 
 // ===== On-chart terminal HUD =====
 var table hud = table.new(position.top_right, 2, 5, bgcolor = C_BG, frame_color = C_BORDER, frame_width = 1, border_color = C_BORDER, border_width = 1)
@@ -195,7 +203,7 @@ if showHud and barstate.islast
     hudRow(0, "SIGNAL / ACTION", action, color.white, actionBg)
     table.cell_set_text_size(hud, 0, 0, size.large)
     table.cell_set_text_size(hud, 1, 0, size.large)
-    hudRow(1, "CONFIDENCE", "Confidence: " + str.tostring(score) + "%", color.yellow, C_BG)
+    hudRow(1, "SIGNAL SCORE", "Signal Score: " + str.tostring(score) + " / 100", color.yellow, C_BG)
     hudRow(2, "POSITION SIZE", sizeText, color.white, C_BG)
     hudRow(3, "STOP LOSS", stopText, color.white, C_BG)
     hudRow(4, "MARKET VIBE", vibe, color.aqua, C_BG)

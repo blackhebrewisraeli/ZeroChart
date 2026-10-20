@@ -5,7 +5,6 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/lib/supabaseClient';
 import { formatPrice, type Asset } from '@/lib/assets';
-import { applyBuyTransaction, applySellTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { formatShares } from '@/lib/risk';
 import { toBinanceSymbol } from '@/lib/ticker';
@@ -13,6 +12,16 @@ import { FEE_RATE } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** The scanner asset a signal's ticker refers to ("BTCUSDT" or "BTC-USD"). */
+function findAsset(assets: Asset[], ticker: string): Asset | undefined {
+  const wanted = ticker.toUpperCase();
+  return assets.find(
+    (a) => a.ticker.toUpperCase() === wanted || toBinanceSymbol(a.ticker) === wanted,
+  );
+}
 
 /** Appends fetched rows that aren't already listed or known to be resolved. */
 function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>): Signal[] {
@@ -22,8 +31,8 @@ function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>
 
 /**
  * Action Center: TradingView signals (via the tv-webhook function) as one
- * giant card with Execute / Dismiss. Execute books a tactical fill in the
- * `paper_trading` ledger at the live price. No charts, no math for the user.
+ * giant card with Execute / Dismiss. Execute books a tactical fill of the
+ * signal's quantity (units) in the `paper_trading` ledger at the live price.
  */
 export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const { scopeUserId: userId, getPortfolio, executeBuy, executeSell } = usePortfolio();
@@ -81,46 +90,53 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
     };
   }, [userId]);
 
-  /** Moves a signal out of PENDING; false when another tab already resolved it. */
+  function forget(id: string) {
+    resolved.current.add(id);
+    setPending((list) => list.filter((s) => s.id !== id));
+  }
+
+  /** Moves a signal out of PENDING; false when another tab already resolved it. Throws on a DB error. */
   async function resolve(id: string, status: 'EXECUTED' | 'DISMISSED'): Promise<boolean> {
-    setBusy(true);
     const { data, error } = await supabase
       .from('trading_signals')
       .update({ status })
       .eq('id', id)
       .eq('status', 'PENDING')
       .select('id');
-    setBusy(false);
-    if (error) {
-      toast.error('Could not update the signal', { description: error.message });
-      return false;
-    }
-    resolved.current.add(id);
-    setPending((list) => list.filter((s) => s.id !== id));
+    if (error) throw new Error(error.message);
+    forget(id);
     return data.length > 0;
   }
 
+  async function dismiss(id: string) {
+    setBusy(true);
+    try {
+      await resolve(id, 'DISMISSED');
+    } catch (error) {
+      toast.error('Could not update the signal', { description: errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function execute(signal: Signal) {
-    const ticker = signal.ticker.toUpperCase();
-    const asset = assets.find(
-      (a) => a.ticker.toUpperCase() === ticker || toBinanceSymbol(a.ticker) === ticker,
-    );
+    const asset = findAsset(assets, signal.ticker);
     const price = asset?.current_price;
     if (!asset || !price || price <= 0) {
       toast.error(`No live ${signal.ticker} price to fill at yet`);
       return;
     }
-    const paper = getPortfolio('paper_trading');
     const held =
-      paper.positions.find((p) => p.ticker.toUpperCase() === asset.ticker.toUpperCase())?.shares ??
-      0;
+      getPortfolio('paper_trading').positions.find(
+        (p) => p.ticker.toUpperCase() === asset.ticker.toUpperCase(),
+      )?.shares ?? 0;
     const buying = signal.action === 'BUY';
     if (!buying && held <= 0) {
       toast.error(`No open ${asset.ticker} paper position to sell`);
       return;
     }
-    const sized = Number(signal.suggested_size) / price;
-    const shares = buying ? sized : Math.min(sized, held);
+    const quantity = Number(signal.quantity);
+    const shares = buying ? quantity : Math.min(quantity, held);
     const order = {
       ticker: asset.ticker,
       shares,
@@ -129,33 +145,50 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
       timestamp: new Date().toISOString(),
       intent: 'tactical' as const,
     };
-    // Dry-run the pure engine first so a rejected order never consumes the signal.
-    const check = buying ? applyBuyTransaction(paper, order) : applySellTransaction(paper, order);
-    if (!check.ok) {
-      toast.error(check.error);
-      return;
+
+    // Book first, claim second: the signal turns EXECUTED only after the ledger
+    // accepted the fill, so a rejected order never leaves a zombie EXECUTED row.
+    setBusy(true);
+    let booked = false;
+    try {
+      const result = buying
+        ? executeBuy('paper_trading', order)
+        : executeSell('paper_trading', order);
+      if (!result.ok) throw new Error(result.error ?? 'Order rejected');
+      booked = true;
+      toast.success(
+        `${buying ? 'Bought' : 'Sold'} ${formatPrice(shares * price)} of ${asset.ticker}`,
+        {
+          description: `${formatShares(shares)} units at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
+        },
+      );
+      if (!(await resolve(signal.id, 'EXECUTED'))) {
+        toast.warning('Another tab already resolved this signal', {
+          description: 'Check your Paper Trading ledger for a duplicate fill.',
+        });
+      }
+    } catch (error) {
+      if (booked) {
+        // The fill stands; hide the card so this tab can't book it twice.
+        forget(signal.id);
+        toast.error('Trade booked, but the signal could not be marked executed', {
+          description: `${errorMessage(error)}. Dismiss it if it shows up again.`,
+        });
+      } else {
+        toast.error(errorMessage(error));
+      }
+    } finally {
+      setBusy(false);
     }
-    if (!(await resolve(signal.id, 'EXECUTED'))) return;
-    // ponytail: no rollback if the fill fails after the claim — only a same-tab
-    // race inside the round trip can cause it; revert to PENDING if it ever shows up.
-    const result = buying
-      ? executeBuy('paper_trading', order)
-      : executeSell('paper_trading', order);
-    if (!result.ok) {
-      toast.error(result.error ?? 'Order rejected');
-      return;
-    }
-    toast.success(
-      `${buying ? 'Bought' : 'Sold'} ${formatPrice(shares * price)} of ${asset.ticker}`,
-      {
-        description: `${formatShares(shares)} at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
-      },
-    );
   }
 
   const signal = pending[0];
   if (!signal) return null;
   const buying = signal.action === 'BUY';
+  const quantity = Number(signal.quantity);
+  // What the fill would cost at the live price (the alert's price until one streams in).
+  const fillPrice = findAsset(assets, signal.ticker)?.current_price ?? signal.price;
+  const notional = fillPrice ? quantity * Number(fillPrice) : null;
 
   return (
     <section
@@ -168,13 +201,19 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
       </p>
       <dl className="action-center-facts">
         <div>
-          <dt>Confidence</dt>
-          <dd>{signal.conviction_score}%</dd>
+          <dt>Signal Score</dt>
+          <dd>{signal.signal_score} / 100</dd>
         </div>
         <div>
-          <dt>Recommended Size</dt>
-          <dd>{formatPrice(Number(signal.suggested_size))}</dd>
+          <dt>Quantity</dt>
+          <dd>{formatShares(quantity)} units</dd>
         </div>
+        {notional !== null && (
+          <div>
+            <dt>Notional</dt>
+            <dd>{formatPrice(notional)}</dd>
+          </div>
+        )}
         {signal.stop_loss !== null && (
           <div>
             <dt>Stop Loss</dt>
@@ -195,7 +234,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           type="button"
           className="action-center-dismiss"
           disabled={busy}
-          onClick={() => void resolve(signal.id, 'DISMISSED')}
+          onClick={() => void dismiss(signal.id)}
         >
           Dismiss
         </button>

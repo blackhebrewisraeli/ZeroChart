@@ -27,7 +27,7 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 - **Ledger updates are atomic.** Change a portfolio only through the pure transitions in [`portfolioAccounting.ts`](./src/lib/portfolioAccounting.ts) (`applyBuyTransaction`, `applySellTransaction`, `applyCashTransaction`). Never mutate positions, cash, or transactions separately.
 - **Keep the three ledgers isolated.** Live Tracking, Simulation, and Paper Trading never share positions or cash.
 - **Never present sample or simulated data as live market data.** Label previews explicitly.
-- **Keep the Pine HUD in parity.** [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine) ports `indicators.ts`, `multiFactor.ts`, and `risk.ts` (its sizing adds a configurable ATR stop multiplier, 2× by default). A change to the model in one place lands in both.
+- **Keep the Pine HUD in parity.** [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine) ports `indicators.ts`, `multiFactor.ts`, and `risk.ts` (its sizing adds a configurable ATR stop multiplier that defaults to `risk.ts`'s 1×). A change to the model in one place lands in both.
 
 ### Supabase and security
 

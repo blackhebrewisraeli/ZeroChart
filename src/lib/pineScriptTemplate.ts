@@ -23,3 +23,21 @@ export function buildPineScript(capital?: number | null): string {
     () => `input.float(${capital.toFixed(2)}, "Account Capital ($)"`,
   );
 }
+
+/** Path of the `tv-webhook` edge function under the Supabase project URL. */
+export const TV_WEBHOOK_PATH = '/functions/v1/tv-webhook';
+
+/**
+ * TradingView alert message for `tv-webhook`; TradingView fills `{{ticker}}`.
+ * `stop_loss` is null because the webhook rejects a stop of 0.
+ */
+export function buildAlertMessage(token: string): string {
+  return JSON.stringify({
+    ticker: '{{ticker}}',
+    action: 'BUY',
+    score: 85,
+    size: 500,
+    stop_loss: null,
+    secret_token: token,
+  });
+}

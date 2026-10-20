@@ -7165,6 +7165,55 @@ button.paper-ticker:hover {
     grid-template-columns: 1fr;
   }
 }
+.pine-connect {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #1e293b;
+  color: oklch(0.82 0.01 250);
+  font-size: 13px;
+}
+.pine-connect h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.pine-connect p {
+  margin: 0;
+}
+.pine-connect .pine-connect-note {
+  color: oklch(0.62 0.015 250);
+  font-size: 12px;
+}
+.pine-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+  align-items: center;
+}
+.pine-field-label {
+  grid-column: 1 / -1;
+  color: oklch(0.62 0.015 250);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pine-field input {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #0b1220;
+  color: #cbd5e1;
+  font:
+    400 12px 'JetBrains Mono',
+    monospace;
+}
+.pine-field input:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
 
 /* Basic-tier interstitial: reuses the pricing modal shell, sits just below it. */
 .ad-overlay {

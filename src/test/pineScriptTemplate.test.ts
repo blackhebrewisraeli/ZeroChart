@@ -1,9 +1,18 @@
 import { createElement } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { auth, rpc } = vi.hoisted(() => ({
+  auth: { user: null as { id: string } | null },
+  rpc: vi.fn(),
+}));
+vi.mock('@/lib/authStore', () => ({ useAuth: () => auth }));
+vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
+
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { REGIME_WEIGHTS, type MarketRegime } from '@/lib/multiFactor';
-import { buildPineScript } from '@/lib/pineScriptTemplate';
+import { buildAlertMessage, buildPineScript } from '@/lib/pineScriptTemplate';
+import { parseSignal } from '../../supabase/functions/tv-webhook/payload';
 
 const DEFAULT_CAPITAL_INPUT = 'input.float(10000, "Account Capital ($)"';
 
@@ -126,5 +135,45 @@ describe('PineScriptModal', () => {
     render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
     expect(screen.getByText(/defaults to \$10,000\.00/)).toBeInTheDocument();
     expect(screen.getByLabelText('Pine Script source')).toHaveValue(buildPineScript());
+  });
+});
+
+describe('Connect TradingView', () => {
+  afterEach(() => {
+    auth.user = null;
+    rpc.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  it('builds an alert message the webhook accepts', () => {
+    const body = JSON.parse(buildAlertMessage('tok').replace('{{ticker}}', 'BTCUSDT'));
+    expect(parseSignal(body)).toMatchObject({ ok: true, token: 'tok' });
+  });
+
+  it('is hidden from signed-out users', () => {
+    render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
+    expect(screen.queryByText('Connect TradingView')).not.toBeInTheDocument();
+  });
+
+  it('mints a token and renders the webhook URL and alert message', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://demo.supabase.co');
+    auth.user = { id: 'user-1' };
+    rpc.mockResolvedValue({ data: 'tok123', error: null });
+
+    render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
+
+    expect(screen.getByLabelText('Webhook URL')).toHaveValue(
+      'https://demo.supabase.co/functions/v1/tv-webhook',
+    );
+    expect(screen.getByText(/replaces your old one/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Webhook token')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate webhook token/ }));
+
+    expect(await screen.findByLabelText('Webhook token')).toHaveValue('tok123');
+    expect(rpc).toHaveBeenCalledWith('rotate_signal_webhook_token');
+    expect(screen.getByLabelText('Alert message')).toHaveValue(
+      '{"ticker":"{{ticker}}","action":"BUY","score":85,"size":500,"stop_loss":null,"secret_token":"tok123"}',
+    );
   });
 });

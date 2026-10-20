@@ -30,6 +30,7 @@ describe('buildPineScript', () => {
       'input.int(14, "ATR Period"',
       'input.float(2.0, "ATR Trailing Stop Multiplier"',
       'input.bool(true, "Show ZeroChart Quant HUD Table"',
+      'input.string("Top Right", "HUD Position"',
       'input.bool(true, "Plot ATR Trailing Stop"',
       'input.bool(true, "Show High-Conviction Signal Labels"',
     ]) {
@@ -60,6 +61,14 @@ describe('buildPineScript', () => {
       'riskDollars / stopDistance',
       'close - stopDistance',
       'table.new(position.top_right',
+      'table.set_position(hud, hudPos)',
+      'bgcolor(longSignal ? color.new(C_GREEN, 90)',
+      'text_size = size.normal',
+      'size.large',
+      '"SIGNAL / ACTION"',
+      '"Confidence: "',
+      '"Exit at $"',
+      '"MARKET VIBE"',
       '#101828',
       '#1e293b',
       '#00e5ff',
@@ -70,6 +79,8 @@ describe('buildPineScript', () => {
       'score >= 78',
       'score <= 28',
       'score >= 80',
+      '\\"action\\": \\"BUY\\"',
+      '{{plot(\\"ZC Score\\")}}',
     ]) {
       expect(source).toContain(fragment);
     }

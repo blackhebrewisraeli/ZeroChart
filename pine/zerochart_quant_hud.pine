@@ -4,6 +4,7 @@
 //   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
 //   src/lib/multiFactor.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
 //   src/lib/risk.ts        - ATR position sizing (budget-capped notional, stop floored at 0)
+// HUD shows plain-English actions. Alerts emit JSON for the tv-webhook pipeline.
 // Quantitative analysis is informational. Not financial advice.
 indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay = true)
 
@@ -13,6 +14,7 @@ riskPct          = input.float(2.0, "Risk per Trade (%)", minval = 0.01, maxval 
 atrPeriod        = input.int(14, "ATR Period", minval = 1, group = "Risk Engine")
 atrStopMult      = input.float(2.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
 showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "Display")
+hudPosition      = input.string("Top Right", "HUD Position", options = ["Top Right", "Bottom Right", "Bottom Left", "Top Left"], group = "Display")
 showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")
 showSignals      = input.bool(true, "Show High-Conviction Signal Labels", group = "Display")
 
@@ -21,9 +23,9 @@ color C_BG     = #101828
 color C_BORDER = #1e293b
 color C_BRAND  = #00e5ff
 color C_GREEN  = #00e676
-color C_AMBER  = #ffb300
 color C_RED    = #ff5252
-color C_MUTED  = #94a3b8
+
+hudPos = hudPosition == "Bottom Right" ? position.bottom_right : hudPosition == "Bottom Left" ? position.bottom_left : hudPosition == "Top Left" ? position.top_left : position.top_right
 
 // ===== Model constants (multiFactor.ts) =====
 float MOMENTUM_SATURATION      = 0.01   // +/-1% of price saturates the momentum score
@@ -58,23 +60,6 @@ momentumFactorScore(float m) =>
 // Volatility regime: 0.5% -> 100, 5.5% -> 0.
 volatilityFactorScore(float v) =>
     math.max(0.0, math.min(100.0, 100.0 * (1.0 - (v - LOW_VOLATILITY) / (HIGH_VOLATILITY - LOW_VOLATILITY))))
-
-regimeLabel(string r) =>
-    r == "TRENDING" ? "Trending" : r == "MEAN_REVERTING" ? "Mean-reverting" : r == "HIGH_VOLATILITY" ? "High-volatility" : "Neutral"
-
-regimeColor(string r) =>
-    r == "TRENDING" ? C_BRAND : r == "MEAN_REVERTING" ? C_AMBER : r == "HIGH_VOLATILITY" ? C_RED : C_MUTED
-
-scoreColor(int s) =>
-    s >= 78 ? C_GREEN : s >= 50 ? C_BRAND : s > 28 ? C_AMBER : C_RED
-
-fmtScore(float s) =>
-    na(s) ? "-" : str.tostring(math.round(s))
-
-signedPercent(float fraction) =>
-    float pct = math.round(fraction * 100.0, 1)
-    pct := pct == 0 ? 0.0 : pct // fold -0.0 so near-zero readings never print "-0.0%"
-    (pct >= 0 ? "+" : "") + str.tostring(pct, "0.0") + "%"
 
 fmtShares(float s) =>
     str.tostring(s, s >= 100 ? "0.0" : s >= 1 ? "0.00" : "0.0000")
@@ -130,7 +115,6 @@ float suggestedShares = math.min(riskShares, budgetShares)
 bool sizeCapped = riskShares > budgetShares
 float notional = suggestedShares * close
 float stopPrice = math.max(0.0, close - stopDistance)
-float stopDistancePct = (close - stopPrice) / close
 
 // ===== Adaptive ATR trailing stop =====
 var float trailStop = na
@@ -164,46 +148,54 @@ bool longSetup = ready and score >= 78 and bullishMomentum
 bool riskSetup = ready and (score <= 28 or regime == "HIGH_VOLATILITY")
 bool longSignal = longSetup and not longSetup[1]
 bool riskSignal = riskSetup and not riskSetup[1]
+bool highConviction = ready and score >= 80
+bool isHighVolatility = regime == "HIGH_VOLATILITY"
 
 plotshape(showSignals and longSignal, "ZC LONG", shape.labelup, location.belowbar, color = C_GREEN, text = "ZC LONG", textcolor = C_BG, size = size.tiny)
 plotshape(showSignals and riskSignal, "ZC RISK", shape.labeldown, location.abovebar, color = C_RED, text = "ZC RISK", textcolor = color.white, size = size.tiny)
+bgcolor(longSignal ? color.new(C_GREEN, 90) : riskSignal ? color.new(C_RED, 90) : na, title = "ZC Signal Highlight")
 
-// ===== TradingView alerts =====
-bool highConviction = ready and score >= 80
-bool isHighVolatility = regime == "HIGH_VOLATILITY"
-alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "ZeroChart Quant: {{ticker}} composite score >= 80 (high-conviction bullish) at {{close}}")
-alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "ZeroChart Quant: {{ticker}} regime shifted to HIGH_VOLATILITY at {{close}}")
-alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "ZeroChart Quant: {{ticker}} closed through the ATR trailing stop at {{close}}")
+// ===== Plain-English action (score bands) =====
+string action = score >= 78 ? "STRONG BUY" : score >= 60 ? "BUY" : score > 28 ? "WAIT" : score > 15 ? "RISK/TRIM" : "STRONG SELL"
+color actionBg = action == "STRONG BUY" or action == "BUY" ? C_GREEN : action == "WAIT" ? color.gray : C_RED
+string vibe = regime == "HIGH_VOLATILITY" ? "High Volatility" : regime == "TRENDING" ? (momentumPct >= 0 ? "Strong Bull Trend" : "Strong Bear Trend") : regime == "MEAN_REVERTING" ? "Mean Reverting" : math.abs(momentumPct) < FLAT_MOMENTUM ? "Flat/Ranging" : "Quiet Tape"
+string sizeVerb = action == "STRONG SELL" or action == "RISK/TRIM" ? "Sell" : "Buy"
+string sizeText = na(suggestedShares) ? "-" : sizeVerb + " $" + str.tostring(math.round(notional)) + " (" + fmtShares(suggestedShares) + " " + syminfo.ticker + ")" + (sizeCapped ? " capped" : "")
+string stopText = na(stopDistance) ? "-" : "Exit at $" + str.tostring(stopPrice, format.mintick)
+
+// Hidden plots so {{plot("…")}} placeholders in alertcondition JSON resolve.
+plot(score, "ZC Score", display = display.none)
+plot(suggestedShares, "ZC Size", display = display.none)
+plot(stopPrice, "ZC Stop", display = display.none)
+
+// alert() sends live values. alertcondition messages are const JSON; TradingView fills placeholders.
+webhookJson(string side) =>
+    "{\"ticker\":\"" + syminfo.ticker + "\",\"action\":\"" + side + "\",\"score\":" + str.tostring(score) + ",\"confidence\":" + str.tostring(score) + ",\"price\":" + str.tostring(close) + ",\"size\":" + str.tostring(suggestedShares) + ",\"stop_loss\":" + str.tostring(stopPrice) + "}"
+
+if longSignal
+    alert(webhookJson("BUY"), alert.freq_once_per_bar_close)
+if riskSignal
+    alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
+if stopBreached
+    alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
+
+alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\", \"score\": {{plot(\"ZC Score\")}}, \"confidence\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"size\": {{plot(\"ZC Size\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}}")
+alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\", \"score\": {{plot(\"ZC Score\")}}, \"confidence\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"size\": {{plot(\"ZC Size\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}}")
+alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\", \"score\": {{plot(\"ZC Score\")}}, \"confidence\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"size\": {{plot(\"ZC Size\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}}")
 
 // ===== On-chart terminal HUD =====
-var table hud = table.new(position.top_right, 2, 7, bgcolor = C_BG, frame_color = C_BORDER, frame_width = 1, border_color = C_BORDER, border_width = 1)
+var table hud = table.new(position.top_right, 2, 5, bgcolor = C_BG, frame_color = C_BORDER, frame_width = 1, border_color = C_BORDER, border_width = 1)
 
-hudRow(int row, string label, string value, color valueColor) =>
-    table.cell(hud, 0, row, label, text_color = C_MUTED, text_halign = text.align_left, text_size = size.small, text_font_family = font.family_monospace)
-    table.cell(hud, 1, row, value, text_color = valueColor, text_halign = text.align_right, text_size = size.small, text_font_family = font.family_monospace)
+hudRow(int row, string label, string value, color valueColor, color rowBg) =>
+    table.cell(hud, 0, row, label, text_color = color.aqua, text_halign = text.align_left, text_size = size.normal, text_font_family = font.family_monospace, bgcolor = rowBg)
+    table.cell(hud, 1, row, value, text_color = valueColor, text_halign = text.align_right, text_size = size.normal, text_font_family = font.family_monospace, bgcolor = rowBg)
 
 if showHud and barstate.islast
-    // 1-line thesis, same wording as buildRationale() in multiFactor.ts.
-    string thesis = ""
-    if hasMomentum
-        string bias = momentumPct >= FLAT_MOMENTUM ? "Bullish" : momentumPct <= -FLAT_MOMENTUM ? "Bearish" : "Flat"
-        thesis := bias + " momentum (" + signedPercent(momentumPct) + ")"
-    if hasVolatility
-        string tone = volatilityPct < CALM_VOLATILITY ? "calm" : volatilityPct < REGIME_HIGH_VOLATILITY ? "elevated" : "high"
-        thesis := (thesis == "" ? "" : thesis + " + ") + tone + " volatility (" + str.tostring(volatilityPct * 100.0, "0.0") + "%)"
-    if hasRsi
-        string zone = rsiValue <= RSI_OVERSOLD ? "oversold" : rsiValue >= RSI_OVERBOUGHT ? "overbought" : "neutral"
-        thesis := (thesis == "" ? "" : thesis + " + ") + zone + " RSI " + str.tostring(math.round(rsiValue))
-    thesis := (thesis == "" ? "No factor data" : thesis) + " · " + regimeLabel(regime) + " regime"
-
-    string sizeText = na(suggestedShares) ? "-" : fmtShares(suggestedShares) + " units · $" + str.tostring(math.round(notional)) + (sizeCapped ? " (capped)" : "")
-    string stopText = na(stopDistance) ? "-" : "$" + str.tostring(stopPrice, format.mintick) + " · -" + str.tostring(stopDistancePct * 100.0, "0.0") + "%"
-
-    hudRow(0, "ZEROCHART QUANT", syminfo.ticker, C_BRAND)
-    hudRow(1, "QUANT SCORE", str.tostring(score) + " / 100", scoreColor(score))
-    hudRow(2, "REGIME", regime, regimeColor(regime))
-    hudRow(3, "RSI · MACD · ATR", fmtScore(rsiScore) + " · " + fmtScore(momentumScore) + " · " + fmtScore(volatilityScore), color.white)
-    hudRow(4, "POSITION SIZE", sizeText, color.white)
-    hudRow(5, "ATR STOP", stopText, trailDir == 1 ? C_BRAND : C_RED)
-    hudRow(6, "THESIS", thesis, C_MUTED)
-    table.cell_set_text_color(hud, 0, 0, C_BRAND)
+    table.set_position(hud, hudPos)
+    hudRow(0, "SIGNAL / ACTION", action, color.white, actionBg)
+    table.cell_set_text_size(hud, 0, 0, size.large)
+    table.cell_set_text_size(hud, 1, 0, size.large)
+    hudRow(1, "CONFIDENCE", "Confidence: " + str.tostring(score) + "%", color.yellow, C_BG)
+    hudRow(2, "POSITION SIZE", sizeText, color.white, C_BG)
+    hudRow(3, "STOP LOSS", stopText, color.white, C_BG)
+    hudRow(4, "MARKET VIBE", vibe, color.aqua, C_BG)

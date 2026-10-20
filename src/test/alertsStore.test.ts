@@ -49,6 +49,16 @@ describe('alertsStore lifecycle (M1-T4, F-5.1)', () => {
     expect(getAlertsState().alerts[0]?.scope).toBe('session');
   });
 
+  it('assigns collision-resistant UUIDs to guest session alerts', () => {
+    const first = addAlert({ ticker: 'BTC', targetPrice: 1, condition: 'above' }, 'session');
+    const second = addAlert({ ticker: 'ETH', targetPrice: 2, condition: 'below' }, 'session');
+
+    expect(first.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(second.id).not.toBe(first.id);
+  });
+
   it('isolates accounts: switching users or signing out clears cloud alerts', () => {
     beginCloudSync('u1');
     completeCloudSync('u1', [cloud('a')]);

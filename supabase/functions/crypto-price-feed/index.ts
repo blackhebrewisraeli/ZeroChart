@@ -3,7 +3,10 @@
 // archived trading-agent scanner, so check_paper_transaction's 2-hour quote
 // age check passes again.
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { BINANCE_URL, toRows } from './prices.ts';
+import { fetchJson, report } from '../_shared/telemetry.ts';
+import { BINANCE_URL, TICKERS, toRows } from './prices.ts';
+
+const FN = 'crypto-price-feed';
 
 // Service role bypasses RLS: clients lost write access in 20261020230000.
 const supabase = createClient(
@@ -29,16 +32,21 @@ Deno.serve(async (req) => {
   const apikey = req.headers.get('apikey');
   if (!apikey || !secretKeys.includes(apikey)) return json({ error: 'Unauthorized' }, 401);
 
-  let body: unknown;
-  try {
-    body = await (await fetch(BINANCE_URL, { signal: AbortSignal.timeout(5000) })).json();
-  } catch {
-    return json({ error: 'Binance unreachable' }, 502);
-  }
+  // The rows' current times, so the summary can age the tickers Binance misses.
+  const { data, error: readError } = await supabase
+    .from('assets_status')
+    .select('ticker, updated_at')
+    .in('ticker', TICKERS);
+  if (readError) return json({ error: readError.message }, 500);
+
+  const body = await fetchJson(FN, BINANCE_URL, 5000);
+  if (body === null) return json({ error: 'Binance request failed' }, 502);
   const rows = toRows(body);
   if (rows.length === 0) return json({ error: 'Binance returned no prices', binance: body }, 502);
 
   const { error } = await supabase.from('assets_status').upsert(rows, { onConflict: 'ticker' });
   if (error) return json({ error: error.message }, 500);
-  return json({ ok: true, updated: rows.map((row) => row.ticker) }, 200);
+  const stored = new Map(data.map((row) => [row.ticker, row.updated_at]));
+  const written = new Map(rows.map((row) => [row.ticker, row.updated_at]));
+  return json(report(FN, TICKERS, stored, written), 200);
 });

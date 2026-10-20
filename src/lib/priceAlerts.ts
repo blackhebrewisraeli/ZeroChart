@@ -83,10 +83,21 @@ export async function createAlert(userId: string, input: NewAlertInput): Promise
   return mapAlert(data);
 }
 
-/** Marks an alert as inactive so it stops firing. */
-export async function deactivateAlert(id: string): Promise<void> {
-  const { error } = await supabase.from('user_alerts').update({ is_active: false }).eq('id', id);
+/**
+ * Claims a fired alert server-side: stamps fired_at and deactivates the row,
+ * but only while it is unclaimed. True for exactly one caller across tabs and
+ * reloads, false once anyone has claimed it. Throws on a DB error.
+ */
+export async function claimAlert(id: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_alerts')
+    .update({ fired_at: new Date().toISOString(), is_active: false })
+    .eq('id', id)
+    .is('fired_at', null)
+    .eq('is_active', true)
+    .select('id');
   if (error) throw error;
+  return data.length > 0;
 }
 
 /** Permanently removes an alert. */

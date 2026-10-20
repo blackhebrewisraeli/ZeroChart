@@ -10,6 +10,7 @@ export type Database = {
     Tables: {
       assets_status: {
         Row: {
+          analytics_updated_at: string | null;
           current_price: number | null;
           change_24h: number | null;
           radar_explanation: string | null;
@@ -26,6 +27,7 @@ export type Database = {
           volume_spike: number | null;
         };
         Insert: {
+          analytics_updated_at?: string | null;
           current_price?: number | null;
           change_24h?: number | null;
           radar_explanation?: string | null;
@@ -42,6 +44,7 @@ export type Database = {
           volume_spike?: number | null;
         };
         Update: {
+          analytics_updated_at?: string | null;
           current_price?: number | null;
           change_24h?: number | null;
           radar_explanation?: string | null;
@@ -164,6 +167,7 @@ export type Database = {
         Row: {
           condition: string;
           created_at: string;
+          fired_at: string | null;
           id: string;
           is_active: boolean;
           target_price: number;
@@ -173,6 +177,7 @@ export type Database = {
         Insert: {
           condition: string;
           created_at?: string;
+          fired_at?: string | null;
           id?: string;
           is_active?: boolean;
           target_price: number;
@@ -182,6 +187,7 @@ export type Database = {
         Update: {
           condition?: string;
           created_at?: string;
+          fired_at?: string | null;
           id?: string;
           is_active?: boolean;
           target_price?: number;

@@ -4,6 +4,9 @@
 /** The scanner's crypto rows ('BTC-USD', ...), each quoted from its Binance USDT pair. */
 export const BASES = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA'] as const;
 
+/** The assets_status rows this feed owns. */
+export const TICKERS = BASES.map((base) => `${base}-USD`);
+
 export const BINANCE_URL =
   'https://api.binance.com/api/v3/ticker/24hr?type=MINI&symbols=' +
   encodeURIComponent(JSON.stringify(BASES.map((base) => `${base}USDT`)));

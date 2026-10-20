@@ -1,6 +1,6 @@
 import { useMatch, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { memo, useEffect, useState, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowDown,
@@ -19,18 +19,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { AssetIcon } from '@/components/AssetIcon';
-import { AssetDetailsModal } from '@/components/AssetDetailsModal';
-import { AuthModal } from '@/components/AuthModal';
-import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
-import { PortfolioDashboard } from '@/components/PortfolioDashboard';
-import { PaperTradingTerminal } from '@/components/PaperTradingTerminal';
-import { AccountPanel } from '@/components/AccountPanel';
 import { PriceAlerts } from '@/components/PriceAlerts';
 import { LandingPage } from '@/components/LandingPage';
 import { TourGuide } from '@/components/TourGuide';
 import { Segmented } from '@/components/Segmented';
-import { Sparkline } from '@/components/Sparkline';
 import { SetAlertButton } from '@/components/SetAlertModal';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -66,6 +59,34 @@ import { computePortfolioValuation } from '@/lib/portfolioAccounting';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
+
+// Loaded on demand so the zone panels, modals, recharts and lightweight-charts stay out of
+// the Workspace chunk. SSR is unaffected: the server always renders the auth-loading shell.
+const AssetDetailsModal = lazy(() =>
+  import('@/components/AssetDetailsModal').then((m) => ({ default: m.AssetDetailsModal })),
+);
+const AuthModal = lazy(() =>
+  import('@/components/AuthModal').then((m) => ({ default: m.AuthModal })),
+);
+const RoboAdvisor = lazy(() =>
+  import('@/components/RoboAdvisor').then((m) => ({ default: m.RoboAdvisor })),
+);
+const PortfolioDashboard = lazy(() =>
+  import('@/components/PortfolioDashboard').then((m) => ({ default: m.PortfolioDashboard })),
+);
+const PaperTradingTerminal = lazy(() =>
+  import('@/components/PaperTradingTerminal').then((m) => ({ default: m.PaperTradingTerminal })),
+);
+const AccountPanel = lazy(() =>
+  import('@/components/AccountPanel').then((m) => ({ default: m.AccountPanel })),
+);
+const Sparkline = lazy(() =>
+  import('@/components/Sparkline').then((m) => ({ default: m.Sparkline })),
+);
+
+/** Holds the sparkline's grid cell while recharts loads. */
+const sparklineFallback = <div className="sparkline" style={{ height: 30 }} aria-hidden="true" />;
+const zoneFallback = <div aria-busy="true" className="skeleton h-96 w-full" />;
 
 function scoreToneOf(score: number) {
   return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
@@ -243,7 +264,9 @@ const MarketRow = memo(function MarketRow({
         <span className={cn('markets-price', priceFlash)}>{formatPrice(currentPrice)}</span>
         <FreshnessBadge state={freshness} />
       </span>
-      <Sparkline data={generateTrendData(currentPrice, change)} change={change} />
+      <Suspense fallback={sparklineFallback}>
+        <Sparkline data={generateTrendData(currentPrice, change)} change={change} />
+      </Suspense>
       <span
         className={cn(
           'markets-change',
@@ -481,13 +504,15 @@ function Terminal() {
           </div>
         )}
         {view === 'paper' ? (
-          <>
+          <Suspense fallback={zoneFallback}>
             <PaperTradingTerminal assets={baseAssets} />
             <hr className="zone-divider" />
             <PortfolioDashboard assets={baseAssets} portfolioType="long_term_sim" />
-          </>
+          </Suspense>
         ) : view === 'account' ? (
-          <AccountPanel assets={baseAssets} />
+          <Suspense fallback={zoneFallback}>
+            <AccountPanel assets={baseAssets} />
+          </Suspense>
         ) : query.isPending && !preview ? (
           <div aria-busy="true">
             <div className="hero skeleton-hero">
@@ -515,7 +540,9 @@ function Terminal() {
                   <span className="markets-count font-mono">
                     {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
                   </span>
-                  <RoboAdvisor assets={baseAssets} onInvest={() => setView('paper')} />
+                  <Suspense fallback={null}>
+                    <RoboAdvisor assets={baseAssets} onInvest={() => setView('paper')} />
+                  </Suspense>
                 </div>
               </div>
               <div className="markets-controls">
@@ -604,16 +631,20 @@ function Terminal() {
       </footer>
 
       {selectedAsset && (
-        <AssetDetailsModal
-          asset={selectedAsset}
-          onClose={() => setSelectedAsset(null)}
-          portfolioCapital={
-            computePortfolioValuation(
-              portfolios[activePortfolioType],
-              Object.fromEntries(baseAssets.map((a) => [a.ticker.toUpperCase(), a.current_price])),
-            ).totalEquity
-          }
-        />
+        <Suspense fallback={null}>
+          <AssetDetailsModal
+            asset={selectedAsset}
+            onClose={() => setSelectedAsset(null)}
+            portfolioCapital={
+              computePortfolioValuation(
+                portfolios[activePortfolioType],
+                Object.fromEntries(
+                  baseAssets.map((a) => [a.ticker.toUpperCase(), a.current_price]),
+                ),
+              ).totalEquity
+            }
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -641,7 +672,9 @@ export function Workspace() {
     return (
       <>
         <LandingPage onSignIn={() => setAuthOpen(true)} onGetStarted={() => setAuthOpen(true)} />
-        <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
+        <Suspense fallback={null}>
+          <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
+        </Suspense>
       </>
     );
   }

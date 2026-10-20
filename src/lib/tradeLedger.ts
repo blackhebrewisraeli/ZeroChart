@@ -38,6 +38,20 @@ export function realizedPnlOn(transactions: readonly PortfolioTransaction[], day
   );
 }
 
+/** Fill count (buys + sells), closes (sells) and closes booked at a profit. */
+export function tradeStats(transactions: readonly PortfolioTransaction[]): {
+  fills: number;
+  closes: number;
+  wins: number;
+} {
+  const sells = transactions.filter((transaction) => transaction.type === 'sell');
+  return {
+    fills: transactions.filter(isTrade).length,
+    closes: sells.length,
+    wins: sells.filter((transaction) => (transaction.realizedPnl ?? 0) > 0).length,
+  };
+}
+
 /** Execution cost in basis points of trade notional; null for cash movements. */
 export function frictionBps(transaction: PortfolioTransaction): number | null {
   if (!isTrade(transaction) || !transaction.shares || !transaction.price) return null;

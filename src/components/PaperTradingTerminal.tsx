@@ -10,7 +10,13 @@ import {
   type Position,
 } from '@/lib/portfolioAccounting';
 import { buildSignalFeed, generateTacticalSignals } from '@/lib/tacticalSignals';
-import { downloadCsv, executionDrag, realizedPnlOn, tradeLedgerCsv } from '@/lib/tradeLedger';
+import {
+  downloadCsv,
+  executionDrag,
+  realizedPnlOn,
+  tradeLedgerCsv,
+  tradeStats,
+} from '@/lib/tradeLedger';
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
 import { formatShares, MAX_PORTFOLIO_RISK_PERCENT } from '@/lib/risk';
 import { ActionCenter } from '@/components/ActionCenter';
@@ -249,8 +255,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
   const fillsToday = fills.filter(
     (transaction) => new Date(transaction.timestamp).toDateString() === now.toDateString(),
   ).length;
-  const closes = fills.filter((transaction) => transaction.type === 'sell');
-  const wins = closes.filter((transaction) => (transaction.realizedPnl ?? 0) > 0).length;
+  const { closes, wins } = tradeStats(paper.transactions);
   const todayRealized = realizedPnlOn(paper.transactions, now);
   const drag = executionDrag(paper.transactions);
   const openCount = paper.positions.length;
@@ -367,8 +372,8 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
         />
         <Stat
           label="Win Rate"
-          value={closes.length > 0 ? `${Math.round((wins / closes.length) * 100)}%` : '—'}
-          sub={`${wins} of ${closes.length} ${closes.length === 1 ? 'close' : 'closes'}`}
+          value={closes > 0 ? `${Math.round((wins / closes) * 100)}%` : '—'}
+          sub={`${wins} of ${closes} ${closes === 1 ? 'close' : 'closes'}`}
         />
       </section>
 

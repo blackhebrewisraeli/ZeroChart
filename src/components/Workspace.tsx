@@ -1,6 +1,6 @@
 import { useMatch, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { memo, useState, type ReactNode } from 'react';
+import { memo, useEffect, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowDown,
@@ -59,6 +59,9 @@ import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import { useAuth } from '@/lib/authStore';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { useHydrationState } from '@/lib/hydrationStore';
+import { CLOSED_BETA } from '@/lib/closedBeta';
+import { recordWalkForward } from '@/lib/engine/walkForwardLogger';
 import { computePortfolioValuation } from '@/lib/portfolioAccounting';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { useAlertEngine } from '@/hooks/useAlertEngine';
@@ -177,7 +180,8 @@ const MARKET_VIEWS: { id: MarketView; label: ReactNode }[] = [
   },
 ];
 
-const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['All', 'Stocks', 'Crypto', 'Forex'];
+// Crypto spot (Binance) leads: the closed beta evaluates it first.
+const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['Crypto', 'Stocks', 'Forex', 'All'];
 
 /** Canonical score for ranking; unscored assets (loading or not enough data) sink last. */
 function rankScore(scores: ReadonlyMap<string, CanonicalResult>, asset: Asset): number {
@@ -280,7 +284,7 @@ const VIEW_PATHS = {
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
-  const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
+  const [assetClass, setAssetClass] = useState<AssetClassFilter>('Crypto');
   // The URL is the source of truth: / (Research), /paper-trading, /account.
   const navigate = useNavigate();
   const onPaper = useMatch({ from: '/paper-trading', shouldThrow: false }) !== undefined;
@@ -304,18 +308,40 @@ function Terminal() {
   useBinanceWebSocket(baseAssets);
   // Single unified alert pipeline (M1-T4, F-5.1) — session + cloud alerts.
   useAlertEngine(baseAssets, user);
+  // Walk-forward log: today's paper snapshot, once the server ledger has
+  // replayed and live prices are in (never sample prices or a half-loaded account).
+  const hydration = useHydrationState();
+  const paper = portfolios.paper_trading;
+  const liveAssets = query.isSuccess && !preview ? query.data : null;
+  useEffect(() => {
+    if (!user || !liveAssets || hydration.status !== 'ready' || hydration.userId !== user.id)
+      return;
+    const prices = Object.fromEntries(
+      liveAssets.map((asset) => [asset.ticker.toUpperCase(), asset.current_price]),
+    );
+    recordWalkForward(user.id, paper, prices);
+  }, [user, liveAssets, hydration, paper]);
   const connectionState = useConnectionState();
   const reconnecting = connectionState === 'reconnecting';
   const scores = useCanonicalScores(baseAssets.map((asset) => asset.ticker));
-  const topPick = [...baseAssets].sort((a, b) => rankScore(scores, b) - rankScore(scores, a))[0];
   const filtered =
     assetClass === 'All'
       ? baseAssets
       : baseAssets.filter((a) => getAssetClass(a.ticker) === assetClass);
+  const best = (list: Asset[]) =>
+    [...list].sort((a, b) => rankScore(scores, b) - rankScore(scores, a))[0];
+  // The hero follows the asset-class filter, so it opens on the top crypto pick.
+  const topPick = best(filtered) ?? best(baseAssets);
   const rows = sortMarkets(filtered, marketView, scores);
 
   return (
     <div className="min-h-screen text-foreground">
+      {CLOSED_BETA && (
+        <p className="beta-banner">
+          <strong>Closed Beta: Paper Evaluation Period</strong> · Every system runs in simulated
+          execution. No real orders, no real money.
+        </p>
+      )}
       <header className="terminal-header">
         <div className="page-width flex h-full items-center justify-between gap-3 sm:gap-4">
           <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="ZeroChart home">

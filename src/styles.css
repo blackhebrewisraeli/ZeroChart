@@ -7170,7 +7170,7 @@ button.paper-ticker:hover {
   gap: 12px;
   margin-top: 22px;
   padding-top: 18px;
-  border-top: 1px solid #1e293b;
+  border-top: 1px solid oklch(0.279 0.037 260);
   color: oklch(0.82 0.01 250);
   font-size: 13px;
 }
@@ -7202,10 +7202,10 @@ button.paper-ticker:hover {
 .pine-field input {
   height: 36px;
   padding: 0 12px;
-  border: 1px solid #1e293b;
+  border: 1px solid oklch(0.279 0.037 260);
   border-radius: 10px;
-  background: #0b1220;
-  color: #cbd5e1;
+  background: oklch(0.183 0.031 263.4);
+  color: oklch(0.869 0.02 252.9);
   font:
     400 12px 'JetBrains Mono',
     monospace;

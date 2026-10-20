@@ -35,10 +35,11 @@ export function binancePaperAdapter(userId: string): BrokerAdapter {
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     },
-    cancelOrder: async () => ({
-      ok: false,
-      error: 'Paper fills are immediate; there is no open order to cancel.',
-    }),
+    cancelOrder: () =>
+      Promise.resolve({
+        ok: false as const,
+        error: 'Paper fills are immediate; there is no open order to cancel.',
+      }),
     getBalances: async () => [{ currency: 'USD', available: (await account()).cashBalance }],
     getPositions: async () =>
       (await account()).positions.map((position) => ({

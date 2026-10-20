@@ -27,7 +27,7 @@ export function ibkrAdapter(credentials: IbkrCredentials | null): BrokerAdapter 
   const error = credentials
     ? 'Interactive Brokers execution is not implemented yet.'
     : 'Interactive Brokers is not configured: set IBKR_ACCOUNT_ID, IBKR_API_KEY and IBKR_GATEWAY_URL.';
-  const refuse = async () => ({ ok: false as const, error });
+  const refuse = () => Promise.resolve({ ok: false as const, error });
   const unavailable = () => Promise.reject(new Error(error));
   return {
     name: 'Interactive Brokers',

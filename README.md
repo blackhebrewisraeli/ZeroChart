@@ -78,9 +78,9 @@ flowchart TB
 
 ### Dynamic position sizing
 
-- ATR-based sizing in [`risk.ts`](./src/lib/risk.ts): a one-ATR move against the trade loses exactly your chosen risk (2% of capital by default).
-- Hard invariants: notional never exceeds the capital or per-asset budget, the stop price is floored at zero, and rounding never breaches the budget.
-- The same formula drives the Robo-Advisor, the asset detail view, and the Pine HUD's position-size row.
+- ATR-based sizing in [`risk.ts`](./src/lib/risk.ts): the position is sized so a one-ATR move against it loses your chosen risk (2% of capital by default).
+- Hard invariants: notional never exceeds the capital or per-asset budget, the stop price is floored at zero, and shares round to four decimals (down, when needed, to stay within budget). When the budget binds, the position and its risk come in below the target.
+- The Robo-Advisor and the asset detail view call `risk.ts` directly. The Pine HUD applies the same budget-capped sizing, but places its stop at a configurable multiple of ATR (2× by default) instead of 1×.
 
 ### Real-time webhook Action Center
 
@@ -120,6 +120,7 @@ flowchart TB
 
 - [Node.js](https://nodejs.org/) 22+ (or [Bun](https://bun.sh/))
 - A [Supabase](https://supabase.com/) project
+- The PostgreSQL [`psql`](https://www.postgresql.org/download/) client, for applying the core migrations
 
 ### 1. Clone and install
 
@@ -148,10 +149,10 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
 ### 3. Set up the database
 
-Apply the core schema (`assets_status`, `user_portfolios`, `user_alerts`) with your project's Postgres connection string, found under **Project Settings → Database**:
+Apply the core schema (`assets_status`, `user_portfolios`, `user_alerts`) with your project's Postgres connection string. Copy it from the **Connect** button on your project dashboard. The direct connection is IPv6-only unless your project has the IPv4 add-on, so on an IPv4-only network use the **Session pooler** string instead (user `postgres.<your-project-ref>`, port `5432`).
 
 ```bash
-export DATABASE_URL="postgresql://postgres:<password>@db.<your-project-ref>.supabase.co:5432/postgres"
+export DATABASE_URL="<connection string from the Connect dialog>"
 for f in drizzle/migrations/000*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 

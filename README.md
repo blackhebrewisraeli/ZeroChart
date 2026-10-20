@@ -39,13 +39,11 @@ flowchart TB
     end
 
     subgraph SB["Supabase"]
-        direction LR
         FN["tv-webhook<br/>Edge Function"]
         DB[("trading_signals<br/>Postgres + RLS")]
     end
 
     subgraph APP["ZeroChart Command Center"]
-        direction LR
         AC["Action Center"]
         LEDGER["v3 portfolio ledgers"]
         WORKER["Finance Web Worker"]

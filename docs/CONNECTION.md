@@ -15,7 +15,7 @@ VITE_SUPABASE_URL=<your project URL>
 VITE_SUPABASE_PUBLISHABLE_KEY=<your anon key or publishable key>
 ```
 
-The generated client in `src/integrations/supabase/client.ts` already reads these variables. Never use a service-role or secret key in frontend code. Restart your local development process after changing environment variables. Use `bun install` and `bun run dev` to run locally.
+The shared client in [`src/lib/supabaseClient.ts`](../src/lib/supabaseClient.ts) reads these variables through [`src/lib/supabaseConfig.ts`](../src/lib/supabaseConfig.ts). Never use a service-role or secret key in frontend code. Restart your local development process after changing environment variables. Use `bun install` and `bun run dev` to run locally.
 
 ## Required table
 

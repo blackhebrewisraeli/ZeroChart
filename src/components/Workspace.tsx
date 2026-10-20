@@ -285,7 +285,9 @@ function Terminal() {
   const navigate = useNavigate();
   const onPaper = useMatch({ from: '/paper-trading', shouldThrow: false }) !== undefined;
   const onAccount = useMatch({ from: '/account', shouldThrow: false }) !== undefined;
-  const view: WorkspaceView = onPaper ? 'paper' : onAccount ? 'account' : 'research';
+  let view: WorkspaceView = 'research';
+  if (onPaper) view = 'paper';
+  else if (onAccount) view = 'account';
   const setView = (next: WorkspaceView) => void navigate({ to: VIEW_PATHS[next] });
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const { user, signOut } = useAuth();

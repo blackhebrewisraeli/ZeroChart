@@ -20,7 +20,7 @@ const EXPORTS: { type: PortfolioType; filename: string }[] = [
  * Account zone: plan, TradingView webhook, data export, and the one place
  * real (tracked) holdings appear, kept apart from every simulated ledger.
  */
-export function AccountPanel({ assets }: { assets: Asset[] }) {
+export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
   const { user, isPro } = useAuth();
   const { portfolios } = usePortfolio();
   const [pricingOpen, setPricingOpen] = useState(false);

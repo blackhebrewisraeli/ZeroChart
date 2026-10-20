@@ -17,7 +17,7 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 ### Performance: keep the main thread free
 
 - **Heavy math goes to the Web Worker.** Indicators, backtests, and any loop over a price series run in [`finance.worker.ts`](./src/lib/finance.worker.ts). Add a new request kind to the `FinanceRequest` union in [`financeCompute.ts`](./src/lib/financeCompute.ts) and expose it through an async helper in [`financeClient.ts`](./src/lib/financeClient.ts). Components never call that math synchronously.
-- Only O(1) helpers over already-computed values, like `calculateMultiFactorScore` or `recommendPositionSize`, may run on the main thread.
+- Only O(1) helpers over already-computed values, like `scoreFactors` or `recommendPositionSize`, may run on the main thread.
 - Live prices flow through [`livePriceStore.ts`](./src/lib/livePriceStore.ts). Subscribe per symbol with `useLivePrice` so a tick re-renders only the rows that changed.
 
 ### Financial correctness
@@ -27,7 +27,7 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 - **Ledger updates are atomic.** Change a portfolio only through the pure transitions in [`portfolioAccounting.ts`](./src/lib/portfolioAccounting.ts) (`applyBuyTransaction`, `applySellTransaction`, `applyCashTransaction`). Never mutate positions, cash, or transactions separately.
 - **Keep the three ledgers isolated.** Live Tracking, Simulation, and Paper Trading never share positions or cash.
 - **Never present sample or simulated data as live market data.** Label previews explicitly.
-- **Keep the Pine HUD in parity.** [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine) ports `indicators.ts`, `multiFactor.ts`, and `risk.ts` (its sizing adds a configurable ATR stop multiplier that defaults to `risk.ts`'s 1×). A change to the model in one place lands in both.
+- **Keep the Pine HUD in parity.** [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine) ports `indicators.ts`, `canonicalModel.ts`, and `risk.ts` (its sizing adds a configurable ATR stop multiplier that defaults to `risk.ts`'s 1×). A change to the model in one place lands in both.
 
 ### Supabase and security
 

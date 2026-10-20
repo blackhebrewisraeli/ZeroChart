@@ -10,7 +10,7 @@ vi.mock('@/lib/authStore', () => ({ useAuth: () => auth }));
 vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
 
 import { PineScriptModal } from '@/components/PineScriptModal';
-import { REGIME_WEIGHTS, type MarketRegime } from '@/lib/multiFactor';
+import { REGIME_WEIGHTS, type MarketRegime } from '@/lib/canonicalModel';
 import { buildPineScript } from '@/lib/pineScriptTemplate';
 import { DEFAULT_ATR_STOP_MULTIPLIER } from '@/lib/risk';
 import {
@@ -96,7 +96,7 @@ describe('buildPineScript', () => {
     expect(source.match(/^alertcondition\(/gm)).toHaveLength(3);
   });
 
-  it('tilts weights exactly like REGIME_WEIGHTS in multiFactor.ts', () => {
+  it('tilts weights exactly like REGIME_WEIGHTS in canonicalModel.ts', () => {
     const read = (text: string, name: string) =>
       Number(text.match(new RegExp(`${name} :?= ([\\d.]+)`))?.[1]);
     const neutral = {

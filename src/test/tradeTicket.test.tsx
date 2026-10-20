@@ -35,6 +35,7 @@ vi.mock('@/components/BacktestChart', async () => {
 });
 vi.mock('@/components/PriceAlerts', () => ({ PriceAlerts: () => null }));
 vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 
 import { AuthProvider } from '@/lib/authStore';
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';

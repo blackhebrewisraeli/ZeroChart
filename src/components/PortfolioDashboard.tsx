@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  calculateSignalScore,
   formatPnl,
   formatPrice,
   formatSignedPercent,
@@ -28,6 +27,8 @@ import {
   type Asset,
 } from '@/lib/assets';
 import { calculatePortfolioStats, type Position } from '@/lib/portfolioManager';
+import type { CanonicalResult } from '@/lib/canonicalModel';
+import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { usePortfolio } from '@/lib/portfolioStore';
 import {
   computePortfolioValuation,
@@ -58,6 +59,7 @@ import { useHydrationState } from '@/lib/hydrationStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { AuthModal } from '@/components/AuthModal';
 import { AssetIcon } from '@/components/AssetIcon';
+import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
 import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
@@ -134,20 +136,26 @@ function TelemetryItem({
   );
 }
 
-function healthTone(score: number) {
+function healthTone(score: number | null) {
+  if (score === null) return 'health-none';
   return score >= 80 ? 'health-green' : score >= 50 ? 'health-yellow' : 'health-red';
 }
 
-function HealthRing({ score }: { score: number }) {
+/** `score` is null when no holding has a canonical score yet — shown as "—", never 0. */
+function HealthRing({ score }: { score: number | null }) {
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
-  const clamped = Math.min(100, Math.max(0, score));
+  const clamped = Math.min(100, Math.max(0, score ?? 0));
   const offset = circumference * (1 - clamped / 100);
   return (
     <div
       className={cn('health-ring', healthTone(score))}
       role="img"
-      aria-label={`Portfolio health ${Math.round(score)} out of 100`}
+      aria-label={
+        score === null
+          ? 'Portfolio health: not enough data'
+          : `Portfolio health ${Math.round(score)} out of 100`
+      }
     >
       <svg className="health-ring-svg" viewBox="0 0 100 100" aria-hidden="true">
         <circle className="health-ring-track" cx="50" cy="50" r={radius} />
@@ -161,7 +169,7 @@ function HealthRing({ score }: { score: number }) {
         />
       </svg>
       <div className="health-ring-center">
-        <span className="health-ring-value">{Math.round(score)}</span>
+        <span className="health-ring-value">{score === null ? '—' : Math.round(score)}</span>
         <span className="health-ring-label">HEALTH</span>
       </div>
     </div>
@@ -171,11 +179,13 @@ function HealthRing({ score }: { score: number }) {
 function HoldingRow({
   position,
   assets,
+  result,
   onClose,
   onUpdate,
 }: {
   position: Position;
   assets: Asset[];
+  result: CanonicalResult | undefined;
   onClose: (position: Position, livePrice: number | undefined) => void;
   onUpdate: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
 }) {
@@ -304,7 +314,13 @@ function HoldingRow({
             <div className="holding-metric">
               <span className="holding-metric-label">Signal</span>
               <span className="holding-metric-value">
-                {asset ? calculateSignalScore(asset) : '—'}
+                {result?.status === 'OK' ? (
+                  result.signal_score
+                ) : result?.status === 'INSUFFICIENT_DATA' ? (
+                  <InsufficientDataBadge />
+                ) : (
+                  '—'
+                )}
               </span>
             </div>
             <div className="holding-metric">
@@ -563,7 +579,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   // Every Core view (KPIs, allocation, backtest, rebalancing) reads the mode's own portfolio.
   const ledger = portfolios[ledgerType];
   const visible = ledger.positions;
-  const stats = calculatePortfolioStats(visible, assets);
+  const scores = useCanonicalScores(visible.map((position) => position.ticker));
+  const stats = calculatePortfolioStats(visible, assets, scores);
   const cashBalance = ledger.cashBalance;
   const valuation = computePortfolioValuation(
     ledger,
@@ -877,6 +894,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
                     key={position.id}
                     position={position}
                     assets={assets}
+                    result={scores.get(position.ticker)}
                     onClose={handleClosePosition}
                     onUpdate={updatePosition}
                   />

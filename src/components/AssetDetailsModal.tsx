@@ -5,10 +5,11 @@ import { AssetIcon } from '@/components/AssetIcon';
 import { PricingModal } from '@/components/PricingModal';
 import { AssetChart } from '@/components/AssetChart';
 import { PineScriptModal } from '@/components/PineScriptModal';
+import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
-import { REGIME_LABELS } from '@/lib/multiFactor';
+import { REGIME_LABELS } from '@/lib/canonicalModel';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
-import { scoreAsset, type ScoredAsset } from '@/lib/roboAdvisor';
+import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { getBrokerUrl } from '@/lib/tradeRouter';
 import { useAuth } from '@/lib/authStore';
 import { cn } from '@/lib/utils';
@@ -81,25 +82,20 @@ export function AssetDetailsModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [close]);
 
-  const [quant, setQuant] = useState<ScoredAsset | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setQuant(null);
-    // Same pipeline as the Robo-Advisor (worker indicators for crypto, static
-    // proxies otherwise); scoreAsset never rejects.
-    void scoreAsset(asset).then((result) => {
-      if (!cancelled) setQuant(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [asset]);
-
-  const sizing =
-    quant && quant.price !== null && quant.atr !== null
-      ? recommendPositionSize({ capital: REFERENCE_CAPITAL, price: quant.price, atr: quant.atr })
-      : null;
+  // Same cached engine result the scanner row shows (undefined while loading).
+  const result = useCanonicalScores([asset.ticker]).get(asset.ticker);
+  const quant = result?.status === 'OK' ? result : null;
+  const livePrice = asset.current_price;
+  const sizing = quant
+    ? recommendPositionSize({
+        capital: REFERENCE_CAPITAL,
+        price:
+          livePrice !== null && Number.isFinite(livePrice) && livePrice > 0
+            ? livePrice
+            : quant.close,
+        atr: quant.atr,
+      })
+    : null;
 
   return (
     <>
@@ -174,39 +170,42 @@ export function AssetDetailsModal({
                     <div className="quant-insight-summary">
                       <span
                         className="regime-badge"
-                        data-regime={quant.breakdown.regime}
+                        data-regime={quant.regime}
                         title="Detected market regime"
                       >
-                        {REGIME_LABELS[quant.breakdown.regime]}
+                        {REGIME_LABELS[quant.regime]}
                       </span>
-                      <span className="quant-breakdown-score" title="Multi-Factor Score (0–100)">
-                        {quant.breakdown.score}
+                      <span className="quant-breakdown-score" title="Signal Score (0–100)">
+                        {quant.signal_score}
                       </span>
                     </div>
                   )}
-                  {!quant ? (
+                  {result?.status === 'INSUFFICIENT_DATA' ? (
+                    <div className="quant-insight-summary">
+                      <InsufficientDataBadge />
+                      <p className="quant-breakdown-note">
+                        The engine needs {result.required} daily candles to score {asset.ticker} and
+                        has {result.received}. No score is shown rather than a guess.
+                      </p>
+                    </div>
+                  ) : !quant ? (
                     <p className="quant-breakdown-note">Computing signal…</p>
                   ) : (
                     <>
-                      <p className="quant-rationale">{quant.breakdown.rationale}</p>
+                      <p className="quant-rationale">{quant.rationale}</p>
                       <ul className="quant-factors">
                         {QUANT_FACTORS.map((factor) => {
-                          const value = quant.breakdown.components[factor.score];
-                          const weight = quant.breakdown.components.weights[factor.weight];
+                          const value = quant.components[factor.score];
+                          const weight = quant.components.weights[factor.weight];
                           return (
                             <li key={factor.label} className="quant-factor">
                               <span className="quant-factor-label">
                                 {factor.label} <span>({factor.source})</span>
                               </span>
                               <span className="quant-factor-track" aria-hidden="true">
-                                <span
-                                  className="quant-factor-bar"
-                                  style={{ width: `${value ?? 0}%` }}
-                                />
+                                <span className="quant-factor-bar" style={{ width: `${value}%` }} />
                               </span>
-                              <span className="quant-factor-value">
-                                {value === null ? '—' : Math.round(value)}
-                              </span>
+                              <span className="quant-factor-value">{Math.round(value)}</span>
                               <span className="quant-factor-weight" title="Applied weight">
                                 {Math.round(weight * 100)}%
                               </span>

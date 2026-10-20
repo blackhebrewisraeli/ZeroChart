@@ -1,7 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetDetailsModal } from '@/components/AssetDetailsModal';
 import type { Asset } from '@/lib/assets';
+import { evaluateCandles, type CanonicalResult } from '@/lib/canonicalModel';
+import { okResult, STRONG_INPUTS } from './canonicalFixtures';
+
+const engine = vi.hoisted(() => ({ scores: new Map<string, CanonicalResult>() }));
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => engine.scores }));
 
 vi.mock('@/lib/authStore', () => ({ useAuth: () => ({ isPro: true }) }));
 
@@ -16,11 +21,6 @@ vi.mock('@/lib/binance', async (importOriginal) => ({
     { timestamp: 1_700_000_000_000, open: 99, high: 102, low: 98, close: 100 },
   ]),
 }));
-
-vi.mock('@/lib/roboAdvisor', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/roboAdvisor')>();
-  return { ...actual, scoreAsset: async (asset: Asset) => actual.scoreAssetStatic(asset) };
-});
 
 function makeAsset(ticker: string): Asset {
   return {
@@ -41,6 +41,39 @@ function makeAsset(ticker: string): Asset {
     updated_at: null,
   };
 }
+
+beforeEach(() => {
+  engine.scores = new Map([
+    ['BTC', okResult(STRONG_INPUTS)],
+    ['AAPL', evaluateCandles([])],
+  ]);
+});
+
+describe('AssetDetailsModal quant breakdown', () => {
+  it('shows the canonical Signal Score and ATR size when the engine has a score', () => {
+    render(<AssetDetailsModal asset={makeAsset('BTC')} onClose={() => {}} />);
+
+    const score = okResult(STRONG_INPUTS).signal_score;
+    expect(screen.getByTitle('Signal Score (0–100)')).toHaveTextContent(String(score));
+    expect(screen.getByText(/ATR position size/)).toBeInTheDocument();
+    expect(screen.queryByText('Not Enough Data')).not.toBeInTheDocument();
+  });
+
+  it('shows a Not Enough Data badge instead of a score when the engine has too few candles', () => {
+    render(<AssetDetailsModal asset={makeAsset('AAPL')} onClose={() => {}} />);
+
+    expect(screen.getByText('Not Enough Data')).toBeInTheDocument();
+    expect(screen.getByText(/needs 34 daily candles to score AAPL and has 0/)).toBeInTheDocument();
+    expect(screen.queryByTitle('Signal Score (0–100)')).not.toBeInTheDocument();
+    expect(screen.queryByText(/ATR position size/)).not.toBeInTheDocument();
+  });
+
+  it('says it is computing while the engine result is loading', () => {
+    engine.scores = new Map();
+    render(<AssetDetailsModal asset={makeAsset('BTC')} onClose={() => {}} />);
+    expect(screen.getByText('Computing signal…')).toBeInTheDocument();
+  });
+});
 
 describe('AssetDetailsModal chart mode', () => {
   it('switches between ZeroChart Quant and TradingView Pro, keeping the quant breakdown', async () => {

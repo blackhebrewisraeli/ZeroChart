@@ -34,8 +34,8 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
 import { TacticalSignals } from '@/components/TacticalSignals';
 import { TradingViewWidget } from '@/components/TradingViewWidget';
+import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
 import {
-  calculateSignalScore,
   fetchAssets,
   formatChange,
   formatPrice,
@@ -50,6 +50,8 @@ import {
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { toBinanceSymbol } from '@/lib/binance';
+import { scoreOf, type CanonicalResult } from '@/lib/canonicalModel';
+import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import { useAuth } from '@/lib/authStore';
@@ -63,7 +65,21 @@ function scoreToneOf(score: number) {
   return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
 }
 
-function ScoreRing({ score }: { score: number }) {
+function ScoreRing({ result }: { result: CanonicalResult | undefined }) {
+  const score = scoreOf(result);
+  if (score === null) {
+    const insufficient = result?.status === 'INSUFFICIENT_DATA';
+    return (
+      <div
+        className="score-ring score-none"
+        role="img"
+        aria-label={insufficient ? 'Signal score: not enough data' : 'Signal score loading'}
+      >
+        {insufficient ? <InsufficientDataBadge /> : <span className="score-ring-value">—</span>}
+        <span className="score-ring-label">SIGNAL</span>
+      </div>
+    );
+  }
   return (
     <div
       className={cn('score-ring', scoreToneOf(score))}
@@ -76,8 +92,7 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function Hero({ asset }: { asset: Asset }) {
-  const score = calculateSignalScore(asset);
+function Hero({ asset, result }: { asset: Asset; result: CanonicalResult | undefined }) {
   const surging = asset.volume_spike !== null && asset.volume_spike > 1;
   return (
     <section className="hero" data-tour="hero" aria-label="Top signal">
@@ -94,7 +109,7 @@ function Hero({ asset }: { asset: Asset }) {
             </div>
             <div className="hero-price">{formatPrice(asset.current_price)}</div>
           </div>
-          <ScoreRing score={score} />
+          <ScoreRing result={result} />
         </div>
         <p className="hero-name">{asset.name || 'Asset'}</p>
         <div className="hero-stats">
@@ -161,10 +176,18 @@ const MARKET_VIEWS: { id: MarketView; label: ReactNode }[] = [
 
 const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['All', 'Stocks', 'Crypto', 'Forex'];
 
-function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
+/** Canonical score for ranking; unscored assets (loading or not enough data) sink last. */
+function rankScore(scores: ReadonlyMap<string, CanonicalResult>, asset: Asset): number {
+  return scoreOf(scores.get(asset.ticker)) ?? -1;
+}
+
+function sortMarkets(
+  assets: Asset[],
+  view: MarketView,
+  scores: ReadonlyMap<string, CanonicalResult>,
+): Asset[] {
   const list = [...assets];
-  if (view === 'signals')
-    return list.sort((a, b) => calculateSignalScore(b) - calculateSignalScore(a));
+  if (view === 'signals') return list.sort((a, b) => rankScore(scores, b) - rankScore(scores, a));
   if (view === 'gainers')
     return list.sort((a, b) => (b.change_24h ?? -Infinity) - (a.change_24h ?? -Infinity));
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
@@ -172,17 +195,19 @@ function sortMarkets(assets: Asset[], view: MarketView): Asset[] {
 
 const MarketRow = memo(function MarketRow({
   asset,
+  result,
   rank,
   onSelect,
 }: {
   asset: Asset;
+  result: CanonicalResult | undefined;
   rank: number;
   onSelect: (asset: Asset) => void;
 }) {
   const live = useLivePrice(toBinanceSymbol(asset.ticker));
   const currentPrice = live?.price ?? asset.current_price;
   const change = live?.change ?? asset.change_24h ?? null;
-  const score = calculateSignalScore(asset);
+  const score = scoreOf(result);
   const priceFlash = usePriceFlash(currentPrice);
   const streamConnected = useConnectionState() === 'connected';
   const freshness = assetFreshness(asset, live, { streamConnected });
@@ -224,7 +249,15 @@ const MarketRow = memo(function MarketRow({
         {formatChange(change)}
       </span>
       <span className="markets-score-cell">
-        <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
+        {score !== null ? (
+          <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
+        ) : result?.status === 'INSUFFICIENT_DATA' ? (
+          <InsufficientDataBadge compact />
+        ) : (
+          <span className="markets-score score-none" aria-label="Signal score loading">
+            —
+          </span>
+        )}
       </span>
       <span className="markets-trade" onClick={(e) => e.stopPropagation()}>
         <BrokerModal asset={asset} />
@@ -269,14 +302,13 @@ function Terminal() {
   useAlertEngine(baseAssets, user);
   const connectionState = useConnectionState();
   const reconnecting = connectionState === 'reconnecting';
-  const topPick = [...baseAssets].sort(
-    (a, b) => calculateSignalScore(b) - calculateSignalScore(a),
-  )[0];
+  const scores = useCanonicalScores(baseAssets.map((asset) => asset.ticker));
+  const topPick = [...baseAssets].sort((a, b) => rankScore(scores, b) - rankScore(scores, a))[0];
   const filtered =
     assetClass === 'All'
       ? baseAssets
       : baseAssets.filter((a) => getAssetClass(a.ticker) === assetClass);
-  const rows = sortMarkets(filtered, marketView);
+  const rows = sortMarkets(filtered, marketView, scores);
 
   return (
     <div className="min-h-screen text-foreground">
@@ -440,7 +472,7 @@ function Terminal() {
           </div>
         ) : topPick ? (
           <>
-            <Hero asset={topPick} />
+            <Hero asset={topPick} result={scores.get(topPick.ticker)} />
             <TacticalSignals assets={baseAssets} />
             <section className="markets" data-tour="markets" aria-label="Markets">
               <div className="markets-head">
@@ -500,6 +532,7 @@ function Terminal() {
                     <MarketRow
                       key={asset.ticker}
                       asset={asset}
+                      result={scores.get(asset.ticker)}
                       rank={index + 1}
                       onSelect={setSelectedAsset}
                     />

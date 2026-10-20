@@ -65,8 +65,9 @@ flowchart TB
 ### Web Worker multi-factor engine
 
 - Scores every asset 0–100 by blending three normalized factors: **RSI** mean reversion (40%), **MACD** momentum (40%), and **ATR** volatility regime (20%).
-- Detects the market regime (high volatility, trending, mean-reverting, or neutral) and tilts the weights toward the factor that regime rewards. Missing inputs redistribute their weight instead of faking a reading.
-- Every score is explainable: sub-scores, applied weights, regime, and a one-line rationale come from [`multiFactor.ts`](./src/lib/multiFactor.ts).
+- Detects the market regime (high volatility, trending, mean-reverting, or neutral) and tilts the weights toward the factor that regime rewards.
+- One canonical engine, [`canonicalModel.ts`](./src/lib/canonicalModel.ts), scores every surface (Scanner, Portfolio, Robo-Advisor, Tactical Signals, shared snapshots) from candle history and matches the Pine HUD. An asset with fewer than 34 daily candles reports `INSUFFICIENT_DATA` and shows "Not Enough Data", never a guessed score.
+- Every score is explainable: sub-scores, applied weights, regime, and a one-line rationale.
 - Heavy math (SMA, RSI, MACD, ATR, full backtests) runs off the main thread in [`finance.worker.ts`](./src/lib/finance.worker.ts), with results cached and served through the async [`financeClient.ts`](./src/lib/financeClient.ts) API, so charts never freeze the UI.
 
 ### v3 atomic accounting
@@ -206,7 +207,7 @@ src/
 │   └── ui/               shadcn/ui primitives
 ├── hooks/                Binance WebSocket, alert engine, price flash, session timeout
 ├── integrations/         Supabase client re-exports, generated DB types, auth middleware
-├── lib/                  Pure engines: indicators, multiFactor, risk, backtest, accounting
+├── lib/                  Pure engines: indicators, canonicalModel, risk, backtest, accounting
 │   └── finance.worker.ts Web Worker for heavy indicator and backtest math
 ├── routes/               TanStack Start file-based routes
 └── test/                 Vitest suites

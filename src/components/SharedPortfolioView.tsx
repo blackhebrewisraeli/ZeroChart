@@ -2,7 +2,8 @@ import { Link } from '@tanstack/react-router';
 import { ArrowRight, LockKeyhole, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Cell, Pie, PieChart, Tooltip } from 'recharts';
 import { ALLOCATION_PALETTE } from '@/lib/allocation';
-import { REGIME_LABELS } from '@/lib/multiFactor';
+import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
+import { REGIME_LABELS } from '@/lib/canonicalModel';
 import type { SharedPortfolioRecord, SharedPortfolioHolding } from '@/lib/sharedPortfolio';
 import { cn } from '@/lib/utils';
 
@@ -15,7 +16,8 @@ function pnlTone(value: number | null): string | undefined {
   return value >= 0 ? 'pnl-up' : 'pnl-down';
 }
 
-function scoreTone(score: number): string {
+function scoreTone(score: number | null): string {
+  if (score === null) return 'score-none';
   return score >= 80 ? 'shared-score-high' : score >= 60 ? 'shared-score-mid' : 'shared-score-low';
 }
 
@@ -83,7 +85,11 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
             <span className="shared-portfolio-date">{publishedLabel}</span>
           </div>
           <div className={cn('shared-hero-score', scoreTone(snapshot.quantScore))}>
-            <span className="shared-hero-score-value">{Math.round(snapshot.quantScore)}</span>
+            {snapshot.quantScore === null ? (
+              <InsufficientDataBadge />
+            ) : (
+              <span className="shared-hero-score-value">{Math.round(snapshot.quantScore)}</span>
+            )}
             <span className="shared-hero-score-label">ROBO SCORE</span>
           </div>
         </section>
@@ -202,11 +208,15 @@ export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord 
                   <article key={holding.ticker} className="shared-score-row">
                     <div className="shared-score-asset">
                       <strong>{holding.ticker}</strong>
-                      <span>{REGIME_LABELS[holding.regime]}</span>
+                      <span>{holding.regime ? REGIME_LABELS[holding.regime] : '—'}</span>
                     </div>
-                    <div className={cn('shared-score-pill', scoreTone(holding.quantScore))}>
-                      {Math.round(holding.quantScore)}
-                    </div>
+                    {holding.quantScore === null ? (
+                      <InsufficientDataBadge compact />
+                    ) : (
+                      <div className={cn('shared-score-pill', scoreTone(holding.quantScore))}>
+                        {Math.round(holding.quantScore)}
+                      </div>
+                    )}
                     <div className={cn('shared-score-pnl', holdingTone)}>
                       {holding.pnlPercent >= 0 ? (
                         <TrendingUp size={14} aria-hidden="true" />

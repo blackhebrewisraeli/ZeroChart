@@ -1,6 +1,6 @@
 /**
  * ZeroChart Quant HUD & ATR Risk Engine — the Pine Script v6 port of
- * `multiFactor.ts` / `indicators.ts` / `risk.ts` that users load into
+ * `canonicalModel.ts` / `indicators.ts` / `risk.ts` that users load into
  * TradingView. The HUD is action-first (SIGNAL / SIGNAL SCORE / SIZE / STOP /
  * VIBE); alerts emit the `tv-webhook` JSON contract. `pine/zerochart_quant_hud.pine`
  * is the single source; this module ships it with Account Capital and the

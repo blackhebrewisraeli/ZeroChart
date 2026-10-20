@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import type { Asset } from '@/lib/assets';
 import type { LivePrice } from '@/lib/livePriceStore';
+import { evaluateCandles, type CanonicalResult } from '@/lib/canonicalModel';
+import { okResult, STRONG_INPUTS } from './canonicalFixtures';
 
 vi.mock('@/lib/supabaseClient', () => ({ supabase: {} }));
 vi.mock('@/lib/db', () => ({
@@ -21,6 +23,8 @@ vi.mock('@/lib/binance', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/binance')>()),
   fetchHistoricalCandles: vi.fn(async () => []),
 }));
+const engine = vi.hoisted(() => ({ scores: new Map<string, CanonicalResult>() }));
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => engine.scores }));
 
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { PaperTradingTerminal } from '@/components/PaperTradingTerminal';
@@ -92,15 +96,20 @@ describe('Paper Desk', () => {
     window.localStorage.clear();
     __resetAlertsStoreForTests();
     vi.clearAllMocks();
+    engine.scores = new Map();
   });
   afterEach(cleanup);
 
   it('defaults the chart to the top card of the Tactical Signals feed', () => {
-    // BTC wins the legacy signal score (volume spike, above SMA 50) but has no
-    // factor data; ETH is the feed's only Multi-Factor BUY.
+    // BTC's static columns look bullish but the engine has too few candles to
+    // score it; ETH is the feed's only canonical BUY.
+    engine.scores = new Map([
+      ['BTC-USD', evaluateCandles([])],
+      ['ETH-USD', okResult(STRONG_INPUTS)],
+    ]);
     const ranked = [
       { ...asset('BTC-USD', 'Bitcoin', 60_000), volume_spike: 2, sma_50: 50_000 },
-      { ...asset('ETH-USD', 'Ethereum', 1900), rsi_14: 25, change_24h: 0.02, risk_pct: 0.004 },
+      asset('ETH-USD', 'Ethereum', 1900),
     ];
     render(
       <PortfolioProvider>

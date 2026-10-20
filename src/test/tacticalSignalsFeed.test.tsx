@@ -6,6 +6,8 @@ import type { LivePrice } from '@/lib/livePriceStore';
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
+// No canonical score for ETH: the feed holds only the price alert.
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 
 import { PortfolioProvider } from '@/lib/portfolioStore';
 import { TacticalSignals } from '@/components/TacticalSignals';

@@ -31,6 +31,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
+import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { cn } from '@/lib/utils';
 
 /** Share of the open position one +/− click adds or trims. */
@@ -218,6 +219,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker.toUpperCase(), asset]));
+  const scores = useCanonicalScores(assets.map((asset) => asset.ticker));
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<'positions' | 'ledger'>('positions');
 
@@ -243,7 +245,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
   // feed's top card (same ranking as <TacticalSignals>) if it is a listed
   // asset (a fired alert may not be), else the first asset.
   const [topItem] = buildSignalFeed(
-    generateTacticalSignals(paper.positions, assets, paper.cashBalance),
+    generateTacticalSignals(paper.positions, assets, paper.cashBalance, scores),
     triggered,
   );
   const topSignal =

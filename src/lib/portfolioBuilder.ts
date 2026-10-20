@@ -1,4 +1,4 @@
-import type { MultiFactorBreakdown } from '@/lib/multiFactor';
+import type { CanonicalScore } from '@/lib/canonicalModel';
 
 export type RiskProfile = 'conservative' | 'moderate' | 'aggressive';
 
@@ -11,7 +11,7 @@ export interface Allocation {
   ticker: string;
   weight: number;
   allocatedAmount: number;
-  /** Multi-Factor Signal Score (0–100: RSI · MACD · ATR) used to rank the holding. */
+  /** Canonical Signal Score (0–100: RSI · MACD · ATR) used to rank the holding. */
   score?: number;
   /**
    * ATR-based share quantity that risks up to 2% of total capital on a
@@ -20,9 +20,9 @@ export interface Allocation {
    */
   suggestedShares?: number | null;
   /** Factor sub-scores (0–100) and the regime-tilted weights applied to them. */
-  components?: MultiFactorBreakdown['components'];
+  components?: CanonicalScore['components'];
   /** Market regime detected from the factor inputs. */
-  regime?: MultiFactorBreakdown['regime'];
+  regime?: CanonicalScore['regime'];
   /** One-line quant thesis explaining the score. */
   rationale?: string;
 }

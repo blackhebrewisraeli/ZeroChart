@@ -14,11 +14,12 @@ vi.mock('@/lib/supabaseClient', () => ({
   supabase: { from: database.from, rpc: database.rpc },
 }));
 
-const history = vi.hoisted(() => ({ fetch: vi.fn() }));
+const history = vi.hoisted(() => ({ fetch: vi.fn(), candles: vi.fn() }));
 
 vi.mock('@/lib/binance', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/binance')>()),
   fetchHistoricalKlines: history.fetch,
+  fetchHistoricalCandles: history.candles,
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -37,6 +38,7 @@ vi.mock('recharts', () => ({
 }));
 
 import { SharedPortfolioView } from '@/components/SharedPortfolioView';
+import { evaluateCandles } from '@/lib/canonicalModel';
 import {
   buildSharedPortfolioSnapshot,
   fetchSharedPortfolio,
@@ -80,7 +82,20 @@ beforeEach(() => {
   database.from.mockReturnValue({ insert: database.insert });
   database.rpc.mockReturnValue({ maybeSingle: database.maybeSingle });
   history.fetch.mockResolvedValue([]);
+  history.candles.mockResolvedValue([]);
 });
+
+/** Deterministic daily OHLC candles for the canonical engine. */
+const series = (count: number, drift: number) =>
+  Array.from({ length: count }, (_, i) => {
+    const close = 100 + 10 * Math.sin(i / 5) + drift * i;
+    return { timestamp: i * 86_400_000, open: close, high: close * 1.01, low: close * 0.99, close };
+  });
+const engineScore = (candles: ReturnType<typeof series>) => {
+  const result = evaluateCandles(candles);
+  if (result.status !== 'OK') throw new Error('fixture must be scoreable');
+  return result;
+};
 
 const klines = (closes: number[], startDay = 0) =>
   closes.map((close, index) => ({ timestamp: (startDay + index) * 86_400_000, close }));
@@ -98,6 +113,11 @@ describe('shared portfolio snapshots', () => {
       makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 }),
       makeAsset({ ticker: 'ETH', name: 'Ethereum', current_price: 80 }),
     ];
+    const btcCandles = series(200, 0.2);
+    const ethCandles = series(200, -0.3);
+    history.candles.mockImplementation(async (ticker: string) =>
+      ticker === 'BTC' ? btcCandles : ethCandles,
+    );
 
     const snapshot = await buildSharedPortfolioSnapshot(
       positions,
@@ -112,7 +132,13 @@ describe('shared portfolio snapshots', () => {
       ['ETH', expect.closeTo(40), expect.closeTo(60)],
     ]);
     const [btc, eth] = snapshot.holdings;
-    expect(snapshot.quantScore).toBeCloseTo(btc!.quantScore * 0.6 + eth!.quantScore * 0.4);
+    // Holding scores are the canonical engine's, from each asset's candles.
+    expect(btc).toMatchObject({
+      quantScore: engineScore(btcCandles).signal_score,
+      regime: engineScore(btcCandles).regime,
+    });
+    expect(eth?.quantScore).toBe(engineScore(ethCandles).signal_score);
+    expect(snapshot.quantScore).toBeCloseTo(btc!.quantScore! * 0.6 + eth!.quantScore! * 0.4);
 
     // The privacy contract: these keys and nothing else. Adding a field here
     // (especially an absolute amount) must be a deliberate test change.
@@ -135,6 +161,36 @@ describe('shared portfolio snapshots', () => {
         'ticker',
       ]);
     }
+  });
+
+  it('reports null scores for holdings without enough candles and leaves them out of the blend', async () => {
+    const candles = series(200, 0.2);
+    history.candles.mockImplementation(async (ticker: string) => (ticker === 'BTC' ? candles : []));
+    const snapshot = await buildSharedPortfolioSnapshot(
+      [
+        makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 1 }),
+        makePosition({ id: 'aapl', ticker: 'AAPL', buyPrice: 100, shares: 3 }),
+      ],
+      [
+        makeAsset({ ticker: 'BTC', current_price: 100 }),
+        makeAsset({ ticker: 'AAPL', current_price: 100 }),
+      ],
+      '2026-10-18T00:00:00.000Z',
+    );
+
+    expect(snapshot.holdings.find((h) => h.ticker === 'AAPL')).toMatchObject({
+      quantScore: null,
+      regime: null,
+    });
+    // 25% BTC is the only scored weight, so the blend is BTC's score alone.
+    expect(snapshot.quantScore).toBe(engineScore(candles).signal_score);
+
+    const none = await buildSharedPortfolioSnapshot(
+      [makePosition({ id: 'aapl', ticker: 'AAPL' })],
+      [makeAsset({ ticker: 'AAPL' })],
+      '2026-10-18T00:00:00.000Z',
+    );
+    expect(none.quantScore).toBeNull();
   });
 
   it('computes max drawdown and alpha vs BTC from the allocation-weighted history', async () => {
@@ -296,6 +352,34 @@ describe('shared portfolio snapshots', () => {
       maxDrawdownPercent: null,
       alphaPercent: null,
     });
+  });
+
+  it('reads null "not enough data" scores back', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const snapshot = {
+      version: 3,
+      createdAt: '2026-10-18T00:00:00.000Z',
+      pnlPercent: 5,
+      quantScore: null,
+      maxDrawdownPercent: null,
+      alphaPercent: null,
+      holdings: [
+        {
+          ticker: 'AAPL',
+          name: 'Apple',
+          allocationPercent: 100,
+          pnlPercent: 5,
+          quantScore: null,
+          regime: null,
+        },
+      ],
+    };
+    database.maybeSingle.mockResolvedValue({
+      data: { id, snapshot, created_at: snapshot.createdAt },
+      error: null,
+    });
+
+    expect((await fetchSharedPortfolio(id))?.snapshot).toEqual(snapshot);
   });
 
   it('skips the request for ids that are not UUIDs', async () => {

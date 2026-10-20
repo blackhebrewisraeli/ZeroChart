@@ -20,7 +20,7 @@ import { useAuth } from '@/lib/authStore';
 import { recordHeavyAction } from '@/lib/adManager';
 import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
-import { REGIME_LABELS } from '@/lib/multiFactor';
+import { MIN_CANDLES, REGIME_LABELS } from '@/lib/canonicalModel';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { applyBuyTransaction, applyCashTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
@@ -498,9 +498,10 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         </div>
 
                         <p className="robo-results-note">
-                          Regime-weighted Multi-Factor Score (RSI · MACD · ATR) · Suggested size
-                          risks up to 2% of capital at a 1×ATR stop, capped at the allocation · Swap
-                          any holding to replace it
+                          Regime-weighted Multi-Factor Score (RSI · MACD · ATR) · Assets with fewer
+                          than {MIN_CANDLES} daily candles are skipped (Not Enough Data) · Suggested
+                          size risks up to 2% of capital at a 1×ATR stop, capped at the allocation ·
+                          Swap any holding to replace it
                         </p>
                         <ul className="robo-allocation-list">
                           {result.map((allocation, index) => {
@@ -550,8 +551,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                         {allocation.components && (
                                           <span className="robo-factors">
                                             {FACTOR_CHIPS.map((factor) => {
-                                              const value =
-                                                allocation.components?.[factor.score] ?? null;
+                                              const value = allocation.components?.[factor.score];
                                               const weight =
                                                 allocation.components?.weights[factor.weight] ?? 0;
                                               return (
@@ -560,7 +560,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                                   title={`${factor.name} sub-score · ${Math.round(weight * 100)}% weight`}
                                                 >
                                                   {factor.label}{' '}
-                                                  <b>{value === null ? '—' : Math.round(value)}</b>
+                                                  <b>
+                                                    {value === undefined ? '—' : Math.round(value)}
+                                                  </b>
                                                 </span>
                                               );
                                             })}
@@ -658,8 +660,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         <Shield size={28} />
                         <h3>No qualifying assets</h3>
                         <p>
-                          No assets in your watchlist currently produce a positive Multi-Factor
-                          signal. Adjust your inputs or check back later.
+                          No asset in your watchlist has both a positive Signal Score and the{' '}
+                          {MIN_CANDLES} daily candles the engine needs to score it. Assets without
+                          enough data are skipped, never guessed. Check back later.
                         </p>
                       </div>
                     )}

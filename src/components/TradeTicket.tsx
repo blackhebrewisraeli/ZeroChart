@@ -133,18 +133,22 @@ export function TradeTicket({
       : executeSell(type, input);
   }
 
+  /** Shares the order fills, snapped to the holding when selling it all. */
+  function fillShares(type: PortfolioType, fillPrice: number): number {
+    const heldShares = portfolios[type].positions
+      .filter((position) => position.ticker.toUpperCase() === asset.ticker.toUpperCase())
+      .reduce((sum, position) => sum + position.shares, 0);
+    const orderShares = numericAmount / fillPrice;
+    // A cent-rounded "sell everything" amount can overshoot the holding by dust.
+    return side === 'sell' && Math.abs(orderShares - heldShares) * fillPrice < 0.01
+      ? heldShares
+      : orderShares;
+  }
+
   async function handleSubmit() {
     if (!canSubmit || booking) return;
     if (recordsFills) {
-      const heldShares = portfolios[portfolioType].positions
-        .filter((position) => position.ticker.toUpperCase() === asset.ticker.toUpperCase())
-        .reduce((sum, position) => sum + position.shares, 0);
-      const orderShares = numericAmount / price;
-      // A cent-rounded "sell everything" amount can overshoot the holding by dust.
-      const shares =
-        side === 'sell' && Math.abs(orderShares - heldShares) * price < 0.01
-          ? heldShares
-          : orderShares;
+      const shares = fillShares(portfolioType, price);
       const result =
         portfolioType === 'paper_trading'
           ? await bookPaperFill(shares, price)

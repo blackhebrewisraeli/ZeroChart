@@ -11,12 +11,16 @@ import {
 import {
   applyBuyTransaction,
   applyCashTransaction,
+  applyPaperRow,
   applySellTransaction,
+  freshPaperContainer,
   mergeDuplicateTickers,
   normalizePositionLots,
+  replayPaperLedger,
   type BuyTransactionInput,
   type CashTransaction,
   type CorePortfolioType,
+  type PaperLedgerRow,
   type PortfolioContainer,
   type PortfolioTransaction,
   type PortfolioTransition,
@@ -24,6 +28,11 @@ import {
   type Position,
   type SellTransactionInput,
 } from '@/lib/portfolioAccounting';
+import {
+  insertPaperTransaction,
+  loadPaperTransactions,
+  type PaperTransactionInsert,
+} from '@/lib/db';
 
 export type {
   BuyTransactionInput,
@@ -35,6 +44,7 @@ export type {
   PortfolioType,
   SellTransactionInput,
 } from '@/lib/portfolioAccounting';
+export { PAPER_STARTING_CASH } from '@/lib/portfolioAccounting';
 
 const GUEST_STORAGE_KEY = 'zerochart:portfolio-positions';
 
@@ -66,8 +76,6 @@ const MOCK_POSITIONS: Position[] = [
 ];
 
 const DEMO_OPENING_CASH = 2_500;
-/** Virtual cash a new or reset Paper Trading account starts with. */
-export const PAPER_STARTING_CASH = 100_000;
 
 const SEED_CASH_LEDGER: CashTransaction[] = [
   {
@@ -106,17 +114,6 @@ function emptyContainer(type: PortfolioType): PortfolioContainer {
     cashLedger: [],
     transactions: [],
     realizedPnl: 0,
-  };
-}
-
-/** A fresh, independent Paper Trading ledger: starting cash, no lots, no fills. */
-function freshPaperContainer(createdAt = '2026-01-01T00:00:00.000Z'): PortfolioContainer {
-  return {
-    ...emptyContainer('paper_trading'),
-    cashBalance: PAPER_STARTING_CASH,
-    cashLedger: [
-      { id: 'seed-paper-cash', type: 'deposit', amount: PAPER_STARTING_CASH, createdAt },
-    ],
   };
 }
 
@@ -397,6 +394,21 @@ function replaceContainer(
   };
 }
 
+/** A Paper Trading market order; the fill books at `price`. */
+export interface PaperOrder {
+  side: 'buy' | 'sell';
+  ticker: string;
+  shares: number;
+  price: number;
+  fee: number;
+}
+
+export interface PaperBooking {
+  ok: boolean;
+  realizedPnl?: number;
+  error?: string;
+}
+
 interface PortfolioStore {
   positions: Position[];
   scopeUserId: string | null;
@@ -406,20 +418,29 @@ interface PortfolioStore {
   portfolios: Record<PortfolioType, PortfolioContainer>;
   setActivePortfolioType: (type: CorePortfolioType) => void;
   getPortfolio: (type: PortfolioType) => PortfolioContainer;
-  executeBuy: (type: PortfolioType, input: BuyTransactionInput) => { ok: boolean; error?: string };
+  executeBuy: (
+    type: CorePortfolioType,
+    input: BuyTransactionInput,
+  ) => { ok: boolean; error?: string };
   executeSell: (
-    type: PortfolioType,
+    type: CorePortfolioType,
     input: SellTransactionInput,
   ) => { ok: boolean; realizedPnl?: number; error?: string };
-  depositPortfolioCash: (type: PortfolioType, amount: number, note?: string) => boolean;
+  depositPortfolioCash: (type: CorePortfolioType, amount: number, note?: string) => boolean;
   /** Commits every step `build` applies to the container, or none of them. */
   transactPortfolio: (
-    type: PortfolioType,
+    type: CorePortfolioType,
     build: (container: PortfolioContainer) => PortfolioTransition,
   ) => { ok: boolean; error?: string };
-  withdrawPortfolioCash: (type: PortfolioType, amount: number, note?: string) => boolean;
-  /** Wipes the Paper Trading ledger back to starting cash; Core ledgers are untouched. */
-  resetPaperAccount: () => void;
+  withdrawPortfolioCash: (type: CorePortfolioType, amount: number, note?: string) => boolean;
+  /** Books a Paper Trading fill: signed in, a `paper_transactions` row the server validates. */
+  executePaperTrade: (order: PaperOrder) => Promise<PaperBooking>;
+  /** Adds virtual cash to the Paper Trading account. */
+  topUpPaperCash: (amount: number) => Promise<PaperBooking>;
+  /** Restarts the Paper Trading account at starting cash; Core ledgers are untouched. */
+  resetPaperAccount: () => Promise<PaperBooking>;
+  /** Replaces the Paper Trading account with the replay of the server ledger. */
+  replacePaperLedger: (rows: readonly PaperLedgerRow[]) => void;
   setTargetAllocations: (type: PortfolioType, targets: Record<string, number>) => void;
   depositCash: (amount: number) => boolean;
   withdrawCash: (amount: number) => boolean;
@@ -474,7 +495,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const executeBuy = useCallback(
-    (type: PortfolioType, input: BuyTransactionInput): { ok: boolean; error?: string } => {
+    (type: CorePortfolioType, input: BuyTransactionInput): { ok: boolean; error?: string } => {
       const current = scopeRef.current;
       const result = applyBuyTransaction(current.portfolios[type], input);
       if (!result.ok) return { ok: false, error: result.error };
@@ -486,7 +507,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
   const executeSell = useCallback(
     (
-      type: PortfolioType,
+      type: CorePortfolioType,
       input: SellTransactionInput,
     ): { ok: boolean; realizedPnl?: number; error?: string } => {
       const current = scopeRef.current;
@@ -500,7 +521,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
   const applyPortfolioCash = useCallback(
     (
-      type: PortfolioType,
+      type: CorePortfolioType,
       action: CashTransaction['type'],
       amount: number,
       note?: string,
@@ -522,7 +543,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   );
 
   const transactPortfolio = useCallback(
-    (type: PortfolioType, build: (container: PortfolioContainer) => PortfolioTransition) => {
+    (type: CorePortfolioType, build: (container: PortfolioContainer) => PortfolioTransition) => {
       const current = scopeRef.current;
       const result = build(current.portfolios[type]);
       if (!result.ok) return { ok: false, error: result.error };
@@ -533,23 +554,85 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   );
 
   const depositPortfolioCash = useCallback(
-    (type: PortfolioType, amount: number, note?: string) =>
+    (type: CorePortfolioType, amount: number, note?: string) =>
       applyPortfolioCash(type, 'deposit', amount, note),
     [applyPortfolioCash],
   );
 
   const withdrawPortfolioCash = useCallback(
-    (type: PortfolioType, amount: number, note?: string) =>
+    (type: CorePortfolioType, amount: number, note?: string) =>
       applyPortfolioCash(type, 'withdrawal', amount, note),
     [applyPortfolioCash],
   );
 
-  const resetPaperAccount = useCallback(() => {
-    const current = scopeRef.current;
-    commit(
-      replaceContainer(current, 'paper_trading', freshPaperContainer(new Date().toISOString())),
-    );
-  }, [commit]);
+  /**
+   * Books one Paper Trading row. The engine checks it against the account
+   * first; signed in, the row is then inserted into `paper_transactions`
+   * (whose trigger has the final say) and the account is replayed from the
+   * server. The guest scope has no server ledger and keeps the preview.
+   */
+  const bookPaperRow = useCallback(
+    async (row: PaperTransactionInsert): Promise<PaperBooking> => {
+      const current = scopeRef.current;
+      const preview = applyPaperRow(current.portfolios.paper_trading, {
+        ...row,
+        id: nextTransactionId('paper'),
+        created_at: new Date().toISOString(),
+      });
+      if (!preview.ok) return { ok: false, error: preview.error };
+      const realizedPnl = preview.container.transactions.at(-1)?.realizedPnl;
+
+      const userId = current.userId;
+      let container = preview.container;
+      if (userId !== null) {
+        try {
+          await insertPaperTransaction(row);
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+        try {
+          container = replayPaperLedger(await loadPaperTransactions(userId));
+        } catch {
+          // Booked; the preview stands until the next load replays the server ledger.
+        }
+      }
+      const latest = scopeRef.current;
+      if (latest.userId === userId) commit(replaceContainer(latest, 'paper_trading', container));
+      return { ok: true, ...(realizedPnl !== undefined ? { realizedPnl } : {}) };
+    },
+    [commit],
+  );
+
+  const executePaperTrade = useCallback(
+    (order: PaperOrder) =>
+      bookPaperRow({
+        action: order.side === 'buy' ? 'BUY' : 'SELL',
+        ticker: order.ticker.trim().toUpperCase(),
+        quantity: order.shares,
+        price: order.price,
+        fees: order.fee,
+      }),
+    [bookPaperRow],
+  );
+
+  const topUpPaperCash = useCallback(
+    (amount: number) =>
+      bookPaperRow({ action: 'DEPOSIT', ticker: null, quantity: amount, price: null, fees: 0 }),
+    [bookPaperRow],
+  );
+
+  const resetPaperAccount = useCallback(
+    () => bookPaperRow({ action: 'RESET', ticker: null, quantity: null, price: null, fees: 0 }),
+    [bookPaperRow],
+  );
+
+  const replacePaperLedger = useCallback(
+    (rows: readonly PaperLedgerRow[]) => {
+      const current = scopeRef.current;
+      commit(replaceContainer(current, 'paper_trading', replayPaperLedger(rows)));
+    },
+    [commit],
+  );
 
   const depositCash = useCallback(
     (amount: number) => depositPortfolioCash('real_tracking', amount),
@@ -750,7 +833,10 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       depositPortfolioCash,
       transactPortfolio,
       withdrawPortfolioCash,
+      executePaperTrade,
+      topUpPaperCash,
       resetPaperAccount,
+      replacePaperLedger,
       setTargetAllocations,
       depositCash,
       withdrawCash,
@@ -772,7 +858,10 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
       depositPortfolioCash,
       transactPortfolio,
       withdrawPortfolioCash,
+      executePaperTrade,
+      topUpPaperCash,
       resetPaperAccount,
+      replacePaperLedger,
       setTargetAllocations,
       depositCash,
       withdrawCash,

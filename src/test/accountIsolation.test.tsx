@@ -8,6 +8,7 @@ const harness = vi.hoisted(() => ({
   signOutFn: vi.fn(),
   loadPortfolio: vi.fn(),
   savePortfolio: vi.fn(),
+  loadIsPro: vi.fn(),
 }));
 
 vi.mock('@/lib/supabaseClient', () => ({
@@ -26,6 +27,8 @@ vi.mock('@/lib/supabaseClient', () => ({
 vi.mock('@/lib/db', () => ({
   loadPortfolio: harness.loadPortfolio,
   savePortfolio: harness.savePortfolio,
+  loadPaperTransactions: vi.fn(async () => []),
+  loadIsPro: harness.loadIsPro,
   PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
 }));
 
@@ -65,10 +68,11 @@ const positionB: Position = {
 
 function Probe() {
   const { positions } = usePortfolio();
-  const { user, signOut } = useAuth();
+  const { user, isPro, signOut } = useAuth();
   return (
     <div>
       <span data-testid="user">{user?.id ?? 'guest'}</span>
+      <span data-testid="tier">{isPro ? 'pro' : 'basic'}</span>
       <span data-testid="tickers">{positions.map((p) => p.ticker).join(',')}</span>
       <button type="button" onClick={() => void signOut()}>
         sign-out
@@ -105,6 +109,7 @@ beforeEach(() => {
   harness.authCallbacks.length = 0;
   harness.getSession.mockResolvedValue({ data: { session: null } });
   harness.loadPortfolio.mockResolvedValue(null);
+  harness.loadIsPro.mockResolvedValue(false);
   harness.signOutFn.mockImplementation(async () => {
     for (const callback of harness.authCallbacks) callback('SIGNED_OUT', null);
   });
@@ -232,5 +237,27 @@ describe('hydration flow (M1-T1, F-4.1b)', () => {
     emitAuth({ user: { id: 'user-a' } }); // e.g. TOKEN_REFRESHED
     expect(getHydrationState()).toEqual({ status: 'ready', userId: 'user-a' });
     expect(harness.loadPortfolio.mock.calls.length).toBe(callsAfterLogin);
+  });
+});
+
+describe('Pro entitlement', () => {
+  it('trusts only the user_subscriptions row, never session metadata', async () => {
+    harness.loadIsPro.mockImplementation(async (userId: string) => userId === 'user-pro');
+    await renderHarness();
+
+    // Both metadata flags claim Pro; user_metadata is writable by the user themself.
+    const selfGranted = {
+      user: { id: 'user-a', app_metadata: { is_pro: true }, user_metadata: { is_pro: true } },
+    };
+    emitAuth(selfGranted);
+    await waitFor(() => expect(harness.loadIsPro).toHaveBeenCalledWith('user-a'));
+    await act(async () => {});
+    expect(screen.getByTestId('tier')).toHaveTextContent('basic');
+
+    emitAuth({ user: { id: 'user-pro' } });
+    await waitFor(() => expect(screen.getByTestId('tier')).toHaveTextContent('pro'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'sign-out' }));
+    await waitFor(() => expect(screen.getByTestId('tier')).toHaveTextContent('basic'));
   });
 });

@@ -227,10 +227,16 @@ describe('Paper Desk', () => {
     ]);
   });
 
-  it('tops up and resets only the paper account', () => {
+  it('tops up and resets only the paper account', async () => {
     render(tree(1900));
-    act(() => {
-      store.executeBuy('paper_trading', { ticker: 'ETH-USD', shares: 1, price: 1900 });
+    await act(async () => {
+      await store.executePaperTrade({
+        side: 'buy',
+        ticker: 'ETH-USD',
+        shares: 1,
+        price: 1900,
+        fee: 0,
+      });
     });
     const realBefore = store.portfolios.real_tracking;
     const simBefore = store.portfolios.long_term_sim;
@@ -247,10 +253,16 @@ describe('Paper Desk', () => {
     expect(store.portfolios.long_term_sim).toBe(simBefore);
   });
 
-  it('cannot resize or close a position without a live price to fill at', () => {
+  it('cannot resize or close a position without a live price to fill at', async () => {
     render(tree(Number.NaN));
-    act(() => {
-      store.executeBuy('paper_trading', { ticker: 'ETH-USD', shares: 1, price: 1900 });
+    await act(async () => {
+      await store.executePaperTrade({
+        side: 'buy',
+        ticker: 'ETH-USD',
+        shares: 1,
+        price: 1900,
+        fee: 0,
+      });
     });
     expect(screen.getByRole('button', { name: 'Close ETH-USD position' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add 25% to ETH-USD' })).toBeDisabled();

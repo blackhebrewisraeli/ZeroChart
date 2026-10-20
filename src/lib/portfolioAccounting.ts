@@ -481,6 +481,85 @@ export function applySellTransaction(
   };
 }
 
+/** Virtual cash a new or reset Paper Trading account starts with (check_paper_transaction mirrors it). */
+export const PAPER_STARTING_CASH = 100_000;
+
+/** A fresh, independent Paper Trading ledger: starting cash, no lots, no fills. */
+export function freshPaperContainer(createdAt = '2026-01-01T00:00:00.000Z'): PortfolioContainer {
+  return {
+    type: 'paper_trading',
+    positions: [],
+    cashBalance: PAPER_STARTING_CASH,
+    cashLedger: [
+      { id: 'seed-paper-cash', type: 'deposit', amount: PAPER_STARTING_CASH, createdAt },
+    ],
+    transactions: [],
+    realizedPnl: 0,
+  };
+}
+
+/**
+ * One `paper_transactions` row: a fill (BUY / SELL, quantity in units), a
+ * top-up (DEPOSIT, quantity in USD) or a RESET back to starting cash.
+ */
+export interface PaperLedgerRow {
+  id: string;
+  action: string;
+  ticker: string | null;
+  quantity: number | null;
+  price: number | null;
+  fees: number;
+  created_at: string;
+}
+
+/** Applies one ledger row to the Paper Trading account. Every paper fill is tactical. */
+export function applyPaperRow(
+  container: PortfolioContainer,
+  row: PaperLedgerRow,
+): PortfolioTransition {
+  const trade = {
+    ticker: row.ticker ?? '',
+    shares: row.quantity ?? 0,
+    price: row.price ?? 0,
+    fee: row.fees,
+    timestamp: row.created_at,
+    transactionId: row.id,
+    intent: 'tactical' as const,
+  };
+  switch (row.action) {
+    case 'BUY':
+      return applyBuyTransaction(container, { ...trade, lotId: row.id, requireCash: true });
+    case 'SELL':
+      return applySellTransaction(container, trade);
+    case 'DEPOSIT':
+      return applyCashTransaction(container, {
+        type: 'deposit',
+        amount: row.quantity ?? 0,
+        note: 'Paper top-up',
+        timestamp: row.created_at,
+        cashTransactionId: row.id,
+        transactionId: row.id,
+      });
+    case 'RESET':
+      return { ok: true, container: freshPaperContainer(row.created_at) };
+    default:
+      return { ok: false, error: `Unknown ledger action ${row.action}` };
+  }
+}
+
+/**
+ * The Paper Trading account replayed from its ledger rows, oldest first:
+ * positions, FIFO lots, cash and realized P&L all derive from the rows.
+ */
+export function replayPaperLedger(rows: readonly PaperLedgerRow[]): PortfolioContainer {
+  return rows.reduce((container, row) => {
+    const next = applyPaperRow(container, row);
+    // The insert trigger already refused unaffordable fills; a row the engine
+    // still rejects books nothing rather than corrupting the replay.
+    return next.ok ? next.container : container;
+  }, freshPaperContainer());
+}
+
 export function computePortfolioValuation(
   container: PortfolioContainer,
   livePrices: Readonly<Record<string, number | null | undefined>>,

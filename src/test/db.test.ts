@@ -15,7 +15,13 @@ vi.mock('@/lib/supabaseClient', () => ({
   supabase: { from: dbMocks.from },
 }));
 
-import { loadPortfolio, loadPortfolioState, savePortfolio, savePortfolioStateV3 } from '@/lib/db';
+import {
+  loadIsPro,
+  loadPortfolio,
+  loadPortfolioState,
+  savePortfolio,
+  savePortfolioStateV3,
+} from '@/lib/db';
 
 const positions: Position[] = [
   {
@@ -102,13 +108,17 @@ describe('savePortfolio', () => {
     await expect(savePortfolio('user-1', positions)).rejects.toEqual({ message: 'boom' });
   });
 
-  it('persists a v3 multi-portfolio envelope without changing the legacy array API', async () => {
+  it('persists the v3 envelope without Paper Trading, which books to paper_transactions', async () => {
     dbMocks.upsert.mockResolvedValue({ error: null });
 
     await savePortfolioStateV3('user-1', stateV3);
 
+    const { real_tracking, long_term_sim } = stateV3.portfolios;
     expect(dbMocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ user_id: 'user-1', positions: stateV3 }),
+      expect.objectContaining({
+        user_id: 'user-1',
+        positions: { ...stateV3, portfolios: { real_tracking, long_term_sim } },
+      }),
       { onConflict: 'user_id' },
     );
   });
@@ -141,5 +151,28 @@ describe('loadPortfolio', () => {
 
     await expect(loadPortfolio('user-1')).resolves.toEqual(stateV3);
     await expect(loadPortfolioState('user-1')).resolves.toEqual(stateV3);
+  });
+});
+
+describe('loadIsPro', () => {
+  it('grants Pro only for an active pro subscription row', async () => {
+    const rows = [
+      [{ status: 'active', tier: 'pro' }, true],
+      [{ status: 'inactive', tier: 'pro' }, false],
+      [{ status: 'active', tier: 'free' }, false],
+      [null, false],
+    ] as const;
+    for (const [data, pro] of rows) {
+      dbMocks.maybeSingle.mockResolvedValueOnce({ data, error: null });
+      await expect(loadIsPro('user-1')).resolves.toBe(pro);
+    }
+    expect(dbMocks.from).toHaveBeenCalledWith('user_subscriptions');
+    expect(dbMocks.eq).toHaveBeenCalledWith('user_id', 'user-1');
+  });
+
+  it('throws when the fetch fails', async () => {
+    dbMocks.maybeSingle.mockResolvedValue({ data: null, error: { message: 'boom' } });
+
+    await expect(loadIsPro('user-1')).rejects.toThrow('boom');
   });
 });

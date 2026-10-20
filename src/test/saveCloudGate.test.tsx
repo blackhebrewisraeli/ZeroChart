@@ -31,6 +31,8 @@ vi.mock('@/lib/supabaseClient', () => ({
 vi.mock('@/lib/db', () => ({
   loadPortfolio: harness.loadPortfolio,
   savePortfolioStateV3: harness.savePortfolioStateV3,
+  loadPaperTransactions: vi.fn(async () => []),
+  loadIsPro: vi.fn(async () => false),
   PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
 }));
 

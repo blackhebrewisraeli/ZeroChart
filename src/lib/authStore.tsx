@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
-import { loadPortfolio } from '@/lib/db';
+import { loadIsPro, loadPaperTransactions, loadPortfolio } from '@/lib/db';
 import {
   beginHydration,
   completeHydration,
@@ -38,7 +38,8 @@ const DEV_AUTH_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
  * Dev-only stub user for headless browser verification (Playwright / CDP):
  * open `http://localhost:<port>/?devAuth=1` (or `?devAuth=pro`) to render the
  * signed-in shell without a Supabase session or credentials. Cloud reads and
- * writes still go through RLS with the anon key, so nothing real is reachable.
+ * writes still go through RLS with the anon key, so nothing real is reachable
+ * (Paper Trading fills need a real session to book).
  * `import.meta.env.DEV` is statically `false` in `vite build`, so this is
  * stripped from production; the vitest run and non-localhost hosts are excluded.
  */
@@ -62,7 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sandboxPro, setSandboxPro] = useState(false);
-  const { switchScope, replacePortfolioState } = usePortfolio();
+  /** The user whose `user_subscriptions` row grants Pro, once it has loaded. */
+  const [proUserId, setProUserId] = useState<string | null>(null);
+  const { switchScope, replacePortfolioState, replacePaperLedger } = usePortfolio();
   /** The user the currently-executing auth/hydration flow belongs to. */
   const activeUserIdRef = useRef<string | null>(null);
 
@@ -121,19 +124,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     switchScope(userId);
     beginHydration(userId);
 
-    loadPortfolio(userId)
-      .then((saved) => {
+    // The dev stub has no session to read `paper_transactions` with.
+    const paperLedger = readDevAuthUser() ? null : loadPaperTransactions(userId);
+    Promise.all([loadPortfolio(userId), paperLedger])
+      .then(([saved, paperRows]) => {
         if (activeUserIdRef.current !== userId) return; // stale — user changed/signed out
         // An existing cloud row always wins, including an explicit empty `[]`,
         // which must replace demo seeds rather than coexist with them.
         if (saved !== null) replacePortfolioState(saved);
+        // Paper Trading is replayed from the server ledger, never the local cache.
+        if (paperRows !== null) replacePaperLedger(paperRows);
         completeHydration(userId, 'ready');
       })
       .catch(() => {
         if (activeUserIdRef.current !== userId) return; // stale — user changed/signed out
         completeHydration(userId, 'error');
       });
-  }, [user, switchScope, replacePortfolioState]);
+  }, [user, switchScope, replacePortfolioState, replacePaperLedger]);
+
+  // Pro comes only from the user's `user_subscriptions` row, which only the
+  // service role writes. Session metadata is never trusted for entitlement.
+  const userId = user?.id ?? null;
+  useEffect(() => {
+    if (userId === null) return;
+    const devUser = readDevAuthUser();
+    if (devUser) {
+      setProUserId(devUser.app_metadata['is_pro'] === true ? devUser.id : null);
+      return;
+    }
+    let active = true;
+    loadIsPro(userId)
+      .then((pro) => {
+        if (active) setProUserId(pro ? userId : null);
+      })
+      .catch(() => {
+        if (active) setProUserId(null); // fail closed
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId]);
 
   const signOut = useCallback(async () => {
     const devAuthActive = readDevAuthUser() !== null;
@@ -156,13 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useSessionTimeout(user?.id ?? null, signOut);
 
-  // Temporary entitlement bridge until billing is connected. Supabase user
-  // metadata gives us a production-shaped switch while every existing account
-  // and guest remains on Basic by default.
-  const isPro =
-    sandboxPro ||
-    user?.app_metadata?.['is_pro'] === true ||
-    user?.user_metadata?.['is_pro'] === true;
+  const isPro = sandboxPro || (userId !== null && proUserId === userId);
 
   const activateSandboxPro = useCallback(() => setSandboxPro(true), []);
 

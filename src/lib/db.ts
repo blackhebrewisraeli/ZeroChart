@@ -1,4 +1,5 @@
 import type { Position } from '@/lib/portfolioManager';
+import type { PaperLedgerRow } from '@/lib/portfolioAccounting';
 import type { PortfolioPersistedState, PortfolioStateV3 } from '@/lib/portfolioStore';
 import { isCloudWriteAllowed } from '@/lib/hydrationStore';
 import { supabase } from '@/lib/supabaseClient';
@@ -28,7 +29,7 @@ export class PortfolioNotHydratedError extends Error {
  */
 type PortfolioCloudPayload = PortfolioPersistedState;
 
-async function savePortfolioPayload(userId: string, payload: PortfolioCloudPayload): Promise<void> {
+async function savePortfolioPayload(userId: string, payload: unknown): Promise<void> {
   if (!isCloudWriteAllowed(userId)) throw new PortfolioNotHydratedError(userId);
 
   const { error } = await supabase.from('user_portfolios').upsert(
@@ -50,9 +51,13 @@ export async function savePortfolio(userId: string, positions: Position[]): Prom
   await savePortfolioPayload(userId, positions);
 }
 
-/** Persists the complete v3 envelope while the legacy array API stays intact. */
+/**
+ * Persists the v3 envelope's Core ledgers. Paper Trading is not part of the
+ * snapshot: every paper fill is its own `paper_transactions` row.
+ */
 export async function savePortfolioStateV3(userId: string, state: PortfolioStateV3): Promise<void> {
-  await savePortfolioPayload(userId, state);
+  const { real_tracking, long_term_sim } = state.portfolios;
+  await savePortfolioPayload(userId, { ...state, portfolios: { real_tracking, long_term_sim } });
 }
 
 async function loadPortfolioPayload(userId: string): Promise<unknown | null> {
@@ -90,4 +95,50 @@ export async function loadPortfolio(userId: string): Promise<PortfolioCloudPaylo
  */
 export async function loadPortfolioState(userId: string): Promise<PortfolioCloudPayload | null> {
   return loadPortfolio(userId);
+}
+
+/** A row as the client books it; id, user_id and created_at are server-set. */
+export type PaperTransactionInsert = Pick<
+  PaperLedgerRow,
+  'action' | 'ticker' | 'quantity' | 'price' | 'fees'
+>;
+
+// Supabase's default max-rows; a shorter page means the ledger is exhausted.
+const PAPER_PAGE_SIZE = 1000;
+
+/** The user's Paper Trading ledger, oldest first. RLS limits it to their own rows. */
+export async function loadPaperTransactions(userId: string): Promise<PaperLedgerRow[]> {
+  const rows: PaperLedgerRow[] = [];
+  for (let from = 0; ; from += PAPER_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('paper_transactions')
+      .select('id, action, ticker, quantity, price, fees, created_at')
+      .eq('user_id', userId)
+      .order('created_at')
+      .order('id')
+      .range(from, from + PAPER_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...data);
+    if (data.length < PAPER_PAGE_SIZE) return rows;
+  }
+}
+
+/** Appends one row; the insert trigger rejects a fill the account can't cover. */
+export async function insertPaperTransaction(row: PaperTransactionInsert): Promise<void> {
+  const { error } = await supabase.from('paper_transactions').insert(row);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Whether the user's `user_subscriptions` row grants Pro. Only the service role
+ * writes that table, so this is the one entitlement source the client trusts.
+ */
+export async function loadIsPro(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_subscriptions')
+    .select('status, tier')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.status === 'active' && data.tier === 'pro';
 }

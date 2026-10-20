@@ -38,9 +38,11 @@ export function TradeTicket({
   /** Compact trigger text; defaults to "Trade". */
   label?: string;
 }) {
-  const { executeBuy, executeSell, portfolios } = usePortfolio();
+  const { executeBuy, executeSell, executePaperTrade, portfolios } = usePortfolio();
   const recordsFills = portfolioType !== undefined;
   const [open, setOpen] = useState(false);
+  /** A paper fill is in flight to the server. */
+  const [booking, setBooking] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [side, setSide] = useState<Side>('buy');
   const [amount, setAmount] = useState('');
@@ -96,8 +98,8 @@ export function TradeTicket({
     };
   }, [open]);
 
-  function handleSubmit() {
-    if (!canSubmit) return;
+  async function handleSubmit() {
+    if (!canSubmit || booking) return;
     if (recordsFills) {
       const heldShares = portfolios[portfolioType].positions
         .filter((position) => position.ticker.toUpperCase() === asset.ticker.toUpperCase())
@@ -116,16 +118,23 @@ export function TradeTicket({
         timestamp: new Date().toISOString(),
         intent,
       };
-      const result =
-        side === 'buy'
-          ? // Every ledger's cash moves with its fills, Live Tracking's included:
-            // it mirrors the broker cash a real trade spends or frees.
-            executeBuy(portfolioType, {
-              ...input,
-              requireCash: true,
-              ...(asset.name ? { name: asset.name } : {}),
-            })
-          : executeSell(portfolioType, input);
+      let result: { ok: boolean; error?: string };
+      if (portfolioType === 'paper_trading') {
+        setBooking(true);
+        result = await executePaperTrade({ side, ticker: asset.ticker, shares, price, fee });
+        setBooking(false);
+      } else {
+        result =
+          side === 'buy'
+            ? // Every ledger's cash moves with its fills, Live Tracking's included:
+              // it mirrors the broker cash a real trade spends or frees.
+              executeBuy(portfolioType, {
+                ...input,
+                requireCash: true,
+                ...(asset.name ? { name: asset.name } : {}),
+              })
+            : executeSell(portfolioType, input);
+      }
       if (!result.ok) {
         toast.error(result.error ?? 'Order rejected');
         return;
@@ -286,8 +295,8 @@ export function TradeTicket({
                         'ticket-submit',
                         side === 'buy' ? 'ticket-submit-buy' : 'ticket-submit-sell',
                       )}
-                      disabled={!canSubmit}
-                      onClick={handleSubmit}
+                      disabled={!canSubmit || booking}
+                      onClick={() => void handleSubmit()}
                     >
                       {side === 'buy' ? 'Buy' : 'Sell'} {asset.ticker}
                     </button>

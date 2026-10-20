@@ -139,7 +139,8 @@ Then fill in the two values from **Supabase → Project Settings → API**:
 
 ```env
 VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # a legacy anon key also works
+# Publishable key (sb_publishable_...); a legacy anon key also works
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
 > [!WARNING]
@@ -150,6 +151,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # a legacy anon key also work
 Apply the core schema (`assets_status`, `user_portfolios`, `user_alerts`) with your project's Postgres connection string, found under **Project Settings → Database**:
 
 ```bash
+export DATABASE_URL="postgresql://postgres:<password>@db.<your-project-ref>.supabase.co:5432/postgres"
 for f in drizzle/migrations/000*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 
@@ -160,7 +162,7 @@ npx supabase link --project-ref <your-project-ref>
 npx supabase db push
 ```
 
-Finally, enable **Email** under **Authentication → Providers**.
+Finally, make sure **Email** is enabled under **Authentication → Providers**.
 
 ### 4. Run the dev server
 

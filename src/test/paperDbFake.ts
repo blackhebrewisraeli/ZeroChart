@@ -9,12 +9,13 @@ import type { PaperLedgerRow } from '@/lib/portfolioAccounting';
  */
 export const paperDb = {
   rows: [] as PaperLedgerRow[],
-  insertPaperTransaction: vi.fn(async (row: PaperTransactionInsert) => {
+  insertPaperTransaction: vi.fn((row: PaperTransactionInsert) => {
     paperDb.rows.push({
       ...row,
       id: `row-${paperDb.rows.length}`,
       created_at: new Date().toISOString(),
     });
+    return Promise.resolve();
   }),
-  loadPaperTransactions: vi.fn(async () => [...paperDb.rows]),
+  loadPaperTransactions: vi.fn(() => Promise.resolve([...paperDb.rows])),
 };

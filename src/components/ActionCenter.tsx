@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Flame } from 'lucide-react';
 import { toast } from 'sonner';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
@@ -14,9 +14,9 @@ import { cn } from '@/lib/utils';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
 
-/** Appends fetched rows the realtime feed hasn't already delivered. */
-function appendNew(list: Signal[], rows: Signal[]): Signal[] {
-  const seen = new Set(list.map((s) => s.id));
+/** Appends fetched rows that aren't already listed or known to be resolved. */
+function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>): Signal[] {
+  const seen = new Set([...resolved, ...list.map((s) => s.id)]);
   return [...list, ...rows.filter((row) => !seen.has(row.id))];
 }
 
@@ -29,6 +29,9 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const { scopeUserId: userId, getPortfolio, executeBuy, executeSell } = usePortfolio();
   const [pending, setPending] = useState<Signal[]>([]);
   const [busy, setBusy] = useState(false);
+  // Resolution is one-way (RLS only updates PENDING rows), so a backlog snapshot
+  // still in flight must never bring back a signal resolved after it was read.
+  const resolved = useRef(new Set<string>());
 
   useEffect(() => {
     if (!userId) return;
@@ -41,6 +44,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         (payload: RealtimePostgresChangesPayload<Signal>) => {
           if (payload.eventType === 'DELETE') return;
           const row = payload.new;
+          if (row.status !== 'PENDING') resolved.current.add(row.id);
           setPending((list) => {
             const rest = list.filter((s) => s.id !== row.id);
             return row.status === 'PENDING' ? [row, ...rest] : rest;
@@ -60,7 +64,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           .order('created_at', { ascending: false })
           .then(({ data }) => {
             if (!live || !data) return;
-            setPending((list) => appendNew(list, data));
+            setPending((list) => appendNew(list, data, resolved.current));
           });
       });
     return () => {
@@ -84,6 +88,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
       toast.error('Could not update the signal', { description: error.message });
       return false;
     }
+    resolved.current.add(id);
     setPending((list) => list.filter((s) => s.id !== id));
     return data.length > 0;
   }

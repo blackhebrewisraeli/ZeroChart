@@ -11,6 +11,9 @@ const db = vi.hoisted(() => ({
   eq: vi.fn(),
   channel: vi.fn(),
   emit: (_payload: unknown) => {},
+  // When set, queries wait for release() — a request still in flight.
+  hold: false,
+  release: () => {},
 }));
 
 vi.mock('@/lib/supabaseClient', () => {
@@ -22,8 +25,11 @@ vi.mock('@/lib/supabaseClient', () => {
         db.eq(column, value);
         return q;
       },
-      then: (done: (result: { data: unknown[]; error: null }) => void) =>
-        done({ data: rows(), error: null }),
+      then: (done: (result: { data: unknown[]; error: null }) => void) => {
+        const finish = () => done({ data: rows(), error: null });
+        if (db.hold) db.release = finish;
+        else finish();
+      },
     };
     return q;
   };
@@ -120,6 +126,7 @@ describe('Action Center', () => {
     vi.clearAllMocks();
     db.pending = [];
     db.claimed = [{ id: 'sig-1' }];
+    db.hold = false;
   });
   afterEach(cleanup);
 
@@ -138,6 +145,16 @@ describe('Action Center', () => {
 
     // Resolved elsewhere (another tab): the card goes away.
     act(() => db.emit({ eventType: 'UPDATE', new: signal({ status: 'EXECUTED' }) }));
+    expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
+  });
+
+  it('does not bring back a signal resolved while the backlog fetch is in flight', () => {
+    db.pending = [signal()];
+    db.hold = true;
+    renderSignedIn();
+
+    act(() => db.emit({ eventType: 'UPDATE', new: signal({ status: 'EXECUTED' }) }));
+    act(() => db.release());
     expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
   });
 

@@ -4,3 +4,6 @@ verify_jwt = false
 
 [functions.crypto-price-feed]
 verify_jwt = false
+
+[functions.equity-forex-price-feed]
+verify_jwt = false

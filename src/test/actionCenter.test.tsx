@@ -10,6 +10,8 @@ const db = vi.hoisted(() => ({
   update: vi.fn(),
   eq: vi.fn(),
   channel: vi.fn(),
+  open: vi.fn(),
+  status: 'SUBSCRIBED',
   emit: (_payload: unknown) => {},
   // When set, queries wait for release() — a request still in flight.
   hold: false,
@@ -40,7 +42,7 @@ vi.mock('@/lib/supabaseClient', () => {
       return channel;
     },
     subscribe: (callback: (status: string) => void) => {
-      callback('SUBSCRIBED');
+      callback(db.status);
       return channel;
     },
   };
@@ -53,7 +55,10 @@ vi.mock('@/lib/supabaseClient', () => {
           return query(() => db.claimed);
         },
       }),
-      channel: () => channel,
+      channel: (name: string, options: unknown) => {
+        db.open(name, options);
+        return channel;
+      },
       removeChannel: vi.fn(),
     },
   };
@@ -127,11 +132,15 @@ describe('Action Center', () => {
     db.pending = [];
     db.claimed = [{ id: 'sig-1' }];
     db.hold = false;
+    db.status = 'SUBSCRIBED';
   });
   afterEach(cleanup);
 
   it('subscribes to the user’s signals and shows a realtime BUY as one big card', async () => {
     renderSignedIn();
+    expect(db.open).toHaveBeenCalledWith('trading-signals:user-1', {
+      config: { postgres_changes_options: { wait: true } },
+    });
     expect(db.channel).toHaveBeenCalledWith(
       expect.objectContaining({ table: 'trading_signals', filter: 'user_id=eq.user-1' }),
     );
@@ -155,6 +164,23 @@ describe('Action Center', () => {
 
     act(() => db.emit({ eventType: 'UPDATE', new: signal({ status: 'EXECUTED' }) }));
     act(() => db.release());
+    expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
+  });
+
+  it('still loads the backlog when the realtime join fails', async () => {
+    db.pending = [signal()];
+    db.status = 'CHANNEL_ERROR';
+    renderSignedIn();
+    expect(await screen.findByRole('alert')).toHaveTextContent('BUY SIGNAL: BTCUSDT');
+  });
+
+  it('ignores a late PENDING event for a signal this tab already resolved', async () => {
+    db.pending = [signal()];
+    renderSignedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
+    act(() => db.emit({ eventType: 'INSERT', new: signal() }));
     expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
   });
 

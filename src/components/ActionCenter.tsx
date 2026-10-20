@@ -37,7 +37,10 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
     if (!userId) return;
     let live = true;
     const channel = supabase
-      .channel(`trading-signals:${userId}`)
+      // wait: SUBSCRIBED only once the postgres_changes listener is live, not just the join.
+      .channel(`trading-signals:${userId}`, {
+        config: { postgres_changes_options: { wait: true } },
+      })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'trading_signals', filter: `user_id=eq.${userId}` },
@@ -47,15 +50,19 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           if (row.status !== 'PENDING') resolved.current.add(row.id);
           setPending((list) => {
             const rest = list.filter((s) => s.id !== row.id);
-            return row.status === 'PENDING' ? [row, ...rest] : rest;
+            // A PENDING event can arrive after this tab already resolved the row.
+            return row.status === 'PENDING' && !resolved.current.has(row.id)
+              ? [row, ...rest]
+              : rest;
           });
         },
       )
       .subscribe((status) => {
-        if (status !== 'SUBSCRIBED') return;
-        // Backlog only once the channel is live, so a signal inserted during the
-        // join can't fall between the snapshot and the stream (appendNew dedupes).
-        // Re-runs on reconnect, which also picks up anything missed while offline.
+        if (status === 'CLOSED') return;
+        // Backlog once the listener is live, so a signal inserted during the join
+        // can't fall between the snapshot and the stream (appendNew dedupes).
+        // Re-runs on reconnect, which picks up anything missed while offline, and
+        // on CHANNEL_ERROR / TIMED_OUT so the backlog still shows without realtime.
         void supabase
           .from('trading_signals')
           .select('*')

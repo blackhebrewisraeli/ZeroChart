@@ -23,6 +23,7 @@ declare
   -- Tighten it once the scanner's refresh schedule is known, or fill at the quote.
   tolerance constant numeric := 0.05;
   max_quote_age_hours constant int := 2;
+  rejected constant text := 'check_violation';
   cash numeric;
   held numeric;
   quote numeric;
@@ -47,17 +48,17 @@ begin
 
   if quote is null then
     raise exception '% has no server price, so Paper Trading can''t fill it', new.ticker
-      using errcode = 'check_violation';
+      using errcode = rejected;
   end if;
   if quoted_at < new.created_at - make_interval(hours => max_quote_age_hours) then
     raise exception '%''s server price is over % hours old. Try again after the next price refresh.',
       new.ticker, max_quote_age_hours
-      using errcode = 'check_violation';
+      using errcode = rejected;
   end if;
   if abs(new.price - quote) > quote * tolerance then
     raise exception '% has moved more than % from its server price. Try again after the next price refresh.',
       new.ticker, trim_scale(tolerance * 100) || '%'
-      using errcode = 'check_violation';
+      using errcode = rejected;
   end if;
 
   select
@@ -89,12 +90,12 @@ begin
     );
 
   if new.action = 'BUY' and new.quantity * new.price + new.fees > cash then
-    raise exception 'Insufficient cash' using errcode = 'check_violation';
+    raise exception 'Insufficient cash' using errcode = rejected;
   end if;
   -- 1e-9 matches the engine's ZERO_SHARE_EPSILON, so "sell all" of a
   -- float-summed position still clears.
   if new.action = 'SELL' and new.quantity > held + 1e-9 then
-    raise exception 'Insufficient shares' using errcode = 'check_violation';
+    raise exception 'Insufficient shares' using errcode = rejected;
   end if;
   return new;
 end;

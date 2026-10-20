@@ -4,29 +4,11 @@
 // since the trading-agent scanner was archived on 2026-10-14. current_price,
 // change_24h and updated_at stay with the two price feeds; this run stamps
 // analytics_updated_at instead.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { json, serveFeed, supabase } from '../_shared/feed.ts';
 import { fetchJson, report } from '../_shared/telemetry.ts';
 import { candlesUrl, toRow, type AnalyticsRow } from './analytics.ts';
 
 const FN = 'market-analytics';
-
-// Service role bypasses RLS: clients lost write access in 20261020230000.
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL') ?? '',
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-);
-
-// Same gate as crypto-price-feed: verify_jwt is off (supabase/config.toml), so
-// only a caller holding a project secret key (the cron job, via Vault) gets in.
-const secretKeys: unknown[] = Object.values(
-  JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}'),
-);
-
-const json = (body: unknown, status: number) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
 
 // One candles request per ticker, 10 at a time so Yahoo doesn't answer the
 // burst with 429. A failed request reads as null, so that ticker keeps
@@ -34,11 +16,7 @@ const json = (body: unknown, status: number) =>
 // skipped.
 const CONCURRENCY = 10;
 
-Deno.serve(async (req) => {
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
-  const apikey = req.headers.get('apikey');
-  if (!apikey || !secretKeys.includes(apikey)) return json({ error: 'Unauthorized' }, 401);
-
+serveFeed(async () => {
   // The table's own rows are the watchlist, as in equity-forex-price-feed.
   const { data, error: readError } = await supabase
     .from('assets_status')

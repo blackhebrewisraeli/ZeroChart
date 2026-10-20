@@ -492,7 +492,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                         <p className="robo-results-note">
                           Regime-weighted Multi-Factor Score (RSI · MACD · ATR) · Assets with fewer
                           than {MIN_CANDLES} daily candles are skipped (Not Enough Data) · Suggested
-                          size risks up to 2% of capital at a 1×ATR stop, capped at the allocation ·
+                          size risks up to 2% of capital at a 2×ATR stop, capped at the allocation ·
                           Swap any holding to replace it
                         </p>
                         <ul className="robo-allocation-list">
@@ -582,7 +582,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                   </span>
                                   <span
                                     className="robo-size"
-                                    title="Suggested position size — risks up to 2% of total capital on a 1×ATR(14) stop, capped at this holding's allocation"
+                                    title="Suggested position size — risks up to 2% of total capital on a 2×ATR(14) stop, capped at this holding's allocation"
                                   >
                                     <span className="robo-size-label">Suggested size</span>
                                     <span className="robo-size-value">

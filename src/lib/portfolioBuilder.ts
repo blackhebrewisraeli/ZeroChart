@@ -15,7 +15,7 @@ export interface Allocation {
   score?: number;
   /**
    * ATR-based share quantity that risks up to 2% of total capital on a
-   * 1×ATR(14) stop, capped so the notional never exceeds this asset's
+   * 2×ATR(14) stop, capped so the notional never exceeds this asset's
    * allocated amount; `null` when the asset has no usable price/ATR data.
    */
   suggestedShares?: number | null;

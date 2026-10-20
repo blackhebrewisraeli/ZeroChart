@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { Asset } from '@/lib/assets';
 import type { PortfolioTransaction } from '@/lib/portfolioAccounting';
 
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));

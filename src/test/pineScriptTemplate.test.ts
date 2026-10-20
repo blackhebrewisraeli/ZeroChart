@@ -33,7 +33,7 @@ describe('buildPineScript', () => {
       DEFAULT_CAPITAL_INPUT,
       'input.float(2.0, "Risk per Trade (%)"',
       'input.int(14, "ATR Period"',
-      'input.float(1.0, "ATR Trailing Stop Multiplier"',
+      'input.float(2.0, "ATR Trailing Stop Multiplier"',
       'input.bool(true, "Show ZeroChart Quant HUD Table"',
       'input.string("Top Right", "HUD Position"',
       'input.bool(true, "Plot ATR Trailing Stop"',

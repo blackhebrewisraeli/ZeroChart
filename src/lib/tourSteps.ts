@@ -41,7 +41,7 @@ export const tourSteps: TourStep[] = [
       target: '[data-tour="robo"]',
       title: 'Quant Analyzer',
       content:
-        'Builds a simulated portfolio from regime-weighted Multi-Factor Scores and suggests ATR position sizes that risk at most 2% of capital on a 1×ATR stop.',
+        'Builds a simulated portfolio from regime-weighted Multi-Factor Scores and suggests ATR position sizes that risk at most 2% of capital on a 2×ATR stop.',
       placement: 'bottom',
     },
   ]),

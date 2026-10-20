@@ -1,7 +1,7 @@
 // Pure Yahoo Finance → assets_status mapping: no Deno or Supabase imports, so
 // vitest covers it from src/test.
 import { classifyTicker } from '../../../src/lib/ticker.ts';
-import type { QuoteRow } from '../crypto-price-feed/prices.ts';
+import { changeFrom, type QuoteRow } from '../crypto-price-feed/prices.ts';
 
 // The spark endpoint refuses more than 20 symbols per request.
 const BATCH = 20;
@@ -26,7 +26,8 @@ export function sparkUrls(tickers: string[]): string[] {
  * One spark body as assets_status rows; missing or non-positive quotes are
  * dropped. updated_at is the quote's regularMarketTime, not now: a closed
  * market keeps its last-close time, so check_paper_transaction's 2-hour age
- * check refuses fills until the market reopens.
+ * check refuses fills until the market reopens. change_24h runs from the
+ * previous session's close.
  */
 export function toRows(body: unknown): QuoteRow[] {
   // A rejected request ({spark: {result: null, error}}) has no result array.
@@ -47,6 +48,7 @@ export function toRows(body: unknown): QuoteRow[] {
       rows.push({
         ticker: result.symbol,
         current_price: price,
+        change_24h: changeFrom(price, Number(meta?.chartPreviousClose)),
         updated_at: new Date(time * 1000).toISOString(),
       });
     }

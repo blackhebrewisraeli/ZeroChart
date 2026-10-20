@@ -20,7 +20,15 @@ describe('equity-forex-price-feed', () => {
           result: [
             {
               symbol: 'AAPL',
-              response: [{ meta: { regularMarketPrice: 342.38, regularMarketTime: 1792526400 } }],
+              response: [
+                {
+                  meta: {
+                    regularMarketPrice: 342.38,
+                    regularMarketTime: 1792526400,
+                    chartPreviousClose: 335,
+                  },
+                },
+              ],
             },
             {
               symbol: 'JPY=X',
@@ -31,8 +39,18 @@ describe('equity-forex-price-feed', () => {
         },
       }),
     ).toEqual([
-      { ticker: 'AAPL', current_price: 342.38, updated_at: '2026-10-20T20:00:00.000Z' },
-      { ticker: 'JPY=X', current_price: 158.07, updated_at: '2026-10-20T14:09:46.000Z' },
+      {
+        ticker: 'AAPL',
+        current_price: 342.38,
+        change_24h: expect.closeTo(342.38 / 335 - 1),
+        updated_at: '2026-10-20T20:00:00.000Z',
+      },
+      {
+        ticker: 'JPY=X',
+        current_price: 158.07,
+        change_24h: null,
+        updated_at: '2026-10-20T14:09:46.000Z',
+      },
     ]);
   });
 

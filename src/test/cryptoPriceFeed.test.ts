@@ -5,18 +5,23 @@ const now = new Date('2026-10-20T12:00:00Z');
 const at = now.toISOString();
 
 describe('crypto-price-feed rows', () => {
-  it('maps Binance USDT pairs onto the scanner tickers', () => {
+  it('maps Binance USDT pairs onto the scanner tickers, with the rolling 24h change', () => {
     expect(
       toRows(
         [
-          { symbol: 'ETHUSDT', price: '2418.76000000' },
-          { symbol: 'BTCUSDT', price: '82319.46000000' },
+          { symbol: 'ETHUSDT', lastPrice: '2418.76000000' },
+          { symbol: 'BTCUSDT', lastPrice: '82000.00000000', openPrice: '80000.00000000' },
         ],
         now,
       ),
     ).toEqual([
-      { ticker: 'BTC-USD', current_price: 82319.46, updated_at: at },
-      { ticker: 'ETH-USD', current_price: 2418.76, updated_at: at },
+      {
+        ticker: 'BTC-USD',
+        current_price: 82000,
+        change_24h: expect.closeTo(0.025),
+        updated_at: at,
+      },
+      { ticker: 'ETH-USD', current_price: 2418.76, change_24h: null, updated_at: at },
     ]);
   });
 
@@ -24,8 +29,8 @@ describe('crypto-price-feed rows', () => {
     expect(
       toRows(
         [
-          { symbol: 'BTCUSDT', price: '0' },
-          { symbol: 'ETHUSDT', price: 'abc' },
+          { symbol: 'BTCUSDT', lastPrice: '0', openPrice: '1' },
+          { symbol: 'ETHUSDT', lastPrice: 'abc' },
           { symbol: 'SOLUSDT' },
           null,
         ],

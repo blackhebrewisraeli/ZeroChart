@@ -7,3 +7,6 @@ verify_jwt = false
 
 [functions.equity-forex-price-feed]
 verify_jwt = false
+
+[functions.market-analytics]
+verify_jwt = false

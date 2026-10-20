@@ -10,7 +10,6 @@ import {
   DEFAULT_PINE_CAPITAL,
   PINE_SCRIPT_FILENAME,
   TV_WEBHOOK_PATH,
-  buildAlertMessage,
   buildPineScript,
 } from '@/lib/pineScriptTemplate';
 
@@ -53,12 +52,11 @@ function CopyField({ label, value }: Readonly<{ label: string; value: string }>)
   );
 }
 
-/**
- * Webhook URL, token and alert message for TradingView → Action Center.
- * Lives inside Dialog.Content, so the plaintext token is dropped when the modal closes.
- */
-function ConnectTradingView() {
-  const [token, setToken] = useState<string | null>(null);
+/** Webhook URL and token for TradingView → Action Center; the token goes into the script above. */
+function ConnectTradingView({
+  token,
+  onToken,
+}: Readonly<{ token: string | null; onToken: (token: string) => void }>) {
   const [busy, setBusy] = useState(false);
 
   async function generate() {
@@ -69,21 +67,21 @@ function ConnectTradingView() {
       toast.error("Couldn't generate a webhook token", { description: error?.message });
       return;
     }
-    setToken(data);
+    onToken(data);
   }
 
   return (
     <section className="pine-connect" aria-labelledby="pine-connect-title">
       <h3 id="pine-connect-title">Connect TradingView</h3>
       <p>
-        Send alerts to your Action Center: in the TradingView alert, tick Webhook URL, paste the URL
-        below, and use the alert message as the message.
+        Send alerts to your Action Center: generate a token, copy the Pine Script again (the token
+        is now inside it), then create a TradingView alert on ZC Quant with the condition “Any
+        alert() function call”, tick Webhook URL and paste the URL below.
       </p>
       <CopyField label="Webhook URL" value={`${resolveSupabaseUrl()}${TV_WEBHOOK_PATH}`} />
       {token !== null && (
         <>
           <CopyField label="Webhook token" value={token} />
-          <CopyField label="Alert message" value={buildAlertMessage(token)} />
           <p className="pine-connect-note">Save the token now. It is shown only once.</p>
         </>
       )}
@@ -99,9 +97,24 @@ function ConnectTradingView() {
 
 /** One-click export of the ZeroChart Quant HUD Pine Script v6 indicator. */
 export function PineScriptModal({ open, onOpenChange, capital }: Readonly<PineScriptModalProps>) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="pricing-overlay" />
+        <Dialog.Content className="pricing-modal pine-modal" aria-describedby="pine-description">
+          <PineExport capital={capital} />
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/** Lives inside Dialog.Content, so the plaintext token is dropped when the modal closes. */
+function PineExport({ capital }: Readonly<{ capital: number | null | undefined }>) {
   const { user } = useAuth();
+  const [token, setToken] = useState<string | null>(null);
   const prefilled = capital != null && Number.isFinite(capital) && capital > 0 ? capital : null;
-  const source = buildPineScript(prefilled);
+  const source = buildPineScript(prefilled, token);
 
   async function copy() {
     try {
@@ -125,64 +138,57 @@ export function PineScriptModal({ open, onOpenChange, capital }: Readonly<PineSc
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="pricing-overlay" />
-        <Dialog.Content className="pricing-modal pine-modal" aria-describedby="pine-description">
-          <div className="pricing-scanline" aria-hidden="true" />
-          <Dialog.Close className="pricing-close" aria-label="Close Pine Script export">
-            <X size={18} />
-          </Dialog.Close>
+    <>
+      <div className="pricing-scanline" aria-hidden="true" />
+      <Dialog.Close className="pricing-close" aria-label="Close Pine Script export">
+        <X size={18} />
+      </Dialog.Close>
 
-          <header className="pricing-header">
-            <span className="pricing-icon" aria-hidden="true">
-              <LineChart size={18} />
-            </span>
-            <div>
-              <Dialog.Title className="pricing-title">
-                ZeroChart Quant HUD for TradingView
-              </Dialog.Title>
-              <Dialog.Description id="pine-description" className="pricing-description">
-                Pine Script v6 overlay running the same RSI · MACD · ATR multi-factor score,
-                market-regime detection and ATR position sizing as ZeroChart.
-              </Dialog.Description>
-            </div>
-          </header>
+      <header className="pricing-header">
+        <span className="pricing-icon" aria-hidden="true">
+          <LineChart size={18} />
+        </span>
+        <div>
+          <Dialog.Title className="pricing-title">ZeroChart Quant HUD for TradingView</Dialog.Title>
+          <Dialog.Description id="pine-description" className="pricing-description">
+            Pine Script v6 overlay running the same RSI · MACD · ATR multi-factor score,
+            market-regime detection and ATR position sizing as ZeroChart.
+          </Dialog.Description>
+        </div>
+      </header>
 
-          <p className="pine-capital">
-            <span className="pricing-pro-badge">Flagship</span>
-            {prefilled !== null
-              ? `Account Capital pre-filled from your portfolio: ${formatPrice(prefilled)}`
-              : `Account Capital defaults to ${formatPrice(DEFAULT_PINE_CAPITAL)} — Pro pre-fills it from your portfolio.`}
-          </p>
+      <p className="pine-capital">
+        <span className="pricing-pro-badge">Flagship</span>
+        {prefilled !== null
+          ? `Account Capital pre-filled from your portfolio: ${formatPrice(prefilled)}`
+          : `Account Capital defaults to ${formatPrice(DEFAULT_PINE_CAPITAL)} — Pro pre-fills it from your portfolio.`}
+      </p>
 
-          <ol className="pine-steps">
-            {STEPS.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
+      <ol className="pine-steps">
+        {STEPS.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
 
-          <textarea
-            className="pine-code"
-            value={source}
-            readOnly
-            wrap="off"
-            spellCheck={false}
-            aria-label="Pine Script source"
-          />
+      <textarea
+        className="pine-code"
+        value={source}
+        readOnly
+        wrap="off"
+        spellCheck={false}
+        aria-label="Pine Script source"
+      />
 
-          <div className="pine-actions">
-            <button type="button" className="pricing-upgrade-button" onClick={copy}>
-              <Copy size={15} /> Copy Pine Script (v6)
-            </button>
-            <button type="button" className="pricing-basic-button" onClick={download}>
-              <Download size={15} /> Download .pine
-            </button>
-          </div>
+      <div className="pine-actions">
+        <button type="button" className="pricing-upgrade-button" onClick={copy}>
+          <Copy size={15} /> Copy Pine Script (v6)
+        </button>
+        <button type="button" className="pricing-basic-button" onClick={download}>
+          <Download size={15} /> Download .pine
+        </button>
+      </div>
 
-          {user && <ConnectTradingView />}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+      {user && <ConnectTradingView token={token} onToken={setToken} />}
+    </>
   );
 }

@@ -11,8 +11,13 @@ vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
 
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { REGIME_WEIGHTS, type MarketRegime } from '@/lib/multiFactor';
-import { buildAlertMessage, buildPineScript } from '@/lib/pineScriptTemplate';
-import { parseSignal } from '../../supabase/functions/tv-webhook/payload';
+import { buildPineScript } from '@/lib/pineScriptTemplate';
+import { DEFAULT_ATR_STOP_MULTIPLIER } from '@/lib/risk';
+import {
+  SECRET_PLACEHOLDER,
+  parseSignal,
+  readToken,
+} from '../../supabase/functions/tv-webhook/payload';
 
 const DEFAULT_CAPITAL_INPUT = 'input.float(10000, "Account Capital ($)"';
 
@@ -28,7 +33,7 @@ describe('buildPineScript', () => {
       DEFAULT_CAPITAL_INPUT,
       'input.float(2.0, "Risk per Trade (%)"',
       'input.int(14, "ATR Period"',
-      'input.float(2.0, "ATR Trailing Stop Multiplier"',
+      'input.float(1.0, "ATR Trailing Stop Multiplier"',
       'input.bool(true, "Show ZeroChart Quant HUD Table"',
       'input.string("Top Right", "HUD Position"',
       'input.bool(true, "Plot ATR Trailing Stop"',
@@ -66,7 +71,8 @@ describe('buildPineScript', () => {
       'text_size = size.normal',
       'size.large',
       '"SIGNAL / ACTION"',
-      '"Confidence: "',
+      '"SIGNAL SCORE"',
+      '"Signal Score: " + str.tostring(score) + " / 100"',
       '"Exit at $"',
       '"MARKET VIBE"',
       '#101828',
@@ -79,8 +85,11 @@ describe('buildPineScript', () => {
       'score >= 78',
       'score <= 28',
       'score >= 80',
-      '\\"action\\": \\"BUY\\"',
-      '{{plot(\\"ZC Score\\")}}',
+      // alert(): live values through string concatenation.
+      '\\"signal_score\\": " + str.tostring(score)',
+      '\\"quantity\\": " + str.tostring(suggestedShares)',
+      '\\"action\\": \\"" + side',
+      '\\"event_id\\": \\"" + str.format_time(timenow',
     ]) {
       expect(source).toContain(fragment);
     }
@@ -108,6 +117,61 @@ describe('buildPineScript', () => {
         volatility: pick('wVolatility', neutral.volatility),
       }).toEqual(REGIME_WEIGHTS[regime]);
     }
+  });
+
+  it('defaults the ATR stop multiplier to risk.ts', () => {
+    const multiplier = source.match(/input\.float\(([\d.]+), "ATR Trailing Stop Multiplier"/)?.[1];
+    expect(Number(multiplier)).toBe(DEFAULT_ATR_STOP_MULTIPLIER);
+  });
+
+  it('sends alertcondition JSON that tv-webhook accepts once TradingView fills it in', () => {
+    const script = buildPineScript(null, 'tok123');
+    // Evaluates a Pine const-string expression: "literal" + NAME + "literal".
+    const consts = new Map<string, string>();
+    const evaluate = (expr: string) =>
+      (expr.match(/"(?:[^"\\]|\\.)*"|\b[A-Z_]+\b/g) ?? [])
+        .map((part) => (part.startsWith('"') ? (JSON.parse(part) as string) : consts.get(part)))
+        .join('');
+    for (const [, name, expr] of script.matchAll(/^const string (\w+) = (.*)$/gm)) {
+      consts.set(name ?? '', evaluate(expr ?? ''));
+    }
+    const fill = (message: string) =>
+      message
+        .replace('{{ticker}}', 'BTCUSDT')
+        .replace('{{plot("ZC Score")}}', '85')
+        .replace('{{close}}', '50000.5')
+        .replace('{{plot("ZC Quantity")}}', '0.05')
+        .replace('{{plot("ZC Stop")}}', '48000')
+        .replace('{{timenow}}', '2026-10-20T12:00:00Z');
+
+    const messages = [...script.matchAll(/^alertcondition\(.*?, "[^"]+", (.*)\)$/gm)].map(
+      ([, expr]) => JSON.parse(fill(evaluate(expr ?? ''))) as unknown,
+    );
+    expect(messages).toHaveLength(3);
+    expect(messages.map((body) => parseSignal(body))).toEqual(
+      ['BUY', 'SELL', 'SELL'].map((action) => ({
+        ok: true,
+        signal: {
+          ticker: 'BTCUSDT',
+          action,
+          signal_score: 85,
+          price: 50_000.5,
+          quantity: 0.05,
+          stop_loss: 48_000,
+          event_id: '2026-10-20T12:00:00Z',
+        },
+      })),
+    );
+    expect(messages.map(readToken)).toEqual(['tok123', 'tok123', 'tok123']);
+  });
+
+  it('injects the webhook token everywhere, but only a token-shaped one', () => {
+    expect(source).toContain(`const string WEBHOOK_SECRET = "${SECRET_PLACEHOLDER}"`);
+    const injected = buildPineScript(null, 'abc123');
+    expect(injected).not.toContain(SECRET_PLACEHOLDER);
+    expect(injected).toContain('const string WEBHOOK_SECRET = "abc123"');
+    expect(buildPineScript(null, 'x" + na + "')).toBe(source);
+    expect(buildPineScript(null, '')).toBe(source);
   });
 
   it('injects positive portfolio capital and keeps the $10k default otherwise', () => {
@@ -156,17 +220,12 @@ describe('Connect TradingView', () => {
     vi.unstubAllEnvs();
   });
 
-  it('builds an alert message the webhook accepts', () => {
-    const body = JSON.parse(buildAlertMessage('tok').replace('{{ticker}}', 'BTCUSDT'));
-    expect(parseSignal(body)).toMatchObject({ ok: true, token: 'tok' });
-  });
-
   it('is hidden from signed-out users', () => {
     render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
     expect(screen.queryByText('Connect TradingView')).not.toBeInTheDocument();
   });
 
-  it('mints a token and renders the webhook URL and alert message', async () => {
+  it('mints a token, shows the webhook URL and bakes the token into the script', async () => {
     vi.stubEnv('VITE_SUPABASE_URL', 'https://demo.supabase.co');
     auth.user = { id: 'user-1' };
     rpc.mockResolvedValue({ data: 'tok123', error: null });
@@ -183,8 +242,8 @@ describe('Connect TradingView', () => {
 
     expect(await screen.findByLabelText('Webhook token')).toHaveValue('tok123');
     expect(rpc).toHaveBeenCalledWith('rotate_signal_webhook_token');
-    expect(screen.getByLabelText('Alert message')).toHaveValue(
-      '{"ticker":"{{ticker}}","action":"BUY","score":85,"size":500,"stop_loss":null,"secret_token":"tok123"}',
-    );
+    const script = screen.getByLabelText('Pine Script source');
+    expect(script).toHaveValue(buildPineScript(null, 'tok123'));
+    expect((script as HTMLTextAreaElement).value).not.toContain(SECRET_PLACEHOLDER);
   });
 });

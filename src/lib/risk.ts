@@ -8,6 +8,9 @@
 /** Fraction of capital risked per trade by default (2%). */
 export const DEFAULT_RISK_PERCENT = 0.02;
 
+/** Stop distance in ATRs; the Pine HUD's "ATR Trailing Stop Multiplier" defaults to it. */
+export const DEFAULT_ATR_STOP_MULTIPLIER = 1;
+
 /** Annualization factor for daily equity curves (crypto trades every day). */
 export const DAILY_PERIODS_PER_YEAR = 365;
 
@@ -137,7 +140,8 @@ export function recommendPositionSize({
       ? Math.min(capital, allocatedCapital)
       : capital;
 
-  const riskShares = riskAmount / atr;
+  const stopDistance = atr * DEFAULT_ATR_STOP_MULTIPLIER;
+  const riskShares = riskAmount / stopDistance;
   const budgetShares = budget / price;
   const isCapped = riskShares > budgetShares;
 
@@ -152,7 +156,7 @@ export function recommendPositionSize({
   return {
     shares,
     riskAmount,
-    stopPrice: Math.max(0, Number((price - atr).toFixed(6))),
+    stopPrice: Math.max(0, Number((price - stopDistance).toFixed(6))),
     notional: Number((shares * price).toFixed(2)),
     isCapped,
   };

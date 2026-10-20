@@ -80,38 +80,45 @@ export type Database = {
         };
         Relationships: [];
       };
-      // Mirrors 20261020120000_create_trading_signals.sql; rows arrive via the tv-webhook function.
+      // Mirrors 20261020120000_create_trading_signals.sql + 20261020180000_signal_contract_v2.sql;
+      // rows arrive via the tv-webhook function. `quantity` is in units, not dollars.
       trading_signals: {
         Row: {
           action: string;
-          conviction_score: number;
           created_at: string;
+          event_id: string | null;
           id: string;
+          price: number | null;
+          quantity: number;
+          signal_score: number;
           status: string;
           stop_loss: number | null;
-          suggested_size: number;
           ticker: string;
           user_id: string;
         };
         Insert: {
           action: string;
-          conviction_score: number;
           created_at?: string;
+          event_id?: string | null;
           id?: string;
+          price?: number | null;
+          quantity: number;
+          signal_score: number;
           status?: string;
           stop_loss?: number | null;
-          suggested_size: number;
           ticker: string;
           user_id: string;
         };
         Update: {
           action?: string;
-          conviction_score?: number;
           created_at?: string;
+          event_id?: string | null;
           id?: string;
+          price?: number | null;
+          quantity?: number;
+          signal_score?: number;
           status?: string;
           stop_loss?: number | null;
-          suggested_size?: number;
           ticker?: string;
           user_id?: string;
         };

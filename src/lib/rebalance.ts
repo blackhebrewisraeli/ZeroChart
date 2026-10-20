@@ -69,7 +69,9 @@ export function computeRebalancePlan(
     costValue.set(ticker, (costValue.get(ticker) ?? 0) + position.shares * position.buyPrice);
   }
 
-  const tickers = [...new Set([...shares.keys(), ...Object.keys(targets)])].sort();
+  const tickers = [...new Set([...shares.keys(), ...Object.keys(targets)])].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const valued = tickers.map((ticker) => {
     const price = prices.get(ticker);
     const held = shares.get(ticker) ?? 0;

@@ -83,6 +83,6 @@ export function withViewSwitching(
   onViewChange: (view: TourView) => void,
 ): Step[] {
   return steps.map(({ view, ...step }) =>
-    view ? { ...step, before: async () => onViewChange(view) } : step,
+    view ? { ...step, before: () => Promise.resolve(onViewChange(view)) } : step,
   );
 }

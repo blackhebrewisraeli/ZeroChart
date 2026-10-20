@@ -52,7 +52,7 @@ export function generateTacticalSignals(
     const result = scores.get(asset.ticker);
     if (result?.status !== 'OK') continue;
     const { signal_score: score, regime, rationale } = result;
-    const updatedAt = asset.updated_at ? Date.parse(asset.updated_at) : NaN;
+    const updatedAt = asset.updated_at ? Date.parse(asset.updated_at) : Number.NaN;
     const asOf = Number.isFinite(updatedAt) ? updatedAt : null;
     const base = { ticker: asset.ticker, score, regime, rationale, asOf };
     if (isHeld && score < SELL_BELOW) signals.push({ type: 'SELL', ...base });

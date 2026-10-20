@@ -7,7 +7,7 @@
 
 /** Simple Moving Average over `period` bars. */
 export function sma(values: number[], period: number): Float64Array {
-  const out = new Float64Array(values.length).fill(NaN);
+  const out = new Float64Array(values.length).fill(Number.NaN);
   if (!Number.isInteger(period) || period <= 0 || values.length < period) return out;
 
   const prices = Float64Array.from(values);
@@ -25,7 +25,7 @@ export function sma(values: number[], period: number): Float64Array {
  * The first value is available at index `period` (one change earlier than SMA).
  */
 export function rsi(values: number[], period = 14): Float64Array {
-  const out = new Float64Array(values.length).fill(NaN);
+  const out = new Float64Array(values.length).fill(Number.NaN);
   if (!Number.isInteger(period) || period <= 0 || values.length <= period) return out;
 
   const prices = Float64Array.from(values);
@@ -77,7 +77,7 @@ export interface MacdResult {
  * Values before the seed stay `NaN`.
  */
 function emaSeries(values: Float64Array, period: number): Float64Array {
-  const out = new Float64Array(values.length).fill(NaN);
+  const out = new Float64Array(values.length).fill(Number.NaN);
   if (!Number.isInteger(period) || period <= 0 || values.length < period) return out;
 
   let seed = 0;
@@ -102,9 +102,9 @@ function emaSeries(values: Float64Array, period: number): Float64Array {
 export function macd(values: number[], fast = 12, slow = 26, signalPeriod = 9): MacdResult {
   const length = values.length;
   const result: MacdResult = {
-    macd: new Float64Array(length).fill(NaN),
-    signal: new Float64Array(length).fill(NaN),
-    histogram: new Float64Array(length).fill(NaN),
+    macd: new Float64Array(length).fill(Number.NaN),
+    signal: new Float64Array(length).fill(Number.NaN),
+    histogram: new Float64Array(length).fill(Number.NaN),
   };
   if (
     !Number.isInteger(fast) ||
@@ -169,7 +169,7 @@ export function macd(values: number[], fast = 12, slow = 26, signalPeriod = 9): 
  */
 export function atr(highs: number[], lows: number[], closes: number[], period = 14): Float64Array {
   const length = closes.length;
-  const out = new Float64Array(length).fill(NaN);
+  const out = new Float64Array(length).fill(Number.NaN);
   if (
     !Number.isInteger(period) ||
     period <= 0 ||

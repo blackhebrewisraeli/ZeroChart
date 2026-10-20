@@ -78,7 +78,7 @@ function csvCell(value: string | number | null | undefined): string {
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
   // Tickers and notes are user input: neutralise spreadsheet formulas, then RFC 4180 quote.
   const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 /** Serialises the ledger (in recorded order) as RFC 4180 CSV. */

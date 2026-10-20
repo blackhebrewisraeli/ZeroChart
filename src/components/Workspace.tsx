@@ -1,18 +1,19 @@
-import { useMatch, useNavigate, useSearch } from '@tanstack/react-router';
+import { useMatch, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { memo, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowDown,
   ArrowUpRight,
-  Briefcase,
   CandlestickChart,
   Flame,
   LogOut,
   Radio,
   RefreshCw,
+  Search,
   TrendingDown,
   TrendingUp,
+  UserRound,
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,8 @@ import { RoboAdvisor } from '@/components/RoboAdvisor';
 import { BrokerModal } from '@/components/BrokerModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PaperTradingTerminal } from '@/components/PaperTradingTerminal';
+import { AccountPanel } from '@/components/AccountPanel';
+import { PriceAlerts } from '@/components/PriceAlerts';
 import { LandingPage } from '@/components/LandingPage';
 import { TourGuide } from '@/components/TourGuide';
 import { Segmented } from '@/components/Segmented';
@@ -266,25 +269,26 @@ const MarketRow = memo(function MarketRow({
   );
 });
 
-type WorkspaceView = 'scanner' | 'portfolio' | 'paper';
+type WorkspaceView = 'research' | 'paper' | 'account';
+
+const VIEW_PATHS = {
+  research: '/',
+  paper: '/paper-trading',
+  account: '/account',
+} as const satisfies Record<WorkspaceView, string>;
 
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('All');
-  // The URL is the source of truth: /paper-trading, or / with ?view=scanner.
+  // The URL is the source of truth: / (Research), /paper-trading, /account.
   const navigate = useNavigate();
   const onPaper = useMatch({ from: '/paper-trading', shouldThrow: false }) !== undefined;
-  const { view: searchView } = useSearch({ strict: false });
-  const view: WorkspaceView = onPaper
-    ? 'paper'
-    : searchView === 'scanner'
-      ? 'scanner'
-      : 'portfolio';
-  const setView = (next: WorkspaceView) =>
-    void (next === 'paper'
-      ? navigate({ to: '/paper-trading' })
-      : navigate({ to: '/', search: next === 'scanner' ? { view: 'scanner' } : {} }));
+  const onAccount = useMatch({ from: '/account', shouldThrow: false }) !== undefined;
+  let view: WorkspaceView = 'research';
+  if (onPaper) view = 'paper';
+  else if (onAccount) view = 'account';
+  const setView = (next: WorkspaceView) => void navigate({ to: VIEW_PATHS[next] });
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const { user, signOut } = useAuth();
   const { portfolios, activePortfolioType } = usePortfolio();
@@ -337,18 +341,10 @@ function Terminal() {
             onChange={setView}
             options={[
               {
-                value: 'scanner',
+                value: 'research',
                 label: (
                   <>
-                    <CandlestickChart size={14} /> Scanner
-                  </>
-                ),
-              },
-              {
-                value: 'portfolio',
-                label: (
-                  <>
-                    <Briefcase size={14} /> Wealth <span className="segment-tag">Core</span>
+                    <Search size={14} /> Research
                   </>
                 ),
               },
@@ -356,7 +352,15 @@ function Terminal() {
                 value: 'paper',
                 label: (
                   <>
-                    <Activity size={14} /> Paper <span className="segment-tag">Desk</span>
+                    <Activity size={14} /> Paper Desk <span className="segment-tag">Sim</span>
+                  </>
+                ),
+              },
+              {
+                value: 'account',
+                label: (
+                  <>
+                    <UserRound size={14} /> Account
                   </>
                 ),
               },
@@ -451,9 +455,13 @@ function Terminal() {
           </div>
         )}
         {view === 'paper' ? (
-          <PaperTradingTerminal assets={baseAssets} />
-        ) : view === 'portfolio' ? (
-          <PortfolioDashboard assets={baseAssets} />
+          <>
+            <PaperTradingTerminal assets={baseAssets} />
+            <hr className="zone-divider" />
+            <PortfolioDashboard assets={baseAssets} portfolioType="long_term_sim" />
+          </>
+        ) : view === 'account' ? (
+          <AccountPanel assets={baseAssets} />
         ) : query.isPending && !preview ? (
           <div aria-busy="true">
             <div className="hero skeleton-hero">
@@ -481,7 +489,7 @@ function Terminal() {
                   <span className="markets-count font-mono">
                     {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
                   </span>
-                  <RoboAdvisor assets={baseAssets} onInvest={() => setView('portfolio')} />
+                  <RoboAdvisor assets={baseAssets} onInvest={() => setView('paper')} />
                 </div>
               </div>
               <div className="markets-controls">
@@ -540,6 +548,9 @@ function Terminal() {
                 </div>
               )}
             </section>
+            <section className="portfolio-section" aria-label="Price alerts">
+              <PriceAlerts assets={baseAssets} user={user} />
+            </section>
           </>
         ) : !query.isError ? (
           <div className="empty-state">
@@ -557,7 +568,7 @@ function Terminal() {
       <footer className="terminal-footer page-width">
         <div className="flex items-center gap-2">
           <Zap size={13} />
-          <span>Algorithmic signals. Live charts. Zero noise.</span>
+          <span>Quantitative research and paper trading environment.</span>
         </div>
         <span>Quantitative analysis is informational. Not financial advice.</span>
         <span className="font-mono text-[10px]">
@@ -582,7 +593,7 @@ function Terminal() {
   );
 }
 
-/** Auth-gated app shell shared by `/` (Scanner, Wealth) and `/paper-trading`. */
+/** Auth-gated app shell shared by `/` (Research), `/paper-trading` and `/account`. */
 export function Workspace() {
   const { user, loading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);

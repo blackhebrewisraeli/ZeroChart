@@ -405,7 +405,7 @@ describe('public portfolio view', () => {
 
     expect(screen.getByRole('heading', { name: 'Quant Portfolio Snapshot' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Asset allocation' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Robo-Advisor scores' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Quant scores' })).toBeVisible();
     expect(
       screen.getAllByRole('link', {
         name: /Built with ZeroChart - Create your own Quant Portfolio/i,

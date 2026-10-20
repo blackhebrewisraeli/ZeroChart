@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as PaperTradingRouteImport } from './routes/paper-trading'
 import { Route as PPortfolioIdRouteImport } from './routes/p/$portfolioId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PaperTradingRoute = PaperTradingRouteImport.update({
@@ -31,30 +37,34 @@ const PPortfolioIdRoute = PPortfolioIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/paper-trading': typeof PaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/paper-trading': typeof PaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/paper-trading': typeof PaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/paper-trading' | '/p/$portfolioId'
+  fullPaths: '/' | '/account' | '/paper-trading' | '/p/$portfolioId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/paper-trading' | '/p/$portfolioId'
-  id: '__root__' | '/' | '/paper-trading' | '/p/$portfolioId'
+  to: '/' | '/account' | '/paper-trading' | '/p/$portfolioId'
+  id: '__root__' | '/' | '/account' | '/paper-trading' | '/p/$portfolioId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   PaperTradingRoute: typeof PaperTradingRoute
   PPortfolioIdRoute: typeof PPortfolioIdRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/paper-trading': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   PaperTradingRoute: PaperTradingRoute,
   PPortfolioIdRoute: PPortfolioIdRoute,
 }

@@ -7,8 +7,9 @@ export const LEDGER_NAMES: Record<PortfolioType, string> = {
 };
 
 /**
- * The ledgers the Core (Wealth) dashboard switches between. Paper Trading has
- * its own terminal, where every tactical trade books.
+ * The ledgers the Core dashboard shows: Simulation on the Paper Desk, Live
+ * Tracking under Account. Paper Trading has its own terminal, where every
+ * tactical trade books.
  */
 export type CorePortfolioType = Exclude<PortfolioType, 'paper_trading'>;
 

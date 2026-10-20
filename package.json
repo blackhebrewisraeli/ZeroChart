@@ -1,6 +1,6 @@
 {
   "name": "zerochart",
-  "description": "Institutional-grade quantitative trading and wealth management ecosystem: a TradingView Pine Script HUD plus a React + Supabase command center for portfolio accounting, backtesting, and paper trading.",
+  "description": "Quantitative research and paper trading environment: a TradingView Pine Script HUD plus a React + Supabase app to understand, backtest, and simulate multifactor signals.",
   "author": "blackhebrewisraeli (https://github.com/blackhebrewisraeli)",
   "license": "MIT",
   "homepage": "https://zero-chart.vercel.app",

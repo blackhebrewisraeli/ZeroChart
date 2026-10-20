@@ -33,6 +33,7 @@ import { usePortfolio } from '@/lib/portfolioStore';
 import {
   computePortfolioValuation,
   positionCostBasis,
+  type CorePortfolioType,
   type PortfolioTransaction,
 } from '@/lib/portfolioAccounting';
 import {
@@ -60,11 +61,9 @@ import { AddPositionModal } from '@/components/AddPositionModal';
 import { AuthModal } from '@/components/AuthModal';
 import { AssetIcon } from '@/components/AssetIcon';
 import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
-import { Segmented } from '@/components/Segmented';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
 import { BacktestChart } from '@/components/BacktestChart';
-import { PriceAlerts } from '@/components/PriceAlerts';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { RebalancePanel } from '@/components/RebalancePanel';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
@@ -77,7 +76,6 @@ import {
   publishSharedPortfolio,
 } from '@/lib/sharedPortfolio';
 
-type PortfolioMode = 'simulation' | 'live';
 type AnalyticsTab = 'backtest' | 'ledger';
 
 const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
@@ -537,10 +535,16 @@ export function TradeLedger({
   );
 }
 
+/**
+ * One Core ledger, chosen by the zone that mounts it: Simulation on the Paper
+ * Desk, Live Tracking under Account. The two never share a screen.
+ */
 export const PortfolioDashboard = memo(function PortfolioDashboard({
   assets: baseAssets,
+  portfolioType: ledgerType = 'long_term_sim',
 }: {
   assets: Asset[];
+  portfolioType?: CorePortfolioType;
 }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -554,14 +558,9 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     depositPortfolioCash,
     withdrawPortfolioCash,
     activePortfolioType,
-    setActivePortfolioType,
     portfolios,
   } = usePortfolio();
-  // Core shows Simulation or Live Tracking; tactical trades book into Paper Trading.
-  const ledgerType = activePortfolioType;
-  const mode: PortfolioMode = ledgerType === 'real_tracking' ? 'live' : 'simulation';
-  const setMode = (next: PortfolioMode) =>
-    setActivePortfolioType(next === 'live' ? 'real_tracking' : 'long_term_sim');
+  const live = ledgerType === 'real_tracking';
   const hydration = useHydrationState();
 
   // Cloud saves stay disabled until this user's cloud hydration settled —
@@ -735,12 +734,27 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   }
 
   return (
-    <section className="portfolio" aria-label="Portfolio dashboard">
-      <header className="portfolio-head" data-tour="wealth">
+    <section
+      className="portfolio"
+      aria-label={live ? 'Tracked real holdings' : 'Simulated portfolio'}
+    >
+      <header className="portfolio-head" data-tour={live ? undefined : 'sim-portfolio'}>
         <div>
-          <h2 className="portfolio-title">Wealth Management</h2>
+          {live ? (
+            <span className="paper-eyebrow real-eyebrow">
+              <span className="paper-eyebrow-dot" aria-hidden="true" /> Real holdings · Tracking
+              only
+            </span>
+          ) : (
+            <span className="paper-eyebrow">
+              <span className="paper-eyebrow-dot" aria-hidden="true" /> Simulation Mode
+            </span>
+          )}
+          <h2 className="portfolio-title">{live ? 'Tracked Holdings' : 'Simulated Portfolio'}</h2>
           <p className="portfolio-subtitle">
-            Simulate strategies or track live holdings — one engine, zero noise.
+            {live
+              ? 'Positions you hold at your broker, logged by hand. ZeroChart places no orders.'
+              : 'Long-term strategy sandbox: simulated cash, simulated fills. No real money.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -766,15 +780,6 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             <CloudUpload size={15} />
             Save to Cloud
           </button>
-          <Segmented
-            value={mode}
-            ariaLabel="Portfolio mode"
-            onChange={setMode}
-            options={[
-              { value: 'simulation', label: 'Simulation' },
-              { value: 'live', label: 'Live Tracking' },
-            ]}
-          />
         </div>
       </header>
 
@@ -849,7 +854,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
                 <span className="portfolio-count">
                   {visible.length} POSITION{visible.length === 1 ? '' : 'S'}
                 </span>
-                {mode === 'live' && <AddPositionModal />}
+                {live && <AddPositionModal />}
               </div>
             </div>
             <div className="portfolio-cash-bar" aria-label="Cash controls">
@@ -905,12 +910,12 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             <div className="holdings-empty">
               <Briefcase size={26} />
               <span className="holdings-empty-title">
-                {mode === 'simulation' ? 'No simulation positions' : 'No live positions yet'}
+                {live ? 'No tracked holdings yet' : 'No simulation positions'}
               </span>
               <span className="holdings-empty-sub">
-                {mode === 'simulation'
-                  ? 'Your paper portfolio is empty. Add a position to start simulating.'
-                  : 'Connect your broker to start tracking real holdings.'}
+                {live
+                  ? 'Add a position you hold at your broker to track it here.'
+                  : 'Your simulated portfolio is empty. Build one with the Quant Analyzer in Research.'}
               </span>
             </div>
           )}
@@ -966,7 +971,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             disabled={ledger.transactions.length === 0}
             onClick={() =>
               downloadCsv(
-                `zerochart-ledger-${mode === 'simulation' ? 'simulation' : 'live'}.csv`,
+                `zerochart-ledger-${live ? 'live' : 'simulation'}.csv`,
                 tradeLedgerCsv(ledger.transactions),
               )
             }
@@ -985,15 +990,11 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
               <TradeLedger
                 embedded
                 transactions={ledger.transactions}
-                filename={`zerochart-ledger-${mode === 'simulation' ? 'simulation' : 'live'}.csv`}
+                filename={`zerochart-ledger-${live ? 'live' : 'simulation'}.csv`}
               />
             </div>
           )}
         </div>
-      </section>
-
-      <section className="portfolio-section" aria-label="Price alerts">
-        <PriceAlerts assets={assets} user={user} />
       </section>
 
       <AuthModal open={authOpen} onOpenChange={setAuthOpen} />

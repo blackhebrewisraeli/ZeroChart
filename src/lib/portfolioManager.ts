@@ -131,7 +131,7 @@ export function generateShareText(positions: Position[], assets: Asset[]): strin
     }
   }
 
-  lines.push('Built with zero financial knowledge using ZeroChart.');
+  lines.push('Simulated with ZeroChart.');
 
   return lines.join('\n');
 }

@@ -200,8 +200,8 @@ function PaperAccountControls() {
               {paper.positions.length === 1 ? 'position' : 'positions'} and{' '}
               {paper.transactions.length} ledger{' '}
               {paper.transactions.length === 1 ? 'entry' : 'entries'}, and restores{' '}
-              {formatPrice(PAPER_STARTING_CASH)} of paper cash. Your Core portfolios are not
-              affected.
+              {formatPrice(PAPER_STARTING_CASH)} of paper cash. Your simulated portfolio and tracked
+              holdings are not affected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -303,11 +303,12 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
       <header className="portfolio-head">
         <div>
           <span className="paper-eyebrow">
-            <span className="paper-eyebrow-dot" aria-hidden="true" /> Paper · Simulated fills
+            <span className="paper-eyebrow-dot" aria-hidden="true" /> Simulation Mode · No real
+            money
           </span>
           <h2 className="portfolio-title">Paper Desk</h2>
           <p className="portfolio-subtitle">
-            Act on tactical signals at the live price. Isolated from your Core portfolio.
+            Act on tactical signals with simulated fills at the live price. Paper cash only.
           </p>
         </div>
         <PaperAccountControls />

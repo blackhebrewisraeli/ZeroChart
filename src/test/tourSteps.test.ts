@@ -7,22 +7,22 @@ describe('tourSteps', () => {
       'welcome',
       'live-prices',
       'multi-factor-scanner',
-      'robo-advisor',
-      'institutional-backtester',
-      'wealth-management',
+      'quant-analyzer',
+      'backtester',
+      'simulated-portfolio',
       'pnl-attribution',
     ]);
   });
 
-  it('targets stable selectors on the right workspace tab', () => {
+  it('targets stable selectors in the right zone', () => {
     expect(tourSteps.map((step) => [step.target, step.view])).toEqual([
       ['.terminal-header', undefined],
       ['.connection-status', undefined],
-      ['[data-tour="markets"]', 'scanner'],
-      ['[data-tour="robo"]', 'scanner'],
-      ['.backtest-card', 'portfolio'],
-      ['[data-tour="wealth"]', 'portfolio'],
-      ['[data-tour="pnl-attribution"]', 'portfolio'],
+      ['[data-tour="markets"]', 'research'],
+      ['[data-tour="robo"]', 'research'],
+      ['.backtest-card', 'paper'],
+      ['[data-tour="sim-portfolio"]', 'paper'],
+      ['[data-tour="pnl-attribution"]', 'paper'],
     ]);
   });
 
@@ -30,16 +30,16 @@ describe('tourSteps', () => {
     const copy = (id: string) => String(tourSteps.find((step) => step.id === id)?.content);
     expect(copy('multi-factor-scanner')).toMatch(/Market Regime/);
     expect(copy('multi-factor-scanner')).toMatch(/Web Worker/);
-    expect(copy('robo-advisor')).toMatch(/ATR position sizes/);
-    expect(copy('institutional-backtester')).toMatch(/slippage.*trailing stops.*buy-and-hold/s);
-    expect(copy('wealth-management')).toMatch(/Simulation and Live Tracking/);
-    expect(copy('wealth-management')).toMatch(/percentages only/);
+    expect(copy('quant-analyzer')).toMatch(/ATR position sizes/);
+    expect(copy('backtester')).toMatch(/slippage.*trailing stops.*buy-and-hold/s);
+    expect(copy('simulated-portfolio')).toMatch(/Simulated cash.*under Account/s);
+    expect(copy('simulated-portfolio')).toMatch(/percentages only/);
     expect(copy('pnl-attribution')).toMatch(/CSV/);
   });
 });
 
 describe('withViewSwitching', () => {
-  it('switches to the step tab before Joyride looks for its target', async () => {
+  it('switches to the step zone before Joyride looks for its target', async () => {
     const onViewChange = vi.fn();
     const steps = withViewSwitching(tourSteps, onViewChange);
 
@@ -47,8 +47,8 @@ describe('withViewSwitching', () => {
     expect(steps.every((step) => !('view' in step))).toBe(true);
 
     await steps[2]?.before?.({} as never);
-    expect(onViewChange).toHaveBeenLastCalledWith('scanner');
+    expect(onViewChange).toHaveBeenLastCalledWith('research');
     await steps[4]?.before?.({} as never);
-    expect(onViewChange).toHaveBeenLastCalledWith('portfolio');
+    expect(onViewChange).toHaveBeenLastCalledWith('paper');
   });
 });

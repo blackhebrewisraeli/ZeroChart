@@ -2,7 +2,9 @@
 
 # ZeroChart
 
-**Institutional-grade quantitative trading and wealth management ecosystem.**
+**Quantitative research and paper trading environment.**
+
+Understand, backtest, and simulate multifactor signals.
 
 A TradingView Pine Script HUD that scores every bar, and a React + Supabase command center that turns those scores into sized, audited paper trades.
 
@@ -24,13 +26,13 @@ A TradingView Pine Script HUD that scores every bar, and a React + Supabase comm
 
 ZeroChart is two products running one quant engine. The same RSI / MACD / ATR model is implemented in TypeScript for the web app and ported 1:1 to Pine Script, so the score on your TradingView chart matches the score in the app.
 
-|                      | **ZeroChart Quant HUD**                                                                                    | **ZeroChart Command Center**                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Runs on**          | TradingView, as a Pine Script v6 overlay                                                                   | The browser: React 19 on TanStack Start, backed by Supabase                                       |
-| **Job**              | Live visual signals on any chart                                                                           | Portfolio accounting, strategy backtesting, paper-trade execution                                 |
-| **Shows**            | On-chart HUD table: quant score, market regime, factor breakdown, position size, ATR stop, one-line thesis | Market scanner, wealth dashboard, Robo-Advisor, backtester, Paper Trading terminal, Action Center |
-| **Emits / consumes** | Emits alerts: high-conviction bullish, regime shift to high volatility, ATR trailing-stop breach           | Consumes those alerts through a secured webhook, in real time                                     |
-| **Source**           | [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine)                                         | [`src/`](./src) and [`supabase/`](./supabase)                                                     |
+|                      | **ZeroChart Quant HUD**                                                                                    | **ZeroChart Command Center**                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Runs on**          | TradingView, as a Pine Script v6 overlay                                                                   | The browser: React 19 on TanStack Start, backed by Supabase                                              |
+| **Job**              | Live visual signals on any chart                                                                           | Portfolio accounting, strategy backtesting, paper-trade execution                                        |
+| **Shows**            | On-chart HUD table: quant score, market regime, factor breakdown, position size, ATR stop, one-line thesis | Research (scanner, charts, signals), Paper Desk (paper trading, simulated portfolio, backtests), Account |
+| **Emits / consumes** | Emits alerts: high-conviction bullish, regime shift to high volatility, ATR trailing-stop breach           | Consumes those alerts through a secured webhook, in real time                                            |
+| **Source**           | [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine)                                         | [`src/`](./src) and [`supabase/`](./supabase)                                                            |
 
 ```mermaid
 flowchart TB
@@ -66,13 +68,13 @@ flowchart TB
 
 - Scores every asset 0–100 by blending three normalized factors: **RSI** mean reversion (40%), **MACD** momentum (40%), and **ATR** volatility regime (20%).
 - Detects the market regime (high volatility, trending, mean-reverting, or neutral) and tilts the weights toward the factor that regime rewards.
-- One canonical engine, [`canonicalModel.ts`](./src/lib/canonicalModel.ts), scores every surface (Scanner, Portfolio, Robo-Advisor, Tactical Signals, shared snapshots) from candle history and matches the Pine HUD. An asset with fewer than 34 daily candles reports `INSUFFICIENT_DATA` and shows "Not Enough Data", never a guessed score.
+- One canonical engine, [`canonicalModel.ts`](./src/lib/canonicalModel.ts), scores every surface (Scanner, Portfolio, Quant Analyzer, Tactical Signals, shared snapshots) from candle history and matches the Pine HUD. An asset with fewer than 34 daily candles reports `INSUFFICIENT_DATA` and shows "Not Enough Data", never a guessed score.
 - Every score is explainable: sub-scores, applied weights, regime, and a one-line rationale.
 - Heavy math (SMA, RSI, MACD, ATR, full backtests) runs off the main thread in [`finance.worker.ts`](./src/lib/finance.worker.ts), with results cached and served through the async [`financeClient.ts`](./src/lib/financeClient.ts) API, so charts never freeze the UI.
 
 ### v3 atomic accounting
 
-- Three strictly isolated ledgers per user: **Live Tracking**, **Simulation**, and **Paper Trading**, each with its own positions, cash, cash ledger, transactions, and realized P&L.
+- Three strictly isolated ledgers per user: **Live Tracking**, **Simulation**, and **Paper Trading**, each with its own positions, cash, cash ledger, transactions, and realized P&L. Paper Trading and Simulation live on the Paper Desk; Live Tracking (real holdings, logged by hand) appears only under Account, so real and simulated money never share a screen.
 - Every buy, sell, deposit, and withdrawal is a pure, immutable state transition in [`portfolioAccounting.ts`](./src/lib/portfolioAccounting.ts). Positions, cash, and the transaction log move together, or the trade is rejected and nothing changes.
 - Multi-lot cost basis, FIFO lot consumption on sells, and fee- and slippage-aware realized P&L. Valuation reports missing prices honestly instead of guessing.
 - Older v1 and v2 payloads migrate deterministically into the v3 snapshot on load.
@@ -81,7 +83,7 @@ flowchart TB
 
 - ATR-based sizing in [`risk.ts`](./src/lib/risk.ts): the position is sized so a one-ATR move against it loses your chosen risk (2% of capital by default).
 - Hard invariants: notional never exceeds the capital or per-asset budget, the stop price is floored at zero, and shares round to four decimals (down, when needed, to stay within budget). When the budget binds, the position and its risk come in below the target.
-- The Robo-Advisor and the asset detail view call `risk.ts` directly. The Pine HUD applies the same budget-capped sizing and the same 1× ATR stop by default; its stop multiplier is configurable.
+- The Quant Analyzer and the asset detail view call `risk.ts` directly. The Pine HUD applies the same budget-capped sizing and the same 1× ATR stop by default; its stop multiplier is configurable.
 
 ### Real-time webhook Action Center
 
@@ -97,7 +99,7 @@ flowchart TB
 | **Live market stream**   | Binance all-market ticker over WebSocket, batched into a `useSyncExternalStore` store so only rows whose price changed re-render |
 | **Canvas charts**        | `lightweight-charts` candlesticks with SMA 50/200 and a synchronized RSI pane                                                    |
 | **Backtesting**          | Replays an allocation over a year of daily candles, with max drawdown and Sharpe ratio                                           |
-| **Robo-Advisor**         | Builds a signal-ranked, risk-weighted portfolio from your capital and risk profile                                               |
+| **Quant Analyzer**       | Builds a signal-ranked, risk-weighted portfolio from your capital and risk profile, then simulates it                            |
 | **Price alerts**         | Cloud-synced (RLS) for signed-in users, session-only for guests; each alert fires exactly once                                   |
 | **Shareable portfolios** | Read-only snapshot links at `/p/:portfolioId` that anyone can open                                                               |
 

@@ -33,7 +33,7 @@ ZeroChart is two products running one quant engine. The same RSI / MACD / ATR mo
 | **Source**           | [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine)                                         | [`src/`](./src) and [`supabase/`](./supabase)                                                     |
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph TV["TradingView"]
         HUD["ZeroChart Quant HUD<br/>Pine Script v6"]
     end

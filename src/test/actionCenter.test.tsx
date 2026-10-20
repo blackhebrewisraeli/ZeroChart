@@ -12,6 +12,9 @@ const db = vi.hoisted(() => ({
   channel: vi.fn(),
   open: vi.fn(),
   status: 'SUBSCRIBED',
+  // When set, subscribe() withholds its status until the test calls report().
+  holdStatus: false,
+  report: (_status: string) => {},
   emit: (_payload: unknown) => {},
   // When set, queries wait for release() — a request still in flight.
   hold: false,
@@ -42,7 +45,8 @@ vi.mock('@/lib/supabaseClient', () => {
       return channel;
     },
     subscribe: (callback: (status: string) => void) => {
-      callback(db.status);
+      if (db.holdStatus) db.report = callback;
+      else callback(db.status);
       return channel;
     },
   };
@@ -133,6 +137,7 @@ describe('Action Center', () => {
     db.claimed = [{ id: 'sig-1' }];
     db.hold = false;
     db.status = 'SUBSCRIBED';
+    db.holdStatus = false;
   });
   afterEach(cleanup);
 
@@ -165,6 +170,16 @@ describe('Action Center', () => {
     act(() => db.emit({ eventType: 'UPDATE', new: signal({ status: 'EXECUTED' }) }));
     act(() => db.release());
     expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
+  });
+
+  it('waits for the channel status before querying the backlog', async () => {
+    db.pending = [signal()];
+    db.holdStatus = true;
+    renderSignedIn();
+    expect(db.eq).not.toHaveBeenCalledWith('user_id', 'user-1');
+
+    act(() => db.report('SUBSCRIBED'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('BUY SIGNAL: BTCUSDT');
   });
 
   it('still loads the backlog when the realtime join fails', async () => {

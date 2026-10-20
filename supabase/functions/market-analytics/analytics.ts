@@ -105,18 +105,18 @@ function fromChart(body: unknown): Candles {
   return candles;
 }
 
-const last = (values: ArrayLike<number>): number => values[values.length - 1] ?? NaN;
+const last = (values: ArrayLike<number>): number => values[values.length - 1] ?? Number.NaN;
 const mean = (values: number[]): number =>
   values.reduce((sum, value) => sum + value, 0) / values.length;
 const ratio = (numerator: number, denominator: number): number =>
-  denominator === 0 ? NaN : numerator / denominator;
+  denominator === 0 ? Number.NaN : numerator / denominator;
 const stored = (value: number): number | null =>
   Number.isFinite(value) ? Math.round(value * 1e6) / 1e6 : null;
 const times = (value: number): string => (Number.isNaN(value) ? 'n/a' : `${value.toFixed(2)}x`);
 
 /** The 3-day average volume over the 14 days before it; NaN for forex, which trades no volume. */
 function volumeSpike(volume: number[]): number {
-  if (volume.length < 17) return NaN;
+  if (volume.length < 17) return Number.NaN;
   return ratio(mean(volume.slice(-3)), mean(volume.slice(-17, -3)));
 }
 

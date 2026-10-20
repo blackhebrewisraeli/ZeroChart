@@ -173,6 +173,11 @@ describe('Paper Desk', () => {
     fireEvent.click(ticket.getByRole('button', { name: 'Buy ETH-USD' }));
     expect(toast.error).not.toHaveBeenCalled();
     expect(stat('Paper Cash').getByText('$98,997.50')).toBeInTheDocument(); // 1,000 + 2.50 fee
+    // No ATR loaded, so the whole $1,000 entry is open risk: 1% of $100,000 equity.
+    expect(stat('Aggregate Open Risk').getByText('1.0%')).toBeInTheDocument();
+    expect(
+      stat('Aggregate Open Risk').getByText('$1,000.00 to stops · 6% cap'),
+    ).toBeInTheDocument();
 
     // +25%: 0.1316 sh at 1,900 = 250 + 0.625 fee, as a second FIFO lot.
     fireEvent.click(screen.getByRole('button', { name: 'Add 25% to ETH-USD' }));

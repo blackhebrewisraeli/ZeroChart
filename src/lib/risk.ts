@@ -9,7 +9,10 @@
 export const DEFAULT_RISK_PERCENT = 0.02;
 
 /** Stop distance in ATRs; the Pine HUD's "ATR Trailing Stop Multiplier" defaults to it. */
-export const DEFAULT_ATR_STOP_MULTIPLIER = 1;
+export const DEFAULT_ATR_STOP_MULTIPLIER = 2;
+
+/** Portfolio heat cap: Aggregate Open Risk may not exceed 6% of equity. */
+export const MAX_PORTFOLIO_RISK_PERCENT = 0.06;
 
 /** Annualization factor for daily equity curves (crypto trades every day). */
 export const DAILY_PERIODS_PER_YEAR = 365;
@@ -82,6 +85,8 @@ export interface PositionSizeInput {
   atr: number;
   /** Fraction of capital to risk on the trade (default 2%). */
   riskPercent?: number;
+  /** Stop distance in ATRs (default 2, the Pine HUD's `atrStopMult`). */
+  atrStopMult?: number;
   /**
    * Optional per-asset capital budget (e.g. the allocation amount from the
    * portfolio builder). When provided, the suggested notional never exceeds
@@ -92,11 +97,16 @@ export interface PositionSizeInput {
 }
 
 export interface PositionSize {
-  /** Share quantity that risks exactly `capital × riskPercent` on a 1×ATR stop, budget-capped. */
+  /** Share quantity `min(risk budget / stop distance, budget / price)`, 4dp. */
   shares: number;
-  /** Dollar amount at risk (capital × riskPercent). */
-  riskAmount: number;
-  /** Stop price one ATR below the entry price, floored at 0. */
+  /** Requested Risk Budget: capital × riskPercent, before any cap. */
+  requestedRisk: number;
+  /**
+   * Actual Planned Risk: what `shares` lose at the stop (post-cap, post-floor).
+   * Below `requestedRisk` when the budget capped the size or the stop hit 0.
+   */
+  plannedRisk: number;
+  /** Stop price `atrStopMult` ATRs below the entry price, floored at 0. */
   stopPrice: number;
   /** Dollar notional of the position (shares × price) — always ≤ the effective budget. */
   notional: number;
@@ -105,34 +115,50 @@ export interface PositionSize {
 }
 
 /**
- * ATR-based position sizing: a move of one ATR against the trade must lose
- * `riskPercent` of capital, so the risk-optimal quantity is
- * `shares = (capital × riskPercent) / ATR`. Two hard constraints (M1-T2,
+ * ATR-based position sizing, the same contract as the Pine HUD:
+ *
+ *   q = min(Risk Budget / Stop Distance, Total Capital / Entry Price)
+ *
+ * with Risk Budget = capital × riskPercent and Stop Distance = atrStopMult × ATR,
+ * so a stop-out loses at most the risk budget. Two hard constraints (M1-T2,
  * F-1.2a) bound the result:
  *   1. `shares × price` (notional) never exceeds `min(capital, allocatedCapital)`
- *      — low-volatility assets (ATR/price < riskPercent) would otherwise
- *      recommend positions worth multiples of the available budget;
- *   2. the stop price is floored at 0 (ATR ≥ price can no longer produce a
- *      negative stop).
+ *      — low-volatility assets would otherwise recommend positions worth
+ *      multiples of the available budget;
+ *   2. the stop price is floored at 0 (a stop distance ≥ price can no longer
+ *      produce a negative stop).
  * Shares round to 4 decimals (fractional-friendly app-wide precision); when
  * rounding would breach the budget invariant the quantity rounds DOWN instead.
- * Invalid inputs (non-positive capital, price, or ATR) size to zero.
+ * Invalid inputs (non-positive capital, price, ATR or multiplier) size to zero.
  */
 export function recommendPositionSize({
   capital,
   price,
   atr,
   riskPercent = DEFAULT_RISK_PERCENT,
+  atrStopMult = DEFAULT_ATR_STOP_MULTIPLIER,
   allocatedCapital,
 }: PositionSizeInput): PositionSize {
   const validCapital =
     Number.isFinite(capital) && capital > 0 && Number.isFinite(riskPercent) && riskPercent > 0;
-  const riskAmount = validCapital ? capital * riskPercent : 0;
+  const requestedRisk = validCapital ? capital * riskPercent : 0;
+  const stopDistance = atr * atrStopMult;
   const validMarket =
-    Number.isFinite(price) && price > 0 && Number.isFinite(atr) && atr > 0 && riskAmount > 0;
+    Number.isFinite(price) &&
+    price > 0 &&
+    Number.isFinite(stopDistance) &&
+    stopDistance > 0 &&
+    requestedRisk > 0;
 
   if (!validMarket) {
-    return { shares: 0, riskAmount, stopPrice: 0, notional: 0, isCapped: false };
+    return {
+      shares: 0,
+      requestedRisk,
+      plannedRisk: 0,
+      stopPrice: 0,
+      notional: 0,
+      isCapped: false,
+    };
   }
 
   const budget =
@@ -140,8 +166,7 @@ export function recommendPositionSize({
       ? Math.min(capital, allocatedCapital)
       : capital;
 
-  const stopDistance = atr * DEFAULT_ATR_STOP_MULTIPLIER;
-  const riskShares = riskAmount / stopDistance;
+  const riskShares = requestedRisk / stopDistance;
   const budgetShares = budget / price;
   const isCapped = riskShares > budgetShares;
 
@@ -152,14 +177,93 @@ export function recommendPositionSize({
   if (shares * price > budget) {
     shares = Math.floor(rawShares * 10000) / 10000;
   }
+  const stopPrice = Math.max(0, Number((price - stopDistance).toFixed(6)));
 
   return {
     shares,
-    riskAmount,
-    stopPrice: Math.max(0, Number((price - stopDistance).toFixed(6))),
+    requestedRisk,
+    plannedRisk: aggregateOpenRisk([{ shares, buyPrice: price, stopPrice }]),
+    stopPrice,
     notional: Number((shares * price).toFixed(2)),
     isCapped,
   };
+}
+
+export interface OpenPositionRisk {
+  shares: number;
+  /** Entry (average buy) price. */
+  buyPrice: number;
+  /** Protective stop. Missing or 0 means the whole entry is at risk. */
+  stopPrice?: number | null | undefined;
+}
+
+/**
+ * Aggregate Open Risk: Σ (entry − stop) × quantity, what the positions lose
+ * if every one of them hits its stop at once. Stops floor at 0, so a position
+ * with no known stop risks its whole entry; a stop at or above entry risks 0.
+ */
+export function aggregateOpenRisk(positions: Iterable<OpenPositionRisk>): number {
+  let total = 0;
+  for (const { shares, buyPrice, stopPrice } of positions) {
+    const stop = typeof stopPrice === 'number' && stopPrice > 0 ? stopPrice : 0;
+    total += Math.max(0, buyPrice - stop) * shares;
+  }
+  return total;
+}
+
+/** What a portfolio can still take on. */
+export interface RiskBook {
+  /** Total portfolio equity: cash plus marked positions. */
+  equity: number;
+  /** Free cash a new entry can spend. */
+  cash: number;
+  /** Aggregate Open Risk of the positions already held. */
+  openRisk: number;
+}
+
+export interface EntryOrder {
+  shares: number;
+  price: number;
+  fee: number;
+  stopPrice?: number | null | undefined;
+}
+
+export type EntryCheck = { ok: true } | { ok: false; reason: string };
+
+const usd = (value: number) =>
+  value.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const percent = (fraction: number) =>
+  fraction.toLocaleString('en-US', { style: 'percent', maximumFractionDigits: 1 });
+
+/**
+ * The portfolio risk manager's pre-trade gate for a new entry (a BUY). Denies it when
+ *   1. its cost (notional + fee) is more than the free cash, or
+ *   2. Aggregate Open Risk plus the order's own (entry − stop) × quantity would
+ *      exceed `maxRiskPercent` of equity.
+ * Sells only shrink exposure and never need it.
+ */
+export function checkNewEntry(
+  book: RiskBook,
+  order: EntryOrder,
+  maxRiskPercent = MAX_PORTFOLIO_RISK_PERCENT,
+): EntryCheck {
+  const cost = order.shares * order.price + order.fee;
+  if (cost > book.cash) {
+    return {
+      ok: false,
+      reason: `Not enough cash: this order needs ${usd(cost)}, ${usd(book.cash)} available.`,
+    };
+  }
+  const planned = aggregateOpenRisk([{ ...order, buyPrice: order.price }]);
+  if (book.openRisk + planned > book.equity * maxRiskPercent) {
+    return {
+      ok: false,
+      reason: `Portfolio max risk reached: ${percent(book.openRisk / book.equity)} open + ${percent(
+        planned / book.equity,
+      )} new would pass the ${percent(maxRiskPercent)} limit.`,
+    };
+  }
+  return { ok: true };
 }
 
 /** Formats a share quantity for display, trimming to sensible precision. */

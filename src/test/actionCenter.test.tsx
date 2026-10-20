@@ -82,6 +82,7 @@ vi.mock('@/lib/db', async () => {
     PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
   };
 });
+vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }));
@@ -280,16 +281,34 @@ describe('Action Center', () => {
     expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
   });
 
-  it('rejects an unaffordable order without consuming the signal', async () => {
+  it('shows an unaffordable BUY with Execute disabled and the reason, without consuming it', async () => {
     db.pending = [signal({ quantity: (PAPER_STARTING_CASH * 2) / btc.current_price! })];
     renderSignedIn();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Insufficient cash'));
+    const execute = await screen.findByRole('button', { name: 'Execute Trade (Paper)' });
+    expect(execute).toBeDisabled();
+    expect(execute).toHaveAccessibleDescription(
+      'Not enough cash: this order needs $200,500.00, $100,000.00 available.',
+    );
+    fireEvent.click(execute);
     expect(paperDb.insertPaperTransaction).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
-    expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
     expect(store.portfolios.paper_trading.positions).toHaveLength(0);
+  });
+
+  it('disables Execute when the BUY would breach the portfolio risk limit', async () => {
+    // 0.5 BTC filled at $50,000 with a $30,000 stop risks $10,000: 10% of equity.
+    db.pending = [signal({ quantity: 0.5, stop_loss: 30_000 })];
+    renderSignedIn();
+
+    expect(await screen.findByText('BUY SIGNAL: BTCUSDT', { exact: false })).toBeInTheDocument();
+    const execute = screen.getByRole('button', { name: 'Execute Trade (Paper)' });
+    expect(execute).toBeDisabled();
+    expect(
+      screen.getByText('Portfolio max risk reached: 0% open + 10% new would pass the 6% limit.'),
+    ).toBeInTheDocument();
+    expect(paperDb.insertPaperTransaction).not.toHaveBeenCalled();
   });
 
   it('Dismiss resolves the signal and leaves the ledger untouched', async () => {

@@ -12,7 +12,7 @@ import {
 import { buildSignalFeed, generateTacticalSignals } from '@/lib/tacticalSignals';
 import { downloadCsv, executionDrag, realizedPnlOn, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
-import { formatShares } from '@/lib/risk';
+import { formatShares, MAX_PORTFOLIO_RISK_PERCENT } from '@/lib/risk';
 import { ActionCenter } from '@/components/ActionCenter';
 import { AssetChart } from '@/components/AssetChart';
 import { AssetIcon } from '@/components/AssetIcon';
@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { usePaperRisk } from '@/hooks/usePaperRisk';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { cn } from '@/lib/utils';
@@ -66,12 +67,15 @@ function PositionRow({
   onSelect,
   onResize,
   onClose,
+  addRejection,
 }: {
   position: Position;
   asset: Asset | undefined;
   onSelect: (ticker: string) => void;
   onResize: (position: Position, price: number, side: 'buy' | 'sell') => void;
   onClose: (position: Position, price: number) => void;
+  /** Why the risk manager refuses a +25% add at `price`, or null. */
+  addRejection: (position: Position, price: number) => string | null;
 }) {
   const price = asset?.current_price;
   const hasPrice = typeof price === 'number' && Number.isFinite(price) && price > 0;
@@ -79,6 +83,7 @@ function PositionRow({
   const costBasis = positionCostBasis(position);
   const pnl = hasPrice ? price * position.shares - costBasis : null;
   const noPrice = hasPrice ? undefined : 'No live price to fill at yet';
+  const addBlocked = hasPrice ? addRejection(position, price) : null;
 
   return (
     <tr>
@@ -118,8 +123,8 @@ function PositionRow({
             type="button"
             className="paper-size"
             aria-label={`Add 25% to ${position.ticker}`}
-            title={noPrice ?? 'Buy 25% more of this position'}
-            disabled={!hasPrice}
+            title={noPrice ?? addBlocked ?? 'Buy 25% more of this position'}
+            disabled={!hasPrice || addBlocked !== null}
             onClick={() => hasPrice && onResize(position, price, 'buy')}
           >
             <Plus size={13} />
@@ -223,6 +228,7 @@ function PaperAccountControls() {
  */
 export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }) {
   const { portfolios, executePaperTrade } = usePortfolio();
+  const risk = usePaperRisk();
   const { triggered } = useAlerts();
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
@@ -248,6 +254,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
   const todayRealized = realizedPnlOn(paper.transactions, now);
   const drag = executionDrag(paper.transactions);
   const openCount = paper.positions.length;
+  const openRiskPct = risk.equity > 0 ? risk.openRisk / risk.equity : 0;
 
   // The chart follows the last pick, else the first open position, else the
   // feed's top card (same ranking as <TacticalSignals>) if it is a listed
@@ -274,6 +281,16 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
     price,
     fee: shares * price * FEE_RATE,
   });
+
+  function addRejection(position: Position, price: number) {
+    const shares = position.shares * SIZE_STEP;
+    const check = risk.checkBuy(position.ticker, {
+      shares,
+      price,
+      fee: shares * price * FEE_RATE,
+    });
+    return check.ok ? null : check.reason;
+  }
 
   async function resizePosition(position: Position, price: number, side: 'buy' | 'sell') {
     const shares = position.shares * SIZE_STEP;
@@ -328,6 +345,13 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
           value={formatPnl(valuation.unrealizedPnl)}
           sub={`${formatSignedPercent(valuation.unrealizedPnlPct)} · ${openCount} open`}
           tone={pnlTone(valuation.unrealizedPnl)}
+        />
+        <Stat
+          primary
+          label="Aggregate Open Risk"
+          value={`${(openRiskPct * 100).toFixed(1)}%`}
+          sub={`${formatPrice(risk.openRisk)} to stops · ${MAX_PORTFOLIO_RISK_PERCENT * 100}% cap`}
+          tone={openRiskPct >= MAX_PORTFOLIO_RISK_PERCENT ? 'pnl-down' : undefined}
         />
         <Stat
           primary
@@ -435,6 +459,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
                           onSelect={setSelected}
                           onResize={resizePosition}
                           onClose={closePosition}
+                          addRejection={addRejection}
                         />
                       ))}
                     </tbody>

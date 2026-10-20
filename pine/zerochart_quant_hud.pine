@@ -3,7 +3,7 @@
 // 1:1 port of the ZeroChart quant engine:
 //   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
 //   src/lib/canonicalModel.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
-//   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 1x ATR stop floored at 0)
+//   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 2x ATR stop floored at 0)
 // HUD shows plain-English actions. Alerts emit JSON for the tv-webhook pipeline.
 // Quantitative analysis is informational. Not financial advice.
 indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay = true)
@@ -12,7 +12,7 @@ indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay 
 accountCapital   = input.float(10000, "Account Capital ($)", minval = 1.0, group = "Risk Engine")
 riskPct          = input.float(2.0, "Risk per Trade (%)", minval = 0.01, maxval = 100.0, step = 0.25, group = "Risk Engine")
 atrPeriod        = input.int(14, "ATR Period", minval = 1, group = "Risk Engine")
-atrStopMult      = input.float(1.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
+atrStopMult      = input.float(2.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
 showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "Display")
 hudPosition      = input.string("Top Right", "HUD Position", options = ["Top Right", "Bottom Right", "Bottom Left", "Top Left"], group = "Display")
 showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")

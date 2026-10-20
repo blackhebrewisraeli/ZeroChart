@@ -2727,7 +2727,7 @@ body {
 }
 .paper-pnl {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -2862,6 +2862,18 @@ body {
 .action-center-dismiss:disabled {
   cursor: progress;
   opacity: 0.6;
+}
+.action-center-execute:disabled[aria-describedby] {
+  cursor: not-allowed;
+}
+.action-center-rejection,
+.ticket-rejection {
+  margin: 0;
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  line-height: 1.5;
+  color: var(--signal-red);
 }
 .action-center-queue {
   margin: 0;
@@ -3035,16 +3047,13 @@ button.paper-ticker:hover {
   .paper-grid {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* 5 stats as 2 + 3: Paper Cash spans two of three columns. */
+  /* 6 stats as 3 + 3. */
   .paper-pnl {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .paper-stat:first-child {
-    grid-column: span 2;
-  }
 }
 @media (max-width: 640px) {
-  /* 1 + 2 + 2. */
+  /* 2 + 2 + 2. */
   .paper-pnl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

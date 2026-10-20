@@ -6,6 +6,7 @@ import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/lib/supabaseClient';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { usePaperRisk } from '@/hooks/usePaperRisk';
 import { formatShares } from '@/lib/risk';
 import { toBinanceSymbol } from '@/lib/ticker';
 import { FEE_RATE } from '@/components/TradeTicket';
@@ -33,6 +34,8 @@ function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>
  * Action Center: TradingView signals (via the tv-webhook function) as one
  * giant card with Execute / Dismiss. Execute books a tactical fill of the
  * signal's quantity (units) in the `paper_trading` ledger at the live price.
+ * A BUY the portfolio risk manager rejects stays on screen with Execute
+ * disabled and the reason spelled out.
  */
 export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const { scopeUserId: userId, getPortfolio, executePaperTrade } = usePortfolio();
@@ -41,6 +44,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   // Resolution is one-way (RLS only updates PENDING rows), so a backlog snapshot
   // still in flight must never bring back a signal resolved after it was read.
   const resolved = useRef(new Set<string>());
+  const risk = usePaperRisk(pending[0] && findAsset(assets, pending[0].ticker)?.ticker);
 
   useEffect(() => {
     if (!userId) return;
@@ -183,9 +187,22 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   if (!signal) return null;
   const buying = signal.action === 'BUY';
   const quantity = Number(signal.quantity);
+  const asset = findAsset(assets, signal.ticker);
+  const livePrice = asset?.current_price;
   // What the fill would cost at the live price (the alert's price until one streams in).
-  const fillPrice = findAsset(assets, signal.ticker)?.current_price ?? signal.price;
+  const fillPrice = livePrice ?? signal.price;
   const notional = fillPrice ? quantity * Number(fillPrice) : null;
+  // Only entries need clearing; a sell shrinks exposure.
+  const entry =
+    buying && asset && livePrice && livePrice > 0
+      ? risk.checkBuy(asset.ticker, {
+          shares: quantity,
+          price: livePrice,
+          fee: quantity * livePrice * FEE_RATE,
+          stopPrice: signal.stop_loss,
+        })
+      : null;
+  const rejection = entry?.ok === false ? entry.reason : null;
 
   return (
     <section
@@ -222,7 +239,8 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         <button
           type="button"
           className="action-center-execute"
-          disabled={busy}
+          disabled={busy || rejection !== null}
+          aria-describedby={rejection ? 'action-center-rejection' : undefined}
           onClick={() => void execute(signal)}
         >
           Execute Trade (Paper)
@@ -236,6 +254,11 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           Dismiss
         </button>
       </div>
+      {rejection && (
+        <p id="action-center-rejection" className="action-center-rejection">
+          {rejection}
+        </p>
+      )}
       {pending.length > 1 && (
         <p className="action-center-queue">+{pending.length - 1} more waiting</p>
       )}

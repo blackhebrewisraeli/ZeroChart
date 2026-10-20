@@ -81,9 +81,9 @@ flowchart TB
 
 ### Dynamic position sizing
 
-- ATR-based sizing in [`risk.ts`](./src/lib/risk.ts): the position is sized so a one-ATR move against it loses your chosen risk (2% of capital by default).
+- ATR-based sizing in [`risk.ts`](./src/lib/risk.ts): the position is sized `q = min(risk budget / stop distance, capital / price)`, so a stop two ATRs away loses at most your chosen risk (2% of capital by default).
 - Hard invariants: notional never exceeds the capital or per-asset budget, the stop price is floored at zero, and shares round to four decimals (down, when needed, to stay within budget). When the budget binds, the position and its risk come in below the target.
-- The Quant Analyzer and the asset detail view call `risk.ts` directly. The Pine HUD applies the same budget-capped sizing and the same 1× ATR stop by default; its stop multiplier is configurable.
+- The Quant Analyzer and the asset detail view call `risk.ts` directly. The Pine HUD applies the same budget-capped sizing and the same 2× ATR stop by default; its stop multiplier is configurable.
 
 ### Real-time webhook Action Center
 

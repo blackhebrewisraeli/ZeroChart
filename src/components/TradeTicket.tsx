@@ -7,6 +7,7 @@ import { AssetIcon } from '@/components/AssetIcon';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { usePortfolio, type PortfolioType } from '@/lib/portfolioStore';
 import { LEDGER_NAMES, type CorePortfolioType, type TradeIntent } from '@/lib/portfolioAccounting';
+import { usePaperRisk } from '@/hooks/usePaperRisk';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { useLivePrice } from '@/lib/livePriceStore';
 import { toBinanceSymbol } from '@/lib/ticker';
@@ -40,6 +41,8 @@ export function TradeTicket({
 }) {
   const { executeBuy, executeSell, executePaperTrade, portfolios } = usePortfolio();
   const recordsFills = portfolioType !== undefined;
+  const isPaper = portfolioType === 'paper_trading';
+  const paperRisk = usePaperRisk(isPaper ? asset.ticker : undefined);
   const [open, setOpen] = useState(false);
   /** A paper fill is in flight to the server. */
   const [booking, setBooking] = useState(false);
@@ -61,6 +64,12 @@ export function TradeTicket({
   const estimatedQty = canSubmit ? numericAmount / price : 0;
   const fee = canSubmit ? numericAmount * FEE_RATE : 0;
   const total = canSubmit ? numericAmount + (side === 'buy' ? fee : -fee) : 0;
+  // Paper entries must clear the portfolio risk manager first.
+  const entry =
+    isPaper && side === 'buy' && canSubmit
+      ? paperRisk.checkBuy(asset.ticker, { shares: estimatedQty, price, fee })
+      : null;
+  const rejection = entry?.ok === false ? entry.reason : null;
 
   useEffect(() => {
     setMounted(true);
@@ -146,7 +155,7 @@ export function TradeTicket({
   }
 
   async function handleSubmit() {
-    if (!canSubmit || booking) return;
+    if (!canSubmit || booking || rejection) return;
     if (recordsFills) {
       const shares = fillShares(portfolioType, price);
       const result =
@@ -313,11 +322,17 @@ export function TradeTicket({
                         'ticket-submit',
                         side === 'buy' ? 'ticket-submit-buy' : 'ticket-submit-sell',
                       )}
-                      disabled={!canSubmit || booking}
+                      disabled={!canSubmit || booking || rejection !== null}
+                      aria-describedby={rejection ? 'ticket-rejection' : undefined}
                       onClick={() => void handleSubmit()}
                     >
                       {side === 'buy' ? 'Buy' : 'Sell'} {asset.ticker}
                     </button>
+                    {rejection && (
+                      <p id="ticket-rejection" className="ticket-rejection">
+                        {rejection}
+                      </p>
+                    )}
 
                     <p className="ticket-footnote">
                       {!recordsFills

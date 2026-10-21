@@ -45,7 +45,7 @@ export function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function missingEnvMessage(vars: string[]): string {
-  return `Missing Supabase environment variable(s): ${vars.join(' or ')}. Connect Supabase in Lovable Cloud.`;
+  return `Missing Supabase environment variable(s): ${vars.join(' or ')}. Set them in the deployment environment.`;
 }
 
 /**

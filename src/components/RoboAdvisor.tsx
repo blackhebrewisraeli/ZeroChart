@@ -24,7 +24,7 @@ import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { applyBuyTransaction, applyCashTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { FEE_RATE } from '@/components/TradeTicket';
-import { cn } from '@/lib/utils';
+import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const RISK_OPTIONS: {
   id: RiskProfile;
@@ -284,13 +284,16 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
 
       {open &&
         createPortal(
-          <div className={cn('robo-overlay', closing && 'is-closing')} onClick={closeModal}>
+          <div // NOSONAR(S6819): click-to-close backdrop, not an image; Escape closes it from the keyboard
+            role="presentation"
+            className={cn('robo-overlay', closing && 'is-closing')}
+            onClick={closeOnBackdrop(closeModal)}
+          >
             <div
               className={cn('robo-panel', closing && 'is-closing')}
               role="dialog"
               aria-modal="true"
               aria-labelledby="robo-title"
-              onClick={(e) => e.stopPropagation()}
             >
               <header className="robo-header">
                 <div className="robo-brand">
@@ -333,7 +336,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                           value={amount}
                           onChange={(e) => setAmount(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSubmit();
+                            if (e.key === 'Enter') void handleSubmit();
                           }}
                           placeholder="10,000"
                           aria-invalid={!!error}
@@ -365,7 +368,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                           value={monthlyDeposit}
                           onChange={(e) => setMonthlyDeposit(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSubmit();
+                            if (e.key === 'Enter') void handleSubmit();
                           }}
                           placeholder="250"
                         />

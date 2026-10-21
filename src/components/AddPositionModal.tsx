@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, X } from 'lucide-react';
 import type { Position } from '@/lib/portfolioManager';
 import { usePortfolio } from '@/lib/portfolioStore';
-import { cn } from '@/lib/utils';
+import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const CLOSE_MS = 260;
 
@@ -109,14 +109,17 @@ export function AddPositionModal() {
 
       {open &&
         createPortal(
-          <div className={cn('position-overlay', closing && 'is-closing')} onClick={closeModal}>
+          <div // NOSONAR(S6819): click-to-close backdrop, not an image; Escape closes it from the keyboard
+            role="presentation"
+            className={cn('position-overlay', closing && 'is-closing')}
+            onClick={closeOnBackdrop(closeModal)}
+          >
             <form
               className={cn('position-sheet', closing && 'is-closing')}
               role="dialog"
               aria-modal="true"
               aria-label="Add live position"
               onSubmit={handleSubmit}
-              onClick={(e) => e.stopPropagation()}
             >
               <header className="position-header">
                 <div>

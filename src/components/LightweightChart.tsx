@@ -27,13 +27,13 @@ export interface ValuePoint {
   value: number;
 }
 
-const UP_COLOR = '#00ff41';
-const DOWN_COLOR = '#ff003c';
-const CROSSHAIR_COLOR = '#00E5FF';
-const GRID_COLOR = 'rgba(139, 149, 167, 0.14)';
-const TEXT_COLOR = '#8b95a7';
-const SMA_50_COLOR = '#00E5FF';
-const SMA_200_COLOR = '#ff00ff';
+const UP_COLOR = '#61cb7c';
+const DOWN_COLOR = '#f66d67';
+const CROSSHAIR_COLOR = '#60ceef';
+const GRID_COLOR = 'rgba(161, 161, 170, 0.1)';
+const TEXT_COLOR = '#9f9fa9';
+const SMA_50_COLOR = '#60ceef';
+const SMA_200_COLOR = '#9d98f2';
 const RSI_COLOR = '#a78bfa';
 const RSI_HEIGHT = 90;
 const PANE_GAP = 8;
@@ -329,8 +329,8 @@ export function ValueAreaChart({
     const chart = createBaseChart(container);
     const series = chart.addSeries(AreaSeries, {
       lineColor: UP_COLOR,
-      topColor: 'rgba(0, 255, 65, 0.28)',
-      bottomColor: 'rgba(0, 255, 65, 0)',
+      topColor: 'rgba(97, 203, 124, 0.2)',
+      bottomColor: 'rgba(97, 203, 124, 0)',
       lineWidth: 2,
       priceLineVisible: false,
     });

@@ -1,8 +1,8 @@
 import { Line, LineChart } from 'recharts';
 
-const TREND_UP = '#00ff41';
-const TREND_DOWN = '#ff003c';
-const TREND_FLAT = '#6b7280';
+const TREND_UP = 'var(--signal-green)';
+const TREND_DOWN = 'var(--signal-red)';
+const TREND_FLAT = 'var(--muted-foreground)';
 
 interface SparklineProps {
   data: number[];
@@ -13,8 +13,8 @@ interface SparklineProps {
 
 /**
  * Minimal inline trend chart with no axes, grid, tooltip, or legend to keep
- * the data-ink ratio maximal. Color is deterministic: neon green for a positive
- * 24h change, neon red for negative, and neutral gray for missing/flat data.
+ * the data-ink ratio maximal. Color is deterministic: signal green for a positive
+ * 24h change, signal red for negative, and neutral gray for missing/flat data.
  */
 export function Sparkline({ data, change = null, width = 80, height = 30 }: SparklineProps) {
   const points = data.map((value) => ({ value }));

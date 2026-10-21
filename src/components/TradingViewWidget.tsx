@@ -9,7 +9,7 @@ const SCRIPT_SRC = 'https://s3.tradingview.com/external-embedding/embed-widget-a
 const IS_TEST = import.meta.env.MODE === 'test';
 
 const PALETTE = {
-  dark: { background: '#101828', grid: 'rgba(255, 255, 255, 0.06)' },
+  dark: { background: '#0f0f12', grid: 'rgba(255, 255, 255, 0.05)' },
   light: { background: '#ffffff', grid: 'rgba(16, 24, 40, 0.06)' },
 } as const;
 

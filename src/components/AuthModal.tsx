@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabaseClient';
+import { setRememberMe, supabase } from '@/lib/supabaseClient';
 import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const CLOSE_MS = 260;
@@ -51,6 +51,7 @@ export function AuthModal({
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -77,6 +78,7 @@ export function AuthModal({
     setMode('signin');
     setEmail('');
     setPassword('');
+    setRemember(true);
     setError(null);
   }, [open]);
 
@@ -114,6 +116,7 @@ export function AuthModal({
     if (submitting) return;
     setError(null);
     setSubmitting(true);
+    setRememberMe(remember);
 
     const { data, error: authError } =
       mode === 'signin'
@@ -142,6 +145,8 @@ export function AuthModal({
     if (submitting) return;
     setError(null);
     setSubmitting(true);
+    // sessionStorage survives the same-tab round trip to the provider.
+    setRememberMe(remember);
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -261,6 +266,15 @@ export function AuthModal({
               placeholder="••••••••"
               onChange={(e) => setPassword(e.target.value)}
             />
+          </label>
+          <label className="auth-remember">
+            <input
+              type="checkbox"
+              name="remember"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            <span>Keep me signed in</span>
           </label>
           {error && (
             <p className="auth-error" role="alert">

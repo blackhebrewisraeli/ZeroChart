@@ -17,9 +17,14 @@ jobs:
       # credentials are needed (or should be committed).
       VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
       VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+      # A flag, not the token, so npm scripts never see the secret.
+      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history lets SonarQube Cloud tell new code from old.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -40,4 +45,12 @@ jobs:
         run: npm run lint
 
       - name: Test
-        run: npm test
+        run: npm test -- --coverage
+
+      # Skipped until the SONAR_TOKEN secret exists; Automatic Analysis in
+      # SonarQube Cloud must be off by then (sonar-project.properties).
+      - name: SonarQube Cloud scan
+        if: env.HAS_SONAR_TOKEN == 'true'
+        uses: SonarSource/sonarqube-scan-action@v8
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

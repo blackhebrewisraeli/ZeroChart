@@ -109,7 +109,7 @@ export function AddPositionModal() {
 
       {open &&
         createPortal(
-          <div
+          <div // NOSONAR(S6819): click-to-close backdrop, not an image; Escape closes it from the keyboard
             role="presentation"
             className={cn('position-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}

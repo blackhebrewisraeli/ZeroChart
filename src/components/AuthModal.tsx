@@ -158,7 +158,7 @@ export function AuthModal({
   if (!open) return null;
 
   return createPortal(
-    <div
+    <div // NOSONAR(S6819): click-to-close backdrop, not an image; Escape closes it from the keyboard
       role="presentation"
       className={cn('auth-overlay', closing && 'is-closing')}
       onClick={closeOnBackdrop(close)}

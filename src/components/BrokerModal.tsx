@@ -133,7 +133,7 @@ export function BrokerModal({
 
       {open &&
         createPortal(
-          <div
+          <div // NOSONAR(S6819): click-to-close backdrop, not an image; Escape closes it from the keyboard
             role="presentation"
             className={cn('broker-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}

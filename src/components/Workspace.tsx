@@ -289,7 +289,11 @@ const MarketRow = memo(function MarketRow({
           </span>
         )}
       </span>
-      <span role="presentation" className="markets-trade" onClick={(e) => e.stopPropagation()}>
+      <span // NOSONAR(S6819): keeps Trade clicks (and its modal's) from selecting the row
+        role="presentation"
+        className="markets-trade"
+        onClick={(e) => e.stopPropagation()}
+      >
         <BrokerModal asset={asset} />
       </span>
     </div>

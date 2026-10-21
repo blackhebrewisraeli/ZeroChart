@@ -78,12 +78,18 @@
 
 :root {
   --radius: 0.5rem;
-  --background: oklch(0.962 0.008 240);
-  --foreground: oklch(0.21 0.02 260);
+  /* Zinc neutrals: zinc-50 canvas, white cards, zinc-200 hairlines, zinc-900 / zinc-500 text.
+     Shadows are zinc-900 tinted: a 1px contact edge plus one wide, faint ambient drop. */
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.21 0.006 285.885);
   --card: #ffffff;
   --card-foreground: var(--foreground);
-  --card-shadow: 0 12px 30px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
-  --overlay-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.18);
+  /* Panels that sit straight on the canvas: white here, one step above the card in dark. */
+  --surface-raised: var(--card);
+  --card-shadow:
+    0 1px 2px oklch(0.21 0.006 285.885 / 0.04), 0 8px 24px -12px oklch(0.21 0.006 285.885 / 0.08);
+  --overlay-shadow:
+    0 1px 2px oklch(0.21 0.006 285.885 / 0.05), 0 24px 48px -16px oklch(0.21 0.006 285.885 / 0.16);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --primary: oklch(0.74 0.14 215);
@@ -97,15 +103,15 @@
   --accent-amber: oklch(0.6 0.16 75);
   --accent-amber-soft: oklch(0.96 0.035 75);
   --accent-amber-border: oklch(0.84 0.07 75);
-  --secondary: oklch(0.98 0.005 240);
+  --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.98 0.005 240);
-  --muted-foreground: oklch(0.5 0.02 260);
-  --accent: oklch(0.92 0.012 210);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: var(--foreground);
   --destructive: oklch(0.62 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.89 0.014 240);
+  --border: oklch(0.92 0.004 286.32);
   --input: var(--border);
   --ring: var(--primary);
   --signal-green: oklch(0.57 0.18 150);
@@ -138,6 +144,7 @@
   --foreground: oklch(0.967 0.001 286.375);
   --card: oklch(0.17 0.005 286);
   --card-foreground: var(--foreground);
+  --surface-raised: var(--secondary);
   --card-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
   --overlay-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 24px 48px -16px rgb(0 0 0 / 0.6);
   --popover: var(--card);
@@ -609,6 +616,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
+  box-shadow: var(--card-shadow);
 }
 .markets-row {
   display: grid;
@@ -2252,6 +2260,7 @@ body {
 .analytics-workspace-panel .backtest-card {
   border: 0;
   background: transparent;
+  box-shadow: none;
 }
 .portfolio-section-embedded {
   margin-top: 0;
@@ -2487,7 +2496,8 @@ body {
   padding: 20px 24px;
   border-radius: 14px;
   border: 1px solid;
-  background: var(--secondary);
+  background: var(--surface-raised);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
 }
 .suggestion-buy,
@@ -2617,7 +2627,8 @@ body {
   padding: 24px;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: var(--secondary);
+  background: var(--surface-raised);
+  box-shadow: var(--card-shadow);
   color: var(--muted-foreground);
 }
 .suggestion-empty svg {
@@ -2984,7 +2995,8 @@ button.paper-ticker:hover {
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: var(--secondary);
+  background: var(--surface-raised);
+  box-shadow: var(--card-shadow);
 }
 .paper-order-price {
   font:
@@ -3910,6 +3922,23 @@ button.paper-ticker:hover {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 20%, transparent);
 }
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 2px 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.auth-remember input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
 .auth-error {
   margin: 0;
   padding: 10px 12px;
@@ -4269,9 +4298,7 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
-  box-shadow:
-    0 0 40px color-mix(in oklch, var(--primary) 6%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: var(--card-shadow);
 }
 .allocation-donut {
   position: relative;
@@ -5679,6 +5706,7 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
+  box-shadow: var(--card-shadow);
 }
 .backtest-head {
   display: flex;
@@ -6246,6 +6274,7 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
   transition:
     border-color 0.2s ease-out,
@@ -6266,7 +6295,9 @@ button.paper-ticker:hover {
 }
 .landing-card:hover {
   border-color: color-mix(in oklch, var(--brand-blue) 35%, transparent);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 6%, transparent);
+  box-shadow:
+    var(--card-shadow),
+    0 0 30px color-mix(in oklch, var(--brand-blue) 6%, transparent);
 }
 .landing-card:hover::after {
   opacity: 1;
@@ -6312,6 +6343,7 @@ button.paper-ticker:hover {
       transparent 70%
     ),
     var(--card);
+  box-shadow: var(--card-shadow);
 }
 .landing-final-icon {
   color: var(--brand-blue);
@@ -6385,6 +6417,7 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
+  box-shadow: var(--card-shadow);
 }
 .price-alerts-head {
   display: flex;

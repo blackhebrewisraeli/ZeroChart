@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthModal } from '@/components/AuthModal';
 
 vi.mock('@/lib/supabaseClient', () => ({
+  setRememberMe: vi.fn(),
   supabase: {
     auth: {
       signInWithPassword: vi.fn(),
@@ -23,6 +24,7 @@ describe('AuthModal', () => {
     expect(screen.getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument();
     expect(screen.getByLabelText('Email')).toHaveClass('auth-input');
     expect(screen.getByLabelText('Password')).toHaveClass('auth-input');
+    expect(screen.getByRole('checkbox', { name: 'Keep me signed in' })).toBeChecked();
     expect(dialog.querySelector('button[type="submit"]')).toHaveClass('auth-submit');
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
     expect(dialog.querySelector('.auth-body')?.lastElementChild).toHaveClass('auth-submit');

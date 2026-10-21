@@ -46,3 +46,6 @@ cline_mcp_settings.json
 
 # Supabase CLI cache
 supabase/.temp/
+
+# Vitest coverage (npm test -- --coverage)
+coverage/

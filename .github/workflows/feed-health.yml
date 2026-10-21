@@ -1,0 +1,53 @@
+name: Feed health
+
+# Fails, and GitHub emails the repo owner, when assets_status goes stale: a
+# feed stopped, or it keeps skipping a ticker (a skipped ticker keeps its old
+# time, so checking every row's age catches both). Limits:
+#   crypto prices (-USD)   60 min   feed runs every 15; paper fills reject at 120
+#   equity / forex prices  96 h     rows carry the last trade time, so nights,
+#                                   weekends and a holiday Monday are normal
+#   analytics              26 h     market-analytics runs daily at 21:45 UTC
+# ponytail: GitHub can start scheduled runs late (hours, at busy times) and
+# turns them off after 60 days without repo activity; move to a pg_cron check
+# with a webhook if alerts need to be prompt.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: assets_status is fresh
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Repo variables, not secrets: the URL and publishable key ship in the
+      # public frontend bundle, and RLS only lets them read assets_status.
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - name: Check every row's age
+        run: |
+          : "${SUPABASE_URL:?Set the SUPABASE_URL repo variable}"
+          : "${SUPABASE_PUBLISHABLE_KEY:?Set the SUPABASE_PUBLISHABLE_KEY repo variable}"
+          curl -fsS "$SUPABASE_URL/rest/v1/assets_status?select=ticker,updated_at,analytics_updated_at" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" > rows.json
+          jq -r --argjson now "$(date -u +%s)" -f /dev/stdin rows.json > stale.txt <<'JQ'
+            def age_mins: if . == null then infinite
+              else ($now - (sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z") | fromdateiso8601)) / 60 end;
+            if length == 0 then "assets_status is empty" else .[] | .ticker as $ticker
+              | (if ($ticker | test("-USD$")) then 60 else 5760 end) as $price_limit
+              | [ (if (.updated_at | age_mins) > $price_limit then "price \(.updated_at // "never")" else empty end),
+                  (if (.analytics_updated_at | age_mins) > 1560 then "analytics \(.analytics_updated_at // "never")" else empty end) ]
+              | select(length > 0) | "\($ticker): stale \(join(", "))"
+            end
+          JQ
+          if [ -s stale.txt ]; then
+            echo "::error::$(wc -l < stale.txt | tr -d ' ') stale assets_status row(s)"
+            cat stale.txt
+            exit 1
+          fi
+          echo "All $(jq length rows.json) rows are fresh."

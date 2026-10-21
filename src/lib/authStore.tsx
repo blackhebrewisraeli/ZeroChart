@@ -32,7 +32,7 @@ interface AuthStore {
 
 const AuthContext = createContext<AuthStore | null>(null);
 
-const DEV_AUTH_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+const DEV_AUTH_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
  * Dev-only stub user for headless browser verification (Playwright / CDP):
@@ -46,7 +46,7 @@ const DEV_AUTH_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 // eslint-disable-next-line react-refresh/only-export-components
 export function readDevAuthUser(): User | null {
   if (!import.meta.env.DEV || import.meta.env.MODE === 'test') return null;
-  if (typeof location === 'undefined' || !DEV_AUTH_HOSTS.includes(location.hostname)) return null;
+  if (typeof location === 'undefined' || !DEV_AUTH_HOSTS.has(location.hostname)) return null;
   const flag = new URLSearchParams(location.search).get('devAuth');
   if (flag !== '1' && flag !== 'pro') return null;
   return {
@@ -59,7 +59,7 @@ export function readDevAuthUser(): User | null {
   };
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sandboxPro, setSandboxPro] = useState(false);

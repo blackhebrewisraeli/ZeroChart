@@ -56,9 +56,6 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 3. Open the PR against `main` and complete the checklist in the [pull request template](./.github/pull_request_template.md).
 4. CI must pass before merge.
 
-> [!IMPORTANT]
-> This repository syncs with [Lovable](https://lovable.dev). Never force-push or rewrite history that has already been pushed. Add a new commit instead.
-
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](./LICENSE).

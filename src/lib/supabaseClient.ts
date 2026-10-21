@@ -7,7 +7,6 @@
 // `createClient` call for browser code; re-export from this module instead.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
-import { brokeredPreviewStorage } from '@/integrations/supabase/previewAuthStorage';
 import { createSupabaseFetch, resolveSupabaseKey, resolveSupabaseUrl } from '@/lib/supabaseConfig';
 
 const SUPABASE_URL = resolveSupabaseUrl();
@@ -20,7 +19,6 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_KEY, {
     fetch: createSupabaseFetch(SUPABASE_KEY),
   },
   auth: {
-    storage: brokeredPreviewStorage(),
     persistSession: true,
     autoRefreshToken: true,
   },

@@ -1,12 +1,8 @@
 # ZeroChart connection
 
-## This Lovable project
+The dashboard reads every row in `public.assets_status`, paging in batches of 1,000. The database starts empty; **Sample data** is a separate, explicitly labeled frontend preview, not live prices or investment advice.
 
-Lovable Cloud is connected automatically. No URL or key needs to be pasted. The dashboard reads every row in `public.assets_status`, paging in batches of 1,000. The database starts empty; **Sample data** is a separate, explicitly labeled frontend preview, not live prices or investment advice.
-
-To use your existing external project instead, connect it through **Project Settings → Connectors → Supabase**. It cannot be linked by pasting credentials into chat.
-
-## Running the frontend outside Lovable
+## Running the frontend locally
 
 In the project root, create `.env.local` and paste your project's public connection values:
 
@@ -15,7 +11,7 @@ VITE_SUPABASE_URL=<your project URL>
 VITE_SUPABASE_PUBLISHABLE_KEY=<your anon key or publishable key>
 ```
 
-The shared client in [`src/lib/supabaseClient.ts`](../src/lib/supabaseClient.ts) reads these variables through [`src/lib/supabaseConfig.ts`](../src/lib/supabaseConfig.ts). Never use a service-role or secret key in frontend code. Restart your local development process after changing environment variables. Use `bun install` and `bun run dev` to run locally.
+The shared client in [`src/lib/supabaseClient.ts`](../src/lib/supabaseClient.ts) reads these variables through [`src/lib/supabaseConfig.ts`](../src/lib/supabaseConfig.ts). Never use a service-role or secret key in frontend code. Restart your local development process after changing environment variables. Use `npm install` and `npm run dev` to run locally.
 
 ## Required table
 

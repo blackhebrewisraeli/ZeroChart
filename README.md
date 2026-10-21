@@ -123,7 +123,6 @@ flowchart TB
 
 - [Node.js](https://nodejs.org/) 22+ (or [Bun](https://bun.sh/))
 - A [Supabase](https://supabase.com/) project
-- The PostgreSQL [`psql`](https://www.postgresql.org/download/) client, for applying the core migrations
 
 ### 1. Clone and install
 
@@ -152,14 +151,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
 ### 3. Set up the database
 
-Apply the core schema (`assets_status`, `user_portfolios`, `user_alerts`) with your project's Postgres connection string. Copy it from the **Connect** button on your project dashboard. The direct connection is IPv6-only unless your project has the IPv4 add-on, so on an IPv4-only network use the **Session pooler** string instead (user `postgres.<your-project-ref>`, port `5432`).
-
-```bash
-export DATABASE_URL="<connection string from the Connect dialog>"
-for f in drizzle/migrations/000*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
-```
-
-Then link the Supabase CLI and push the remaining migrations (shared portfolios, trading signals):
+`supabase/migrations` is the only source of the schema. Link the Supabase CLI and push every migration:
 
 ```bash
 npx supabase link --project-ref <your-project-ref>
@@ -215,8 +207,7 @@ src/
 └── test/                 Vitest suites
 supabase/
 ├── functions/tv-webhook/ TradingView alert ingestion (Deno Edge Function)
-└── migrations/           Shared portfolios, trading signals, webhook tokens
-drizzle/migrations/       Core schema: assets_status, user_portfolios, user_alerts
+└── migrations/           The whole database schema, oldest first
 docs/                     Architecture, roadmap, and audit documents
 ```
 

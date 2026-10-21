@@ -6,6 +6,7 @@ import { FEE_RATE } from '@/components/TradeTicket';
 import type { Asset } from '@/lib/assets';
 import type { PortfolioContainer } from '@/lib/portfolioAccounting';
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
+import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 
 const authState = vi.hoisted(() => ({ isPro: true }));
 
@@ -37,7 +38,7 @@ vi.mock('@/lib/roboAdvisor', () => ({
       weight: 0.6,
       allocatedAmount: 6000,
       score: 92,
-      suggestedShares: 12.5,
+      suggestedShares: 0.05,
       regime: 'TRENDING',
       rationale: 'Bullish momentum (+0.8%) + calm volatility (1.2%) · Trending regime',
       components: {
@@ -47,7 +48,7 @@ vi.mock('@/lib/roboAdvisor', () => ({
         weights: { rsi: 0.3, momentum: 0.5, volatility: 0.2 },
       },
     },
-    { ticker: 'ETH', weight: 0.4, allocatedAmount: 4000, score: 78, suggestedShares: 40 },
+    { ticker: 'ETH', weight: 0.4, allocatedAmount: 4000, score: 78, suggestedShares: 0.5 },
   ]),
 }));
 
@@ -78,11 +79,15 @@ beforeEach(() => {
   localStorage.clear();
   rejectBuyOf.ticker = null;
   vi.mocked(toast.error).mockClear();
+  vi.mocked(buildQuantPortfolio).mockClear();
 });
 
 let sim: PortfolioContainer | undefined;
+let paper: PortfolioContainer | undefined;
 function SimProbe() {
-  sim = usePortfolio().portfolios.long_term_sim;
+  const portfolios = usePortfolio().portfolios;
+  sim = portfolios.long_term_sim;
+  paper = portfolios.paper_trading;
   return null;
 }
 
@@ -99,7 +104,7 @@ async function investOnce() {
 }
 
 describe('RoboAdvisor invest', () => {
-  it('funds sim cash, then books one fee-inclusive BUY per allocation', async () => {
+  it('uses existing Paper Cash and never exceeds the ATR suggested shares', async () => {
     render(
       <PortfolioProvider>
         <RoboAdvisor assets={assets} />
@@ -110,44 +115,29 @@ describe('RoboAdvisor invest', () => {
     await investOnce();
 
     expect(toast.error).not.toHaveBeenCalled();
-    const ledger = sim!.transactions;
+    expect(sim!.transactions).toEqual([]);
+    const ledger = paper!.transactions;
     expect(ledger.map((t) => [t.type, t.ticker])).toEqual([
-      ['deposit', undefined],
       ['buy', 'BTC'],
       ['buy', 'ETH'],
     ]);
-    expect(ledger[0]).toMatchObject({ amount: 10000, note: 'Quant Analyzer funding' });
-    for (const [buy, allocated] of [
-      [ledger[1]!, 6000],
-      [ledger[2]!, 4000],
-    ] as const) {
+    expect(ledger[0]).toMatchObject({ shares: 0.05, price: 67000 });
+    expect(ledger[1]).toMatchObject({ shares: 0.5, price: 3500 });
+    for (const buy of ledger) {
       expect(buy.fee).toBeCloseTo(buy.shares! * buy.price! * FEE_RATE, 9);
-      expect(buy.amount).toBeLessThanOrEqual(allocated);
-      expect(buy.amount).toBeGreaterThan(allocated - 0.01);
     }
-    expect(ledger[1]!.price).toBe(67000);
-    expect(ledger[2]!.price).toBe(3500);
 
-    // Cash is the deposit minus exactly what the buys spent.
-    expect(sim!.cashBalance).toBeCloseTo(10000 - ledger[1]!.amount - ledger[2]!.amount, 9);
-    expect(sim!.cashBalance).toBeGreaterThanOrEqual(0);
-    expect(sim!.positions.map((p) => [p.ticker, p.shares])).toEqual([
-      ['BTC', ledger[1]!.shares],
-      ['ETH', ledger[2]!.shares],
+    expect(paper!.cashBalance).toBeCloseTo(100000 - ledger[0]!.amount - ledger[1]!.amount, 9);
+    expect(paper!.positions.map((p) => [p.ticker, p.shares])).toEqual([
+      ['BTC', 0.05],
+      ['ETH', 0.5],
     ]);
 
     // Investing again merges into the same rows instead of duplicating them.
     await investOnce();
-    expect(sim!.transactions.map((t) => t.type)).toEqual([
-      'deposit',
-      'buy',
-      'buy',
-      'deposit',
-      'buy',
-      'buy',
-    ]);
-    expect(sim!.positions.map((p) => p.ticker)).toEqual(['BTC', 'ETH']);
-    expect(sim!.positions[0]!.shares).toBeCloseTo(ledger[1]!.shares! * 2, 8);
+    expect(paper!.transactions.map((t) => t.type)).toEqual(['buy', 'buy', 'buy', 'buy']);
+    expect(paper!.positions.map((p) => p.ticker)).toEqual(['BTC', 'ETH']);
+    expect(paper!.positions[0]!.shares).toBeCloseTo(0.1, 8);
   });
 
   it('commits nothing and keeps the modal open when any buy is rejected', async () => {
@@ -158,14 +148,32 @@ describe('RoboAdvisor invest', () => {
         <SimProbe />
       </PortfolioProvider>,
     );
-    const before = structuredClone(sim);
+    const before = structuredClone(paper);
 
     await confirmInvest();
 
     expect(toast.error).toHaveBeenCalledWith('Simulated rejection');
     expect(document.querySelector('.robo-overlay')).not.toHaveClass('is-closing');
-    // The deposit and the BTC buy that ran before ETH are rolled back too.
-    expect(sim).toEqual(before);
+    // Preflight rejects the batch before the first Paper Trading row is booked.
+    expect(paper).toEqual(before);
+  });
+
+  it('refuses to build with more than the actual available Paper Cash', async () => {
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+        <SimProbe />
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+    const dialog = await screen.findByRole('dialog');
+    const amount = within(dialog).getByRole('textbox', { name: /investment amount/i });
+    fireEvent.change(amount, { target: { value: '200000' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
+
+    expect(await within(dialog).findByText(/available Paper Cash is \$100,000\.00/i)).toBeVisible();
+    expect(buildQuantPortfolio).not.toHaveBeenCalled();
   });
 });
 
@@ -194,8 +202,8 @@ describe('RoboAdvisor results', () => {
     expect(screen.getAllByText('Suggested size')).toHaveLength(2);
     const sizeTooltips = screen.getAllByTitle(/Suggested position size/);
     expect(sizeTooltips).toHaveLength(2);
-    expect(sizeTooltips[0]).toHaveTextContent('12.5 shares');
-    expect(sizeTooltips[1]).toHaveTextContent('40 shares');
+    expect(sizeTooltips[0]).toHaveTextContent('0.05 shares');
+    expect(sizeTooltips[1]).toHaveTextContent('0.5 shares');
 
     // White-box breakdown: regime badge, one-line thesis, and factor sub-scores.
     expect(screen.getByText('Trending')).toHaveAttribute('data-regime', 'TRENDING');

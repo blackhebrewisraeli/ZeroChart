@@ -21,7 +21,7 @@ import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { MIN_CANDLES, REGIME_LABELS } from '@/lib/canonicalModel';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
-import { applyBuyTransaction, applyCashTransaction } from '@/lib/portfolioAccounting';
+import { applyBuyTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { cn, closeOnBackdrop } from '@/lib/utils';
@@ -96,7 +96,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   const closeTimer = useRef<number | undefined>(undefined);
 
   const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
-  const { transactPortfolio } = usePortfolio();
+  const { executePaperTrade, getPortfolio } = usePortfolio();
 
   function openModal() {
     closingRef.current = false;
@@ -161,6 +161,11 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
       setError('Enter an investment amount greater than $0.');
       return;
     }
+    const paperCash = getPortfolio('paper_trading').cashBalance;
+    if (value > paperCash) {
+      setError(`Available Paper Cash is ${formatPrice(paperCash)}.`);
+      return;
+    }
     const monthlyRaw = monthlyDeposit.replace(/[^0-9.]/g, '');
     const monthlyValue = monthlyRaw === '' ? 0 : Number(monthlyRaw);
     if (!Number.isFinite(monthlyValue) || monthlyValue < 0) {
@@ -204,7 +209,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
     }
   }
 
-  function handleConfirmInvest() {
+  async function handleConfirmInvest() {
     if (closingRef.current || !result || result.length === 0) return;
 
     const buys = result.flatMap((allocation) => {
@@ -219,37 +224,45 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
     }
 
     const timestamp = new Date().toISOString();
-    // Fund, then buy, as one commit: a rejected buy leaves the ledger untouched.
-    const invested = transactPortfolio('long_term_sim', (container) => {
-      const funded = applyCashTransaction(container, {
-        type: 'deposit',
-        amount: total,
-        note: 'Quant Analyzer funding',
-        timestamp,
-      });
-      if (!funded.ok) return funded;
-      let next = funded.container;
-      for (const { allocation, name, price } of buys) {
-        // Allocations are rounded to cents, so together they can overshoot the deposit.
-        const budget = Math.min(allocation.allocatedAmount, next.cashBalance);
-        const shares = Math.floor((budget / (price * (1 + FEE_RATE))) * 1e8) / 1e8;
-        if (shares <= 0) continue;
-        const bought = applyBuyTransaction(next, {
+    const orders = buys.flatMap(({ allocation, name, price }) => {
+      const atrLimit = allocation.suggestedShares;
+      if (atrLimit === null || atrLimit === undefined || atrLimit <= 0) return [];
+      const budgetShares = allocation.allocatedAmount / (price * (1 + FEE_RATE));
+      const shares = Math.floor(Math.min(atrLimit, budgetShares) * 1e8) / 1e8;
+      if (shares <= 0) return [];
+      return [
+        {
+          side: 'buy' as const,
           ticker: allocation.ticker,
           ...(name ? { name } : {}),
           shares,
           price,
           fee: shares * price * FEE_RATE,
-          timestamp,
-        });
-        if (!bought.ok) return bought;
-        next = bought.container;
-      }
-      return { ok: true, container: next };
+        },
+      ];
     });
-    if (!invested.ok) {
-      toast.error(invested.error ?? 'Order rejected');
+    if (orders.length === 0) {
+      toast.error('No ATR-sized positions can be bought with the available Paper Cash.');
       return;
+    }
+
+    // Validate the complete batch against the current account before booking
+    // its first server row. Server triggers repeat these cash checks per fill.
+    let preview = getPortfolio('paper_trading');
+    for (const order of orders) {
+      const bought = applyBuyTransaction(preview, { ...order, timestamp });
+      if (!bought.ok) {
+        toast.error(bought.error);
+        return;
+      }
+      preview = bought.container;
+    }
+    for (const order of orders) {
+      const booked = await executePaperTrade(order);
+      if (!booked.ok) {
+        toast.error(booked.error ?? 'Order rejected');
+        return;
+      }
     }
 
     closeModal();

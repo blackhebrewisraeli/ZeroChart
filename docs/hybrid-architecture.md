@@ -104,7 +104,7 @@ Plus indexes `(portfolio_id, ticker)`, `(user_id, portfolio_type)`; **RLS owner 
 3. **Backfill:** one-off service-role script reads each legacy/v3 `user_portfolios.positions` JSONB → emits typed `portfolios` + `positions` + synthetic opening `position_lots` (`traded_at = dateAdded`, `source='backfill'`). Idempotent via `(user_id, backfill_version)`.
 4. **Dual-read:** app reads new tables; falls back to JSONB when absent (per-user feature flag).
 5. **Dual-write:** app writes both (JSONB as snapshot cache) with nightly diff; `db.ts` remains the JSONB adapter.
-6. **Cut over:** JSONB becomes read-only legacy; remove adapter later; pull `user_portfolios`/`user_alerts` ad-hoc SQL into drizzle history in the same window (closes the F-3.1 migration-tooling gap).
+6. **Cut over:** JSONB becomes read-only legacy; remove adapter later; (the F-3.1 migration-tooling gap is closed: `user_portfolios`/`user_alerts` are in the `supabase/migrations` baseline).
 
 **Rollback:** steps 1–5 are purely additive; disable the flag to return to JSONB (dual-write keeps data warm).
 

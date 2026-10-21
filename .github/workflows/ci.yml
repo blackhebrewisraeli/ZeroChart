@@ -41,3 +41,20 @@ jobs:
 
       - name: Test
         run: npm test
+
+  migrations:
+    name: Migrations build a fresh database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Starts an empty local Postgres and applies supabase/migrations in order,
+      # so a migration that depends on schema made outside that folder fails here.
+      - name: Apply every migration
+        run: supabase db start

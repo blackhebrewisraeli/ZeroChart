@@ -10,3 +10,7 @@ verify_jwt = false
 
 [functions.market-analytics]
 verify_jwt = false
+
+[db]
+# Match production so the CI fresh-database check runs the same Postgres.
+major_version = 17

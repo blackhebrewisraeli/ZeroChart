@@ -22,14 +22,18 @@ export function setRememberMe(remember: boolean): void {
   localStorage.setItem(REMEMBER_ME_KEY, String(remember));
 }
 
-function sessionStore(): Storage {
+function chosenStore(): Storage {
   return localStorage.getItem(REMEMBER_ME_KEY) === 'false' ? sessionStorage : localStorage;
 }
 
 export const authStorage = {
-  getItem: (key: string) => sessionStore().getItem(key),
+  // Read both stores: a session the client can't see can't be signed out either.
+  getItem: (key: string) => sessionStorage.getItem(key) ?? localStorage.getItem(key),
   setItem: (key: string, value: string) => {
-    const store = sessionStore();
+    // The choice is browser-wide but a tab-only session belongs to its tab, so it
+    // stays tab-only through token refreshes even if another tab later picks
+    // "remember". Persistence only ever grows through a fresh sign-in.
+    const store = sessionStorage.getItem(key) === null ? chosenStore() : sessionStorage;
     store.setItem(key, value);
     // Never leave a stale copy in the other store, or it would outlive the choice.
     (store === localStorage ? sessionStorage : localStorage).removeItem(key);

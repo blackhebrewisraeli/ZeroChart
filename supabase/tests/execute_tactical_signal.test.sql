@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(9);
 
 insert into auth.users (id)
 values
@@ -126,69 +126,49 @@ select is(
 );
 
 select throws_ok(
-  $$
-    select public.execute_tactical_signal(
+  format(
+    'select public.execute_tactical_signal(%L, %L, %s)',
+    rejected.signal_id,
+    '00000000-0000-4000-8000-000000000001',
+    rejected.fill_price
+  ),
+  '23514',
+  rejected.message,
+  rejected.description
+)
+from (
+  values
+    (
       '10000000-0000-4000-8000-000000000002',
-      '00000000-0000-4000-8000-000000000001',
-      100
-    )
-  $$,
-  '23514',
-  'Insufficient cash',
-  'an unaffordable fill is rejected by the server'
-);
-
-select is(
-  (
-    select status
-    from public.trading_signals
-    where id = '10000000-0000-4000-8000-000000000002'
-  ),
-  'PENDING',
-  'cash rejection rolls the signal status back to pending'
-);
-
-select is(
-  (
-    select count(*)::integer
-    from public.paper_transactions
-    where signal_id = '10000000-0000-4000-8000-000000000002'
-  ),
-  0,
-  'cash rejection leaves no partial fill'
-);
-
-select throws_ok(
-  $$
-    select public.execute_tactical_signal(
+      100,
+      'Insufficient cash',
+      'an unaffordable fill is rejected by the server'
+    ),
+    (
       '10000000-0000-4000-8000-000000000003',
-      '00000000-0000-4000-8000-000000000001',
-      100.51
+      100.51,
+      'AAPL has moved more than 0.5% from its server price. Try again after the next price refresh.',
+      'a price outside the 0.5% band is rejected'
     )
-  $$,
-  '23514',
-  'AAPL has moved more than 0.5% from its server price. Try again after the next price refresh.',
-  'a price outside the 0.5% band is rejected'
-);
-
-select is(
-  (
-    select status
-    from public.trading_signals
-    where id = '10000000-0000-4000-8000-000000000003'
-  ),
-  'PENDING',
-  'price rejection leaves the signal pending'
-);
+) as rejected (signal_id, fill_price, message, description);
 
 select is(
   (
     select count(*)::integer
-    from public.paper_transactions
-    where signal_id = '10000000-0000-4000-8000-000000000003'
+    from public.trading_signals as signal
+    where signal.id in (
+      '10000000-0000-4000-8000-000000000002',
+      '10000000-0000-4000-8000-000000000003'
+    )
+      and signal.status = 'PENDING'
+      and not exists (
+        select 1
+        from public.paper_transactions as fill
+        where fill.signal_id = signal.id
+      )
   ),
-  0,
-  'price rejection leaves no partial fill'
+  2,
+  'rejected signals stay pending with no partial fill'
 );
 
 select * from finish();

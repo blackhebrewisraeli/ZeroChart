@@ -82,6 +82,8 @@
   --foreground: oklch(0.21 0.02 260);
   --card: #ffffff;
   --card-foreground: var(--foreground);
+  --card-shadow: 0 12px 30px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+  --overlay-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.18);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --primary: oklch(0.74 0.14 215);
@@ -131,39 +133,42 @@
 }
 
 .dark {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.97 0.004 250);
-  --card: oklch(0.19 0.015 260);
+  /* Zinc neutrals: zinc-950 canvas, a barely lifted card, zinc-100 / zinc-400 text. */
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.967 0.001 286.375);
+  --card: oklch(0.17 0.005 286);
   --card-foreground: var(--foreground);
+  --card-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --overlay-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 24px 48px -16px rgb(0 0 0 / 0.6);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.79 0.14 215);
-  --primary-foreground: oklch(0.13 0.02 230);
-  --brand-blue: oklch(0.85 0.145 215);
-  --brand-blue-soft: oklch(0.25 0.045 225);
-  --brand-blue-border: oklch(0.46 0.08 225);
-  --accent-violet: oklch(0.74 0.16 285);
-  --accent-violet-soft: oklch(0.25 0.045 285);
-  --accent-violet-border: oklch(0.45 0.075 285);
-  --accent-amber: oklch(0.8 0.15 75);
-  --accent-amber-soft: oklch(0.25 0.04 75);
-  --accent-amber-border: oklch(0.46 0.07 75);
-  --secondary: oklch(0.23 0.015 260);
+  --primary: oklch(0.78 0.11 220);
+  --primary-foreground: oklch(0.141 0.005 285.823);
+  --brand-blue: oklch(0.8 0.11 220);
+  --brand-blue-soft: oklch(0.24 0.035 225);
+  --brand-blue-border: oklch(0.42 0.06 225);
+  --accent-violet: oklch(0.72 0.13 285);
+  --accent-violet-soft: oklch(0.24 0.035 285);
+  --accent-violet-border: oklch(0.42 0.06 285);
+  --accent-amber: oklch(0.8 0.13 75);
+  --accent-amber-soft: oklch(0.24 0.035 75);
+  --accent-amber-border: oklch(0.42 0.06 75);
+  --secondary: oklch(0.21 0.006 285.885);
   --secondary-foreground: var(--foreground);
-  --muted: oklch(0.21 0.015 260);
-  --muted-foreground: oklch(0.7 0.015 255);
-  --accent: oklch(0.25 0.02 230);
+  --muted: oklch(0.21 0.006 285.885);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: var(--foreground);
-  --destructive: oklch(0.62 0.22 20);
+  --destructive: oklch(0.62 0.2 20);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
   --ring: var(--primary);
-  --signal-green: oklch(0.78 0.18 150);
-  --signal-green-soft: oklch(0.24 0.04 150);
-  --signal-green-border: oklch(0.44 0.07 150);
-  --signal-yellow: oklch(0.85 0.17 90);
-  --signal-red: oklch(0.72 0.19 25);
+  --signal-green: oklch(0.76 0.15 150);
+  --signal-green-soft: oklch(0.24 0.035 150);
+  --signal-green-border: oklch(0.42 0.06 150);
+  --signal-yellow: oklch(0.84 0.14 90);
+  --signal-red: oklch(0.7 0.17 25);
   --signal-red-soft: oklch(0.24 0.045 25);
   --signal-red-border: oklch(0.44 0.075 25);
   --crypto-ink: oklch(0.77 0.055 290);
@@ -204,11 +209,10 @@ body {
   background-color: var(--background);
   background-image: radial-gradient(
     1100px 760px at 50% -12%,
-    color-mix(in oklch, var(--primary) 10%, transparent) 0%,
+    color-mix(in oklch, var(--primary) 6%, transparent) 0%,
     transparent 65%
   );
   background-repeat: no-repeat;
-  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -288,7 +292,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--card-shadow);
 }
 .hero-glow {
   position: absolute;
@@ -317,7 +321,7 @@ body {
   color: var(--brand-blue);
   background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
   border: 1px solid color-mix(in oklch, var(--brand-blue) 30%, transparent);
-  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 22%, transparent);
+  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 10%, transparent);
 }
 .hero-headline {
   display: flex;
@@ -334,7 +338,7 @@ body {
 }
 .hero-ticker {
   font:
-    700 clamp(40px, 7vw, 72px) 'DM Sans',
+    600 clamp(40px, 7vw, 72px) 'DM Sans',
     sans-serif;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -369,7 +373,7 @@ body {
 }
 .score-ring-value {
   font:
-    700 46px 'JetBrains Mono',
+    600 46px 'JetBrains Mono',
     monospace;
   line-height: 1;
 }
@@ -498,7 +502,7 @@ body {
   border: none;
   cursor: pointer;
   background: var(--primary);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 40%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 18%, transparent);
   text-decoration: none;
   transition:
     transform 0.15s,
@@ -508,7 +512,7 @@ body {
 .trade-button:hover {
   transform: translateY(-1px);
   color: var(--primary-foreground);
-  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 60%, transparent);
+  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 27%, transparent);
   filter: brightness(1.05);
 }
 .trade-button:active {
@@ -563,8 +567,6 @@ body {
   border-radius: 14px;
   background: var(--secondary);
   border: 1px solid var(--border);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 .markets-pill {
   display: inline-flex;
@@ -593,7 +595,7 @@ body {
 .markets-pill-active {
   color: var(--primary-foreground);
   background: var(--primary);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 40%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 18%, transparent);
 }
 .markets-pill-active:hover {
   color: var(--primary-foreground);
@@ -665,7 +667,7 @@ body {
 }
 .markets-ticker-label {
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
   letter-spacing: -0.01em;
   overflow: hidden;
@@ -797,7 +799,7 @@ body {
   color: var(--brand-blue);
   border-color: color-mix(in oklch, var(--brand-blue) 40%, transparent);
   background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 25%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 11%, transparent);
 }
 .markets-trade-link:active {
   transform: scale(0.94);
@@ -1005,9 +1007,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
   animation: robo-overlay-in 220ms ease-out both;
 }
 .robo-overlay.is-closing {
@@ -1026,14 +1026,8 @@ body {
   flex-direction: column;
   border-radius: 24px;
   border: 1px solid var(--border);
-  border-top-color: color-mix(in oklch, var(--accent-violet) 68%, var(--border));
   background: var(--card);
-  backdrop-filter: blur(28px) saturate(140%);
-  -webkit-backdrop-filter: blur(28px) saturate(140%);
-  box-shadow:
-    0 40px 120px rgba(0, 0, 0, 0.6),
-    0 -1px 30px color-mix(in oklch, var(--accent-violet) 16%, transparent),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  box-shadow: var(--overlay-shadow);
   overflow: hidden;
   animation: robo-panel-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
@@ -1078,13 +1072,13 @@ body {
   color: var(--accent-violet);
   background: var(--accent-violet-soft);
   border: 1px solid color-mix(in oklch, var(--accent-violet) 28%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--accent-violet) 22%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--accent-violet) 10%, transparent);
 }
 .robo-title {
   font:
-    700 18px 'DM Sans',
+    600 18px 'DM Sans',
     sans-serif;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
 }
 .robo-subtitle {
   margin-top: 2px;
@@ -1119,6 +1113,7 @@ body {
 .robo-body {
   padding: 4px 24px 8px;
   overflow-y: auto;
+  overscroll-behavior: none;
 }
 .robo-field {
   margin-bottom: 22px;
@@ -1218,7 +1213,7 @@ body {
 .robo-risk-card.is-selected {
   border-color: color-mix(in oklch, var(--accent-violet) 55%, transparent);
   background: var(--accent-violet-soft);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--accent-violet) 18%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--accent-violet) 8%, transparent);
 }
 .robo-risk-icon {
   color: var(--muted-foreground);
@@ -1269,7 +1264,7 @@ body {
     sans-serif;
   color: var(--primary-foreground);
   background: var(--brand-blue);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 35%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 16%, transparent);
   cursor: pointer;
   transition:
     transform 0.15s ease-out,
@@ -1278,7 +1273,7 @@ body {
 }
 .robo-submit:hover {
   filter: brightness(1.05);
-  box-shadow: 0 0 44px color-mix(in oklch, var(--brand-blue) 55%, transparent);
+  box-shadow: 0 0 44px color-mix(in oklch, var(--brand-blue) 25%, transparent);
 }
 .robo-submit:active {
   transform: scale(0.98);
@@ -1319,7 +1314,7 @@ body {
     color-mix(in oklch, var(--brand-blue) 55%, oklch(0.95 0.06 220))
   );
   box-shadow:
-    0 0 34px color-mix(in oklch, var(--brand-blue) 42%, transparent),
+    0 0 34px color-mix(in oklch, var(--brand-blue) 19%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
@@ -1348,7 +1343,7 @@ body {
 }
 .robo-summary-value {
   font:
-    700 18px 'JetBrains Mono',
+    600 18px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -1406,7 +1401,7 @@ body {
 }
 .robo-ticker {
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
 }
 .robo-name {
@@ -1439,7 +1434,7 @@ body {
 }
 .robo-weight {
   font:
-    700 16px 'JetBrains Mono',
+    600 16px 'JetBrains Mono',
     monospace;
   color: var(--accent-violet);
 }
@@ -1579,7 +1574,7 @@ body {
 }
 .robo-empty h3 {
   font:
-    700 17px 'DM Sans',
+    600 17px 'DM Sans',
     sans-serif;
   color: var(--foreground);
 }
@@ -1725,7 +1720,7 @@ body {
   background: color-mix(in oklch, var(--primary) 16%, rgba(255, 255, 255, 0.06));
   border: 1px solid color-mix(in oklch, var(--primary) 38%, transparent);
   box-shadow:
-    0 0 18px color-mix(in oklch, var(--primary) 30%, transparent),
+    0 0 18px color-mix(in oklch, var(--primary) 14%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
   transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
   will-change: transform;
@@ -1924,12 +1919,11 @@ body {
   flex-direction: column;
   gap: 8px;
   min-width: 0;
-  padding: 20px;
+  padding: 24px;
   border: 1px solid var(--border);
-  border-top: 2px solid var(--kpi-accent);
   border-radius: 14px;
   background: var(--card);
-  box-shadow: 0 12px 28px color-mix(in oklch, oklch(0.36 0.04 240) 8%, transparent);
+  box-shadow: var(--card-shadow);
 }
 .kpi-card.is-green,
 .kpi-card.health-green {
@@ -1998,7 +1992,7 @@ body {
 }
 .overview-value {
   font:
-    700 clamp(26px, 3vw, 34px) 'JetBrains Mono',
+    600 clamp(26px, 3vw, 34px) 'JetBrains Mono',
     monospace;
   letter-spacing: -0.02em;
 }
@@ -2015,10 +2009,10 @@ body {
   color: var(--signal-red);
 }
 .overview-value.pnl-up {
-  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-green) 45%, transparent);
+  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-green) 20%, transparent);
 }
 .overview-value.pnl-down {
-  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 45%, transparent);
+  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 20%, transparent);
 }
 
 .health-green {
@@ -2039,7 +2033,7 @@ body {
   height: 132px;
   flex-shrink: 0;
   color: var(--health-color);
-  filter: drop-shadow(0 0 22px color-mix(in oklch, var(--health-color) 38%, transparent));
+  filter: drop-shadow(0 0 22px color-mix(in oklch, var(--health-color) 17%, transparent));
 }
 .health-ring-svg {
   position: absolute;
@@ -2071,7 +2065,7 @@ body {
 }
 .health-ring-value {
   font:
-    700 38px 'JetBrains Mono',
+    600 38px 'JetBrains Mono',
     monospace;
   line-height: 1;
 }
@@ -2093,7 +2087,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--card);
-  box-shadow: 0 12px 30px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+  box-shadow: var(--card-shadow);
 }
 .portfolio-telemetry-item {
   --telemetry-accent: var(--brand-blue);
@@ -2104,8 +2098,6 @@ body {
   gap: 11px;
   min-width: 0;
   padding: 12px 14px;
-  border-top: 2px solid var(--telemetry-accent);
-  box-shadow: inset 0 8px 18px -18px var(--telemetry-accent);
 }
 .portfolio-telemetry-item + .portfolio-telemetry-item {
   border-left: 1px solid var(--border);
@@ -2148,7 +2140,7 @@ body {
   grid-row: 1;
   justify-self: end;
   font:
-    700 16px 'JetBrains Mono',
+    600 16px 'JetBrains Mono',
     monospace;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -2167,38 +2159,23 @@ body {
 .portfolio-workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr);
-  gap: 18px;
+  gap: 24px;
   align-items: start;
   margin-top: 26px;
 }
 .portfolio-workspace-card {
   min-width: 0;
   margin-top: 0;
-  padding: 18px;
+  padding: 24px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
-  box-shadow: 0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
-}
-.portfolio-holdings-pane {
-  border-top: 2px solid var(--brand-blue);
-}
-.portfolio-allocation-card {
-  border-top: 2px solid var(--accent-violet);
-  box-shadow:
-    0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent),
-    inset 0 12px 24px -28px var(--accent-violet);
+  box-shadow: var(--card-shadow);
 }
 .portfolio-side-stack {
   display: grid;
-  gap: 18px;
+  gap: 24px;
   min-width: 0;
-}
-.portfolio-rebalance-card {
-  border-top: 2px solid var(--accent-amber);
-  box-shadow:
-    0 16px 36px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent),
-    inset 0 12px 24px -28px var(--accent-amber);
 }
 .portfolio-workspace-head {
   display: grid;
@@ -2223,7 +2200,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--card);
-  box-shadow: 0 16px 38px color-mix(in oklch, oklch(0.36 0.04 240) 7%, transparent);
+  box-shadow: var(--card-shadow);
 }
 .analytics-workspace-tabs {
   display: flex;
@@ -2291,7 +2268,7 @@ body {
   font:
     600 20px 'DM Sans',
     sans-serif;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.025em;
 }
 .portfolio-cash {
   display: inline-flex;
@@ -2326,7 +2303,10 @@ body {
   outline-offset: 1px;
 }
 .portfolio-cash-btn {
-  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2361,7 +2341,7 @@ body {
   }
   .portfolio-telemetry-item + .portfolio-telemetry-item {
     border-left: 0;
-    border-top-width: 2px;
+    border-top: 1px solid var(--border);
   }
   .portfolio-side-stack {
     grid-template-columns: minmax(0, 1fr);
@@ -2392,7 +2372,7 @@ body {
 @media (max-width: 480px) {
   .portfolio-workspace-card,
   .analytics-workspace-panel {
-    padding: 14px;
+    padding: 16px;
   }
   .analytics-workspace-tab {
     flex: 1;
@@ -2481,7 +2461,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--muted-foreground);
 }
@@ -2508,27 +2488,25 @@ body {
   border-radius: 14px;
   border: 1px solid;
   background: var(--secondary);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   overflow: hidden;
 }
 .suggestion-buy,
 .suggestion-alert-up {
   border-color: color-mix(in oklch, var(--signal-green) 32%, transparent);
   box-shadow:
-    0 0 30px color-mix(in oklch, var(--signal-green) 14%, transparent),
+    0 0 30px color-mix(in oklch, var(--signal-green) 6%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .suggestion-sell {
   border-color: color-mix(in oklch, var(--signal-red) 32%, transparent);
   box-shadow:
-    0 0 30px color-mix(in oklch, var(--signal-red) 14%, transparent),
+    0 0 30px color-mix(in oklch, var(--signal-red) 6%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .suggestion-alert-down {
   border-color: color-mix(in oklch, var(--brand-blue) 32%, transparent);
   box-shadow:
-    0 0 30px color-mix(in oklch, var(--brand-blue) 14%, transparent),
+    0 0 30px color-mix(in oklch, var(--brand-blue) 6%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .suggestion-icon {
@@ -2568,7 +2546,7 @@ body {
 }
 .suggestion-ticker {
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
 }
 .suggestion-type {
@@ -2621,7 +2599,7 @@ body {
   padding: 0 10px;
   border-radius: 999px;
   font:
-    700 13px 'JetBrains Mono',
+    600 13px 'JetBrains Mono',
     monospace;
   border: 1px solid currentColor;
   background: color-mix(in oklch, currentColor 9%, transparent);
@@ -2708,27 +2686,29 @@ body {
 .account-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
+  gap: 24px;
 }
 .account-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 16px;
 }
 .account-card p {
   font-size: 13px;
+  line-height: 1.6;
   color: var(--muted-foreground);
 }
 .account-plan {
   font:
     600 20px 'DM Sans',
     sans-serif;
+  letter-spacing: -0.025em;
 }
 .account-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
 }
 .zone-divider {
   margin: 44px 0 0;
@@ -2800,7 +2780,7 @@ body {
     color-mix(in oklch, var(--action-tone) 14%, var(--card)),
     var(--card) 80%
   );
-  box-shadow: 0 0 40px color-mix(in oklch, var(--action-tone) 30%, transparent);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--action-tone) 14%, transparent);
 }
 .action-center.is-sell {
   --action-tone: var(--signal-red);
@@ -2812,7 +2792,7 @@ body {
   margin: 0;
   color: var(--action-tone);
   font:
-    700 clamp(24px, 5vw, 36px) 'DM Sans',
+    600 clamp(24px, 5vw, 36px) 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
@@ -2848,7 +2828,7 @@ body {
   min-height: 64px;
   border-radius: 14px;
   font:
-    700 18px 'DM Sans',
+    600 18px 'DM Sans',
     sans-serif;
   cursor: pointer;
   transition: filter 0.2s ease-out;
@@ -2857,7 +2837,7 @@ body {
   border: none;
   color: var(--primary-foreground);
   background: var(--brand-blue);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 35%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 16%, transparent);
 }
 .action-center-dismiss {
   border: 1px solid var(--border);
@@ -2975,11 +2955,6 @@ button.paper-ticker:hover {
 .paper-size:focus-visible {
   outline: 2px solid var(--brand-blue);
   outline-offset: 2px;
-}
-.paper-account .portfolio-cash-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 /* The shared chart (AssetChart) carries the asset modal's 24px gutters. */
 .paper-chart .chart-mode-bar,
@@ -3116,7 +3091,7 @@ button.paper-ticker:hover {
   border-radius: 11px;
   background: var(--accent-amber-soft);
   color: var(--accent-amber);
-  box-shadow: 0 0 20px color-mix(in oklch, var(--accent-amber) 16%, transparent);
+  box-shadow: 0 0 20px color-mix(in oklch, var(--accent-amber) 7%, transparent);
 }
 .rebalance-empty .rebalance-scale-icon svg {
   color: inherit;
@@ -3152,7 +3127,7 @@ button.paper-ticker:hover {
 .rebalance-ticker {
   min-width: 72px;
   font:
-    700 13px 'JetBrains Mono',
+    600 13px 'JetBrains Mono',
     monospace;
 }
 .rebalance-unit {
@@ -3217,7 +3192,7 @@ button.paper-ticker:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
 }
 .holding-name {
@@ -3373,7 +3348,7 @@ button.paper-ticker:hover {
   color: var(--primary-foreground);
   background: var(--primary);
   border-color: transparent;
-  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 32%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 14%, transparent);
 }
 .holding-action-primary:hover {
   background: var(--primary);
@@ -3387,7 +3362,7 @@ button.paper-ticker:hover {
 .holding-action-danger:hover {
   background: color-mix(in oklch, var(--signal-red) 14%, transparent);
   border-color: color-mix(in oklch, var(--signal-red) 50%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--signal-red) 24%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--signal-red) 11%, transparent);
 }
 .holding-action:focus-visible {
   outline: 2px solid var(--brand-blue);
@@ -3447,9 +3422,7 @@ button.paper-ticker:hover {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
   animation: broker-overlay-in 220ms ease-out both;
 }
 .broker-overlay.is-closing {
@@ -3464,6 +3437,7 @@ button.paper-ticker:hover {
   width: min(520px, calc(100vw - 40px));
   max-height: min(640px, calc(100dvh - 40px));
   overflow-y: auto;
+  overscroll-behavior: none;
   border: 1px solid var(--border);
   border-radius: 24px;
   background:
@@ -3499,7 +3473,7 @@ button.paper-ticker:hover {
 .broker-title {
   margin-top: 6px;
   font:
-    700 24px 'DM Sans',
+    600 24px 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
 }
@@ -3707,7 +3681,7 @@ button.paper-ticker:hover {
 }
 .add-position-button:hover {
   background: color-mix(in oklch, var(--brand-blue) 20%, transparent);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 28%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 13%, transparent);
 }
 .add-position-button:active {
   transform: scale(0.97);
@@ -3743,7 +3717,7 @@ button.paper-ticker:hover {
 .share-portfolio-button:hover {
   background: color-mix(in oklch, var(--brand-blue) 18%, transparent);
   border-color: color-mix(in oklch, var(--brand-blue) 62%, transparent);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 30%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 14%, transparent);
 }
 .share-portfolio-button:active {
   transform: scale(0.96);
@@ -3778,7 +3752,7 @@ button.paper-ticker:hover {
 .save-cloud-button:hover {
   background: color-mix(in oklch, var(--primary) 18%, transparent);
   border-color: color-mix(in oklch, var(--primary) 62%, transparent);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 30%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 14%, transparent);
 }
 .save-cloud-button:active {
   transform: scale(0.96);
@@ -3807,9 +3781,7 @@ button.paper-ticker:hover {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
   animation: auth-overlay-in 220ms ease-out both;
 }
 .auth-overlay.is-closing {
@@ -3848,7 +3820,7 @@ button.paper-ticker:hover {
 .auth-title {
   margin-top: 4px;
   font:
-    700 22px 'DM Sans',
+    600 22px 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
 }
@@ -3965,7 +3937,7 @@ button.paper-ticker:hover {
     600 13px 'DM Sans',
     sans-serif;
   cursor: pointer;
-  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 35%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 16%, transparent);
   transition:
     filter 0.15s ease-out,
     transform 0.15s ease-out;
@@ -4020,9 +3992,7 @@ button.paper-ticker:hover {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
   animation: position-overlay-in 220ms ease-out both;
 }
 .position-overlay.is-closing {
@@ -4070,7 +4040,7 @@ button.paper-ticker:hover {
 .position-title {
   margin-top: 6px;
   font:
-    700 22px 'DM Sans',
+    600 22px 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
 }
@@ -4185,7 +4155,7 @@ button.paper-ticker:hover {
     600 13.5px 'DM Sans',
     sans-serif;
   cursor: pointer;
-  box-shadow: 0 0 28px color-mix(in oklch, var(--brand-blue) 35%, transparent);
+  box-shadow: 0 0 28px color-mix(in oklch, var(--brand-blue) 16%, transparent);
   transition:
     transform 0.15s ease-out,
     filter 0.2s ease-out,
@@ -4193,7 +4163,7 @@ button.paper-ticker:hover {
 }
 .position-submit:hover {
   filter: brightness(1.05);
-  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 50%, transparent);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 22%, transparent);
 }
 .position-submit:active {
   transform: scale(0.98);
@@ -4306,7 +4276,7 @@ button.paper-ticker:hover {
   border-radius: 14px;
   background: var(--card);
   box-shadow:
-    0 0 40px color-mix(in oklch, var(--primary) 10%, transparent),
+    0 0 40px color-mix(in oklch, var(--primary) 6%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 .allocation-donut {
@@ -4334,7 +4304,7 @@ button.paper-ticker:hover {
 }
 .allocation-center-value {
   font:
-    700 16px 'JetBrains Mono',
+    600 16px 'JetBrains Mono',
     monospace;
 }
 .allocation-legend {
@@ -4391,11 +4361,11 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--overlay-shadow);
 }
 .allocation-tooltip-ticker {
   font:
-    700 13px 'JetBrains Mono',
+    600 13px 'JetBrains Mono',
     monospace;
 }
 .allocation-tooltip-value {
@@ -4469,25 +4439,23 @@ button.paper-ticker:hover {
   padding: 0 30px;
   border-radius: 14px;
   font-size: 15px;
-  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 40%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 18%, transparent);
 }
 .ticket-trigger-hero:hover {
-  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 60%, transparent);
+  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 27%, transparent);
 }
 .ticket-trigger-compact {
   height: 38px;
   padding: 0 18px;
   border-radius: 11px;
-  box-shadow: 0 0 20px color-mix(in oklch, var(--primary) 28%, transparent);
+  box-shadow: 0 0 20px color-mix(in oklch, var(--primary) 13%, transparent);
 }
 
 .ticket-overlay {
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgba(0, 0, 0, 0.66);
-  backdrop-filter: blur(12px) saturate(120%);
-  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
 }
 .ticket-sheet {
   position: fixed;
@@ -4500,6 +4468,7 @@ button.paper-ticker:hover {
   width: min(460px, 100vw);
   height: 100dvh;
   overflow-y: auto;
+  overscroll-behavior: none;
   border-left: 1px solid var(--border);
   background:
     radial-gradient(
@@ -4508,7 +4477,7 @@ button.paper-ticker:hover {
       transparent 60%
     ),
     var(--card);
-  box-shadow: -30px 0 80px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--overlay-shadow);
 }
 .ticket-header {
   display: flex;
@@ -4531,7 +4500,7 @@ button.paper-ticker:hover {
   gap: 10px;
   margin-top: 6px;
   font:
-    700 24px 'DM Sans',
+    600 24px 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
 }
@@ -4542,7 +4511,7 @@ button.paper-ticker:hover {
 }
 .ticket-price {
   font:
-    700 16px 'JetBrains Mono',
+    600 16px 'JetBrains Mono',
     monospace;
   color: var(--muted-foreground);
 }
@@ -4600,7 +4569,7 @@ button.paper-ticker:hover {
   border: none;
   border-radius: 10px;
   font:
-    700 14px 'JetBrains Mono',
+    600 14px 'JetBrains Mono',
     monospace;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -4615,12 +4584,12 @@ button.paper-ticker:hover {
 .ticket-side-btn.is-active-buy {
   color: var(--primary-foreground);
   background: var(--primary);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 45%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 20%, transparent);
 }
 .ticket-side-btn.is-active-sell {
   color: #fff;
   background: var(--signal-red);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 45%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 20%, transparent);
 }
 
 .ticket-field {
@@ -4655,7 +4624,7 @@ button.paper-ticker:hover {
 }
 .ticket-input-prefix {
   font:
-    700 26px 'JetBrains Mono',
+    600 26px 'JetBrains Mono',
     monospace;
   color: var(--muted-foreground);
 }
@@ -4667,7 +4636,7 @@ button.paper-ticker:hover {
   outline: none;
   background: transparent;
   font:
-    700 34px 'JetBrains Mono',
+    600 34px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -4719,11 +4688,11 @@ button.paper-ticker:hover {
 }
 .ticket-summary-total .ticket-summary-label {
   color: var(--foreground);
-  font-weight: 700;
+  font-weight: 600;
 }
 .ticket-summary-total .ticket-summary-value {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--primary);
 }
 
@@ -4737,7 +4706,7 @@ button.paper-ticker:hover {
   border: none;
   border-radius: 16px;
   font:
-    700 17px 'JetBrains Mono',
+    600 17px 'JetBrains Mono',
     monospace;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -4755,12 +4724,12 @@ button.paper-ticker:hover {
 .ticket-submit-buy {
   color: var(--primary-foreground);
   background: var(--primary);
-  box-shadow: 0 0 40px color-mix(in oklch, var(--primary) 45%, transparent);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--primary) 20%, transparent);
 }
 .ticket-submit-sell {
   color: #fff;
   background: var(--signal-red);
-  box-shadow: 0 0 40px color-mix(in oklch, var(--signal-red) 45%, transparent);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--signal-red) 20%, transparent);
 }
 .ticket-submit:not(:disabled):hover {
   transform: translateY(-1px);
@@ -4803,7 +4772,7 @@ button.paper-ticker:hover {
   color: var(--foreground);
   border-color: color-mix(in oklch, var(--primary) 60%, transparent);
   background-color: color-mix(in oklch, var(--primary) 12%, transparent);
-  box-shadow: 0 0 16px color-mix(in oklch, var(--primary) 35%, transparent);
+  box-shadow: 0 0 16px color-mix(in oklch, var(--primary) 16%, transparent);
 }
 .asset-icon-sm {
   width: 22px;
@@ -4819,7 +4788,7 @@ button.paper-ticker:hover {
 }
 .asset-icon-mono {
   font-family: 'JetBrains Mono', monospace;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.01em;
   text-transform: uppercase;
   user-select: none;
@@ -4899,9 +4868,7 @@ button.paper-ticker:hover {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
   animation: alert-overlay-in 220ms ease-out both;
 }
 .alert-overlay.is-closing {
@@ -4944,7 +4911,7 @@ button.paper-ticker:hover {
 .alert-title {
   margin-top: 4px;
   font:
-    700 22px 'DM Sans',
+    600 22px 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
 }
@@ -5083,7 +5050,7 @@ button.paper-ticker:hover {
     600 13px 'DM Sans',
     sans-serif;
   cursor: pointer;
-  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 35%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--primary) 16%, transparent);
   transition:
     filter 0.15s ease-out,
     transform 0.15s ease-out;
@@ -5144,9 +5111,7 @@ button.paper-ticker:hover {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(10px) saturate(120%);
-  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  background: rgba(0, 0, 0, 0.75);
   animation: asset-details-overlay-in 220ms ease-out both;
 }
 .asset-details-overlay.is-closing {
@@ -5155,7 +5120,6 @@ button.paper-ticker:hover {
 .asset-details-sheet {
   width: min(560px, 100%);
   border: 1px solid var(--border);
-  border-top: 2px solid var(--accent-violet);
   border-radius: 24px;
   background:
     radial-gradient(
@@ -5196,7 +5160,7 @@ button.paper-ticker:hover {
 .asset-details-name {
   margin-top: 3px;
   font:
-    700 24px 'DM Sans',
+    600 24px 'DM Sans',
     sans-serif;
   letter-spacing: -0.02em;
 }
@@ -5236,7 +5200,7 @@ button.paper-ticker:hover {
 }
 .asset-details-price-value {
   font:
-    700 20px 'JetBrains Mono',
+    600 20px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -5284,7 +5248,7 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--overlay-shadow);
 }
 .asset-chart-tooltip-date {
   font:
@@ -5296,7 +5260,7 @@ button.paper-ticker:hover {
 }
 .asset-chart-tooltip-price {
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -5309,7 +5273,6 @@ button.paper-ticker:hover {
   margin: 16px 24px 22px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-top: 2px solid var(--accent-violet);
   border-radius: 16px;
   background: color-mix(in oklch, var(--accent-violet-soft) 42%, var(--card));
 }
@@ -5330,7 +5293,7 @@ button.paper-ticker:hover {
 }
 .quant-breakdown-score {
   font:
-    700 18px 'JetBrains Mono',
+    600 18px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -5471,7 +5434,7 @@ button.paper-ticker:hover {
 }
 .robo-projection-title {
   font:
-    700 14px 'DM Sans',
+    600 14px 'DM Sans',
     sans-serif;
 }
 .robo-projection-rate {
@@ -5504,7 +5467,7 @@ button.paper-ticker:hover {
 }
 .robo-projection-value {
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -5538,10 +5501,10 @@ button.paper-ticker:hover {
   background: var(--brand-blue);
   color: var(--primary-foreground);
   font:
-    700 13px 'DM Sans',
+    600 13px 'DM Sans',
     sans-serif;
   cursor: pointer;
-  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 30%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 14%, transparent);
   transition:
     background 0.15s ease-out,
     box-shadow 0.15s ease-out,
@@ -5549,7 +5512,7 @@ button.paper-ticker:hover {
 }
 .tour-trigger:hover {
   background: color-mix(in oklch, var(--brand-blue) 88%, var(--foreground));
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 45%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 20%, transparent);
 }
 .tour-trigger:active {
   transform: scale(0.97);
@@ -5569,7 +5532,7 @@ button.paper-ticker:hover {
   pointer-events: none;
   box-shadow:
     0 0 0 3px color-mix(in oklch, var(--primary) 85%, transparent),
-    0 0 42px color-mix(in oklch, var(--primary) 40%, transparent),
+    0 0 42px color-mix(in oklch, var(--primary) 18%, transparent),
     0 0 0 99999px rgba(0, 0, 0, 0.6);
 }
 .tour-tooltip {
@@ -5585,7 +5548,7 @@ button.paper-ticker:hover {
       transparent 60%
     ),
     var(--card);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--overlay-shadow);
 }
 .tour-tooltip-head {
   display: flex;
@@ -5608,7 +5571,7 @@ button.paper-ticker:hover {
 }
 .tour-title {
   font:
-    700 16px 'DM Sans',
+    600 16px 'DM Sans',
     sans-serif;
   letter-spacing: -0.01em;
 }
@@ -5692,7 +5655,7 @@ button.paper-ticker:hover {
     600 13px 'DM Sans',
     sans-serif;
   cursor: pointer;
-  box-shadow: 0 0 20px color-mix(in oklch, var(--primary) 35%, transparent);
+  box-shadow: 0 0 20px color-mix(in oklch, var(--primary) 16%, transparent);
   transition:
     filter 0.15s ease-out,
     transform 0.15s ease-out;
@@ -5788,7 +5751,7 @@ button.paper-ticker:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 0 0 28px color-mix(in oklch, var(--brand-blue) 35%, transparent);
+  box-shadow: 0 0 28px color-mix(in oklch, var(--brand-blue) 16%, transparent);
   transition:
     transform 0.15s ease-out,
     filter 0.15s ease-out,
@@ -5796,7 +5759,7 @@ button.paper-ticker:hover {
 }
 .backtest-button:hover {
   filter: brightness(1.05);
-  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 50%, transparent);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 22%, transparent);
 }
 .backtest-button:active {
   transform: scale(0.97);
@@ -5845,17 +5808,17 @@ button.paper-ticker:hover {
 }
 .backtest-summary-value {
   font:
-    700 26px 'JetBrains Mono',
+    600 26px 'JetBrains Mono',
     monospace;
   letter-spacing: -0.02em;
 }
 .backtest-summary-up .backtest-summary-value {
   color: var(--signal-green);
-  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-green) 45%, transparent);
+  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-green) 20%, transparent);
 }
 .backtest-summary-down .backtest-summary-value {
   color: var(--signal-red);
-  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 45%, transparent);
+  text-shadow: 0 0 24px color-mix(in oklch, var(--signal-red) 20%, transparent);
 }
 .backtest-summary-sub {
   font:
@@ -5889,20 +5852,20 @@ button.paper-ticker:hover {
 }
 .backtest-risk-value {
   font:
-    700 20px 'JetBrains Mono',
+    600 20px 'JetBrains Mono',
     monospace;
   letter-spacing: -0.02em;
 }
 .backtest-risk-good {
   color: var(--signal-green);
-  text-shadow: 0 0 20px color-mix(in oklch, var(--signal-green) 35%, transparent);
+  text-shadow: 0 0 20px color-mix(in oklch, var(--signal-green) 16%, transparent);
 }
 .backtest-risk-caution {
   color: var(--signal-yellow);
 }
 .backtest-risk-bad {
   color: var(--signal-red);
-  text-shadow: 0 0 20px color-mix(in oklch, var(--signal-red) 35%, transparent);
+  text-shadow: 0 0 20px color-mix(in oklch, var(--signal-red) 16%, transparent);
 }
 .backtest-risk-sub {
   font:
@@ -6031,7 +5994,7 @@ button.paper-ticker:hover {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--overlay-shadow);
 }
 .backtest-tooltip-date {
   font:
@@ -6043,7 +6006,7 @@ button.paper-ticker:hover {
 }
 .backtest-tooltip-value {
   font:
-    700 15px 'JetBrains Mono',
+    600 15px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -6112,7 +6075,7 @@ button.paper-ticker:hover {
 .landing-ghost-button:hover {
   border-color: color-mix(in oklch, var(--brand-blue) 55%, transparent);
   background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 22%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 10%, transparent);
 }
 .landing-ghost-button:active {
   transform: scale(0.97);
@@ -6134,7 +6097,7 @@ button.paper-ticker:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 32%, transparent);
+  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 14%, transparent);
   transition:
     transform 0.15s ease-out,
     filter 0.15s ease-out,
@@ -6142,7 +6105,7 @@ button.paper-ticker:hover {
 }
 .landing-cta-button:hover {
   filter: brightness(1.05);
-  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 48%, transparent);
+  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 22%, transparent);
 }
 .landing-cta-button:active {
   transform: scale(0.97);
@@ -6210,14 +6173,14 @@ button.paper-ticker:hover {
 .landing-headline {
   max-width: 860px;
   font:
-    700 clamp(34px, 6vw, 64px) 'DM Sans',
+    600 clamp(34px, 6vw, 64px) 'DM Sans',
     sans-serif;
   line-height: 1.05;
   letter-spacing: -0.03em;
 }
 .landing-headline-accent {
   color: var(--brand-blue);
-  text-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 40%, transparent);
+  text-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 18%, transparent);
 }
 .landing-subheadline {
   max-width: 640px;
@@ -6246,7 +6209,7 @@ button.paper-ticker:hover {
 }
 .landing-stat-value {
   font:
-    700 24px 'JetBrains Mono',
+    600 24px 'JetBrains Mono',
     monospace;
   color: var(--foreground);
 }
@@ -6313,7 +6276,7 @@ button.paper-ticker:hover {
 }
 .landing-card:hover {
   border-color: color-mix(in oklch, var(--brand-blue) 35%, transparent);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 12%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 6%, transparent);
 }
 .landing-card:hover::after {
   opacity: 1;
@@ -6532,7 +6495,7 @@ button.paper-ticker:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 30%, transparent);
+  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 14%, transparent);
   transition:
     transform 0.15s ease-out,
     filter 0.15s ease-out;
@@ -6565,7 +6528,7 @@ button.paper-ticker:hover {
 }
 .price-alert-ticker {
   font:
-    700 14px 'JetBrains Mono',
+    600 14px 'JetBrains Mono',
     monospace;
 }
 .price-alert-cond {
@@ -6577,7 +6540,7 @@ button.paper-ticker:hover {
 .price-alert-target {
   margin-left: auto;
   font:
-    700 14px 'JetBrains Mono',
+    600 14px 'JetBrains Mono',
     monospace;
   color: var(--brand-blue);
 }
@@ -6711,7 +6674,7 @@ button.paper-ticker:hover {
   color: var(--brand-blue);
   border-color: color-mix(in oklch, var(--brand-blue) 45%, transparent);
   background: color-mix(in oklch, var(--brand-blue) 12%, transparent);
-  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 20%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 9%, transparent);
 }
 
 /* ===== OAuth buttons ===== */
@@ -6744,7 +6707,7 @@ button.paper-ticker:hover {
 .oauth-button:hover {
   border-color: color-mix(in oklch, var(--primary) 50%, transparent);
   background: color-mix(in oklch, var(--primary) 10%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 20%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--primary) 9%, transparent);
 }
 .oauth-button:active {
   transform: scale(0.98);
@@ -6797,7 +6760,7 @@ button.paper-ticker:hover {
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 25%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 11%, transparent);
   transition:
     filter 0.15s ease-out,
     transform 0.15s ease-out,
@@ -6805,7 +6768,7 @@ button.paper-ticker:hover {
 }
 .trade-now-button:hover {
   filter: brightness(1.05);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 40%, transparent);
+  box-shadow: 0 0 30px color-mix(in oklch, var(--brand-blue) 18%, transparent);
 }
 .trade-now-button:active {
   transform: scale(0.97);
@@ -6827,9 +6790,7 @@ button.paper-ticker:hover {
   position: fixed;
   inset: 0;
   z-index: 240;
-  background: rgba(3, 8, 18, 0.82);
-  backdrop-filter: blur(12px) saturate(120%);
-  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  background: rgba(0, 0, 0, 0.82);
   animation: pricing-overlay-in 180ms ease-out both;
 }
 .pricing-modal {
@@ -6840,16 +6801,16 @@ button.paper-ticker:hover {
   width: min(760px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
+  overscroll-behavior: none;
   padding: 30px;
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 34%, transparent);
+  border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 22px;
   outline: none;
-  background: #101828;
-  color: oklch(0.98 0.004 250);
+  background: #0f0f12;
+  color: oklch(0.967 0.001 286.375);
   box-shadow:
-    0 36px 120px rgba(0, 0, 0, 0.72),
-    0 0 48px color-mix(in oklch, var(--brand-blue) 18%, transparent),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+    inset 0 1px 0 rgb(255 255 255 / 0.05),
+    0 24px 48px -16px rgb(0 0 0 / 0.6);
   transform: translate(-50%, -50%);
   animation: pricing-modal-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -6858,7 +6819,7 @@ button.paper-ticker:hover {
   inset: 0 0 auto;
   height: 2px;
   background: var(--brand-blue);
-  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 75%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 34%, transparent);
   opacity: 0.8;
   pointer-events: none;
 }
@@ -6906,11 +6867,11 @@ button.paper-ticker:hover {
   border: 1px solid color-mix(in oklch, var(--brand-blue) 42%, transparent);
   background: color-mix(in oklch, var(--brand-blue) 12%, transparent);
   color: var(--brand-blue);
-  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 22%, transparent);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--brand-blue) 10%, transparent);
 }
 .pricing-title {
   font:
-    700 clamp(1.45rem, 3vw, 2rem) 'DM Sans',
+    600 clamp(1.45rem, 3vw, 2rem) 'DM Sans',
     sans-serif;
   letter-spacing: -0.035em;
   line-height: 1.08;
@@ -6950,9 +6911,9 @@ button.paper-ticker:hover {
   padding: 2px 6px;
   border-radius: 999px;
   background: var(--brand-blue);
-  color: #101828;
+  color: #0f0f12;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .pricing-billing-option.is-active {
   background: color-mix(in oklch, var(--brand-blue) 15%, #182238);
@@ -6979,7 +6940,7 @@ button.paper-ticker:hover {
   border: 1px solid color-mix(in oklch, var(--brand-blue) 52%, transparent);
   background: color-mix(in oklch, var(--brand-blue) 8%, #182238);
   box-shadow:
-    0 0 34px color-mix(in oklch, var(--brand-blue) 14%, transparent),
+    0 0 34px color-mix(in oklch, var(--brand-blue) 6%, transparent),
     inset 0 0 0 1px color-mix(in oklch, var(--brand-blue) 8%, transparent);
 }
 .pricing-pro-heading {
@@ -6991,7 +6952,7 @@ button.paper-ticker:hover {
 .pricing-tier-name {
   color: white;
   font:
-    700 18px 'DM Sans',
+    600 18px 'DM Sans',
     sans-serif;
 }
 .pricing-tier-copy {
@@ -7005,9 +6966,9 @@ button.paper-ticker:hover {
   padding: 5px 8px;
   border-radius: 999px;
   background: var(--brand-blue);
-  color: #101828;
+  color: #0f0f12;
   font:
-    700 10px 'DM Sans',
+    600 10px 'DM Sans',
     sans-serif;
 }
 .pricing-price {
@@ -7019,7 +6980,7 @@ button.paper-ticker:hover {
 .pricing-price strong {
   color: white;
   font:
-    700 30px 'JetBrains Mono',
+    600 30px 'JetBrains Mono',
     monospace;
   letter-spacing: -0.045em;
 }
@@ -7085,11 +7046,11 @@ button.paper-ticker:hover {
 .pricing-upgrade-button {
   border: 1px solid color-mix(in oklch, var(--brand-blue) 70%, transparent);
   background: var(--brand-blue);
-  color: #101828;
-  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 32%, transparent);
+  color: #0f0f12;
+  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 14%, transparent);
 }
 .pricing-upgrade-button:hover {
-  box-shadow: 0 0 38px color-mix(in oklch, var(--brand-blue) 48%, transparent);
+  box-shadow: 0 0 38px color-mix(in oklch, var(--brand-blue) 22%, transparent);
 }
 .pricing-sandbox-button {
   margin-top: 8px;
@@ -7148,7 +7109,7 @@ button.paper-ticker:hover {
     transform 0.15s ease-out;
 }
 .pine-export-button:hover {
-  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 30%, transparent);
+  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 14%, transparent);
 }
 .pine-export-button:active {
   transform: scale(0.97);
@@ -7183,6 +7144,7 @@ button.paper-ticker:hover {
   margin: 16px 0 0;
   padding: 14px 16px;
   overflow: auto;
+  overscroll-behavior: none;
   border: 1px solid #1e293b;
   border-radius: 12px;
   background: #0b1220;
@@ -7317,7 +7279,7 @@ button.paper-ticker:hover {
   padding: 8px 12px;
   border: 1px solid color-mix(in oklch, var(--brand-blue) 52%, transparent);
   border-radius: 10px;
-  background: #101828;
+  background: #0f0f12;
   color: var(--brand-blue);
   font:
     600 11.5px 'DM Sans',
@@ -7326,7 +7288,7 @@ button.paper-ticker:hover {
   cursor: pointer;
   box-shadow:
     0 8px 26px rgba(0, 0, 0, 0.42),
-    0 0 20px color-mix(in oklch, var(--brand-blue) 22%, transparent);
+    0 0 20px color-mix(in oklch, var(--brand-blue) 10%, transparent);
   transform: translate(-50%, -50%);
   transition:
     border-color 0.15s ease-out,
@@ -7337,7 +7299,7 @@ button.paper-ticker:hover {
   border-color: var(--brand-blue);
   box-shadow:
     0 8px 26px rgba(0, 0, 0, 0.48),
-    0 0 28px color-mix(in oklch, var(--brand-blue) 34%, transparent);
+    0 0 28px color-mix(in oklch, var(--brand-blue) 15%, transparent);
 }
 .pro-feature-unlock:active {
   transform: translate(-50%, -50%) scale(0.98);
@@ -7403,7 +7365,7 @@ button.paper-ticker:hover {
 }
 .backtest-pro-lock:hover {
   background: color-mix(in oklch, var(--brand-blue) 16%, transparent);
-  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 28%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--brand-blue) 13%, transparent);
 }
 .backtest-pro-lock:active {
   transform: scale(0.94);
@@ -7519,7 +7481,7 @@ button.paper-ticker:hover {
   gap: 10px;
   color: #f8fafc;
   font:
-    700 13px/1 'JetBrains Mono',
+    600 13px/1 'JetBrains Mono',
     monospace;
   letter-spacing: 0.16em;
   text-decoration: none;
@@ -7533,7 +7495,7 @@ button.paper-ticker:hover {
   border-radius: 8px;
   color: var(--brand-blue);
   background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  box-shadow: 0 0 20px color-mix(in oklch, var(--brand-blue) 24%, transparent);
+  box-shadow: 0 0 20px color-mix(in oklch, var(--brand-blue) 11%, transparent);
 }
 .shared-portfolio-cta {
   display: inline-flex;
@@ -7546,7 +7508,7 @@ button.paper-ticker:hover {
   border-radius: 10px;
   color: #061018;
   background: var(--brand-blue);
-  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 22%, transparent);
+  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 10%, transparent);
   font:
     650 12px/1.35 'DM Sans',
     sans-serif;
@@ -7557,7 +7519,7 @@ button.paper-ticker:hover {
 }
 .shared-portfolio-cta:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 34px color-mix(in oklch, var(--brand-blue) 36%, transparent);
+  box-shadow: 0 0 34px color-mix(in oklch, var(--brand-blue) 16%, transparent);
 }
 .shared-portfolio-cta:focus-visible {
   outline: 2px solid #fff;
@@ -7566,7 +7528,7 @@ button.paper-ticker:hover {
 .shared-portfolio-cta.is-compact {
   min-height: 38px;
   padding: 9px 13px;
-  background: color-mix(in oklch, var(--brand-blue) 9%, #101828);
+  background: color-mix(in oklch, var(--brand-blue) 9%, #0f0f12);
   color: var(--brand-blue);
   box-shadow: none;
 }
@@ -7717,7 +7679,7 @@ button.paper-ticker:hover {
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 14px;
   background: rgba(11, 17, 27, 0.92);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--overlay-shadow);
 }
 .shared-panel-heading {
   display: flex;

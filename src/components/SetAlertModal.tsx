@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/authStore';
 import { useAlertController } from '@/hooks/useAlertEngine';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { isBinanceCrypto } from '@/lib/binance';
-import { cn } from '@/lib/utils';
+import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const CLOSE_MS = 260;
 
@@ -122,14 +122,17 @@ export function SetAlertButton({ asset }: { asset: Asset }) {
 
       {open &&
         createPortal(
-          <div className={cn('alert-overlay', closing && 'is-closing')} onClick={closeModal}>
+          <div
+            role="presentation"
+            className={cn('alert-overlay', closing && 'is-closing')}
+            onClick={closeOnBackdrop(closeModal)}
+          >
             <form
               className={cn('alert-sheet', closing && 'is-closing')}
               role="dialog"
               aria-modal="true"
               aria-label={`Set price alert for ${asset.ticker}`}
               onSubmit={handleSubmit}
-              onClick={(e) => e.stopPropagation()}
             >
               <header className="alert-header">
                 <div>

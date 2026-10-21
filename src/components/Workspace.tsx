@@ -289,7 +289,7 @@ const MarketRow = memo(function MarketRow({
           </span>
         )}
       </span>
-      <span className="markets-trade" onClick={(e) => e.stopPropagation()}>
+      <span role="presentation" className="markets-trade" onClick={(e) => e.stopPropagation()}>
         <BrokerModal asset={asset} />
       </span>
     </div>

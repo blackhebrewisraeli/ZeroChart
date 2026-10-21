@@ -44,6 +44,11 @@ export interface IndicatorToggles {
   rsi?: boolean;
 }
 
+// A failed worker calculation leaves that overlay empty; the candles still render.
+function logIndicatorError(error: unknown): void {
+  console.error('[LightweightChart] indicator calculation failed', error);
+}
+
 function toLineData(
   times: UTCTimestamp[],
   values: ArrayLike<number>,
@@ -171,7 +176,7 @@ export function CandlestickChart({
       sma200Ref.current?.setData(toLineData(times, sma200Values));
       rsiSeriesRef.current?.setData(toLineData(times, rsiValues));
       rsiChartRef.current?.timeScale().fitContent();
-    })();
+    })().catch(logIndicatorError);
 
     return () => {
       cancelled = true;
@@ -219,7 +224,7 @@ export function CandlestickChart({
         chart.removeSeries(sma200Ref.current);
         sma200Ref.current = null;
       }
-    })();
+    })().catch(logIndicatorError);
 
     return () => {
       cancelled = true;
@@ -269,9 +274,11 @@ export function CandlestickChart({
     const times = dataRef.current.map((candle) => candle.time);
     let cancelled = false;
 
-    rsiAsync(closes, 14).then((values) => {
-      if (!cancelled) rsiSeries.setData(toLineData(times, values));
-    });
+    rsiAsync(closes, 14)
+      .then((values) => {
+        if (!cancelled) rsiSeries.setData(toLineData(times, values));
+      })
+      .catch(logIndicatorError);
 
     const syncHandler = (range: LogicalRange | null) => {
       if (range) rsiChart.timeScale().setVisibleLogicalRange(range);

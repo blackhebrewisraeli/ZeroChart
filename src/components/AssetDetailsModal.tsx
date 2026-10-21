@@ -12,7 +12,7 @@ import { formatShares, recommendPositionSize } from '@/lib/risk';
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { getBrokerUrl } from '@/lib/tradeRouter';
 import { useAuth } from '@/lib/authStore';
-import { cn } from '@/lib/utils';
+import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const CLOSE_MS = 260;
 
@@ -100,13 +100,16 @@ export function AssetDetailsModal({
   return (
     <>
       {createPortal(
-        <div className={cn('asset-details-overlay', closing && 'is-closing')} onClick={close}>
+        <div
+          role="presentation"
+          className={cn('asset-details-overlay', closing && 'is-closing')}
+          onClick={closeOnBackdrop(close)}
+        >
           <div
             className={cn('asset-details-sheet', closing && 'is-closing')}
             role="dialog"
             aria-modal="true"
             aria-label={`${asset.ticker} details`}
-            onClick={(e) => e.stopPropagation()}
           >
             <header className="asset-details-header">
               <div className="asset-details-title">

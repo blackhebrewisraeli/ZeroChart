@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowUpRight, ExternalLink, X } from 'lucide-react';
 import { getAssetClass, type Asset } from '@/lib/assets';
-import { cn } from '@/lib/utils';
+import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const CLOSE_MS = 260;
 
@@ -133,13 +133,16 @@ export function BrokerModal({
 
       {open &&
         createPortal(
-          <div className={cn('broker-overlay', closing && 'is-closing')} onClick={closeModal}>
+          <div
+            role="presentation"
+            className={cn('broker-overlay', closing && 'is-closing')}
+            onClick={closeOnBackdrop(closeModal)}
+          >
             <div
               className={cn('broker-sheet', closing && 'is-closing')}
               role="dialog"
               aria-modal="true"
               aria-label={`Trade ${asset.ticker}`}
-              onClick={(e) => e.stopPropagation()}
             >
               <header className="broker-header">
                 <div>

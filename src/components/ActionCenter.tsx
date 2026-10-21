@@ -11,6 +11,7 @@ import { formatShares } from '@/lib/risk';
 import { toBinanceSymbol } from '@/lib/ticker';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
+import { loadPaperTransactions } from '@/lib/db';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
 
@@ -40,7 +41,7 @@ function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>
  * disabled and the reason spelled out.
  */
 export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
-  const { scopeUserId: userId, getPortfolio, executePaperTrade } = usePortfolio();
+  const { scopeUserId: userId, getPortfolio, replacePaperLedger } = usePortfolio();
   const [pending, setPending] = useState<Signal[]>([]);
   const [busy, setBusy] = useState(false);
   // Resolution is one-way (RLS only updates PENDING rows), so a backlog snapshot
@@ -142,44 +143,34 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
       return;
     }
     const quantity = Number(signal.quantity);
-    const shares = buying ? quantity : Math.min(quantity, held);
-    const order = {
-      side: buying ? ('buy' as const) : ('sell' as const),
-      ticker: asset.ticker,
-      shares,
-      price,
-      fee: shares * price * FEE_RATE,
-    };
-
-    // Book first, claim second: the signal turns EXECUTED only after the ledger
-    // accepted the fill, so a rejected order never leaves a zombie EXECUTED row.
+    if (!buying && quantity > held) {
+      toast.error(`Only ${formatShares(held)} ${asset.ticker} units are available to sell`);
+      return;
+    }
+    const shares = quantity;
     setBusy(true);
-    let booked = false;
     try {
-      const result = await executePaperTrade(order);
-      if (!result.ok) throw new Error(result.error ?? 'Order rejected');
-      booked = true;
+      if (!userId) throw new Error('Sign in to execute a tactical signal');
+      const { error } = await supabase.rpc('execute_tactical_signal', {
+        signal_id: signal.id,
+        user_id: userId,
+        execution_price: price,
+      });
+      if (error) throw new Error(error.message);
+      forget(signal.id);
+      try {
+        replacePaperLedger(await loadPaperTransactions(userId));
+      } catch {
+        toast.warning('Trade executed; Paper Trading is still syncing');
+      }
       toast.success(
         `${buying ? 'Bought' : 'Sold'} ${formatPrice(shares * price)} of ${asset.ticker}`,
         {
           description: `${formatShares(shares)} units at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
         },
       );
-      if (!(await resolve(signal.id, 'EXECUTED'))) {
-        toast.warning('Another tab already resolved this signal', {
-          description: 'Check your Paper Trading ledger for a duplicate fill.',
-        });
-      }
     } catch (error) {
-      if (booked) {
-        // The fill stands; hide the card so this tab can't book it twice.
-        forget(signal.id);
-        toast.error('Trade booked, but the signal could not be marked executed', {
-          description: `${errorMessage(error)}. Dismiss it if it shows up again.`,
-        });
-      } else {
-        toast.error(errorMessage(error));
-      }
+      toast.error(errorMessage(error));
     } finally {
       setBusy(false);
     }

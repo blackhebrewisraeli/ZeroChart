@@ -9,7 +9,11 @@ const db = vi.hoisted(() => ({
   claimed: [] as unknown[],
   // Error the status update resolves with (a failed claim).
   updateError: null as { message: string } | null,
+  rpcError: null as { message: string } | null,
+  rows: [] as Array<Record<string, unknown>>,
+  insert: vi.fn(),
   update: vi.fn(),
+  rpc: vi.fn(),
   eq: vi.fn(),
   channel: vi.fn(),
   open: vi.fn(),
@@ -54,6 +58,26 @@ vi.mock('@/lib/supabaseClient', () => {
   };
   return {
     supabase: {
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        db.rpc(name, args);
+        if (db.rpcError) return { data: null, error: db.rpcError };
+        const source = db.pending.find(
+          (candidate) => (candidate as { id?: string }).id === args['signal_id'],
+        ) as ReturnType<typeof signal> | undefined;
+        if (source && !db.rows.some((row) => row['signal_id'] === source.id)) {
+          db.rows.push({
+            id: `row-${db.rows.length}`,
+            action: source.action,
+            ticker: 'BTC-USD',
+            quantity: Number(source.quantity),
+            price: Number(args['execution_price']),
+            fees: Number(source.quantity) * Number(args['execution_price']) * 0.0025,
+            created_at: new Date().toISOString(),
+            signal_id: source.id,
+          });
+        }
+        return { data: db.rows.at(-1) ?? null, error: null };
+      },
       from: () => ({
         select: () => query(() => db.pending),
         update: (values: unknown) => {
@@ -72,16 +96,13 @@ vi.mock('@/lib/supabaseClient', () => {
     },
   };
 });
-vi.mock('@/lib/db', async () => {
-  const { paperDb } = await import('./paperDbFake');
-  return {
-    loadPortfolio: vi.fn(),
-    savePortfolioStateV3: vi.fn(),
-    insertPaperTransaction: paperDb.insertPaperTransaction,
-    loadPaperTransactions: paperDb.loadPaperTransactions,
-    PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
-  };
-});
+vi.mock('@/lib/db', () => ({
+  loadPortfolio: vi.fn(),
+  savePortfolioStateV3: vi.fn(),
+  insertPaperTransaction: db.insert,
+  loadPaperTransactions: vi.fn(async () => [...db.rows]),
+  PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
+}));
 vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
@@ -91,7 +112,6 @@ import { PAPER_STARTING_CASH, PortfolioProvider, usePortfolio } from '@/lib/port
 import { ActionCenter } from '@/components/ActionCenter';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { toast } from 'sonner';
-import { paperDb } from './paperDbFake';
 
 const btc: Asset = {
   ticker: 'BTC-USD',
@@ -148,10 +168,11 @@ describe('Action Center', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.clearAllMocks();
-    paperDb.rows.length = 0;
+    db.rows = [];
     db.pending = [];
     db.claimed = [{ id: 'sig-1' }];
     db.updateError = null;
+    db.rpcError = null;
     db.hold = false;
     db.status = 'SUBSCRIBED';
     db.holdStatus = false;
@@ -218,20 +239,19 @@ describe('Action Center', () => {
     expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
   });
 
-  it('Execute books the fill in the paper_trading ledger, then claims the signal', async () => {
+  it('executes the signal and paper fill through one atomic RPC', async () => {
     db.pending = [signal()];
     renderSignedIn();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
 
-    expect(db.update).toHaveBeenCalledWith({ status: 'EXECUTED' });
-    // The ledger accepted the fill before the row was claimed.
-    expect(vi.mocked(toast.success).mock.invocationCallOrder[0]).toBeLessThan(
-      db.update.mock.invocationCallOrder[0]!,
-    );
-    expect(db.eq).toHaveBeenCalledWith('id', 'sig-1');
-    expect(db.eq).toHaveBeenCalledWith('status', 'PENDING');
+    expect(db.rpc).toHaveBeenCalledWith('execute_tactical_signal', {
+      signal_id: 'sig-1',
+      user_id: 'user-1',
+      execution_price: 50_000,
+    });
+    expect(db.update).not.toHaveBeenCalledWith({ status: 'EXECUTED' });
 
     const paper = store.portfolios.paper_trading;
     expect(paper.positions).toHaveLength(1);
@@ -244,8 +264,8 @@ describe('Action Center', () => {
       intent: 'tactical',
     });
     // Booked as a server row, and the account is its replay.
-    expect(paperDb.rows).toEqual([expect.objectContaining({ action: 'BUY', ticker: 'BTC-USD' })]);
-    expect(paper.transactions.at(-1)?.id).toBe(paperDb.rows[0]?.id);
+    expect(db.rows).toEqual([expect.objectContaining({ action: 'BUY', ticker: 'BTC-USD' })]);
+    expect(paper.transactions.at(-1)?.id).toBe(db.rows[0]?.['id']);
     // Core ledgers never see it.
     expect(store.portfolios.long_term_sim.transactions.some((t) => t.type === 'buy')).toBe(false);
   });
@@ -262,35 +282,29 @@ describe('Action Center', () => {
     });
   });
 
-  it('warns when another tab claimed the signal while this one booked it', async () => {
+  it('does not duplicate the fill when Execute is clicked repeatedly', async () => {
     db.pending = [signal()];
-    db.claimed = [];
     renderSignedIn();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
+    const execute = await screen.findByRole('button', { name: 'Execute Trade (Paper)' });
+    fireEvent.click(execute);
+    fireEvent.click(execute);
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
     expect(store.portfolios.paper_trading.positions).toHaveLength(1);
-    expect(toast.warning).toHaveBeenCalledWith(
-      'Another tab already resolved this signal',
-      expect.anything(),
-    );
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+    expect(db.rows).toHaveLength(1);
   });
 
-  it('keeps the fill and hides the card when the claim fails after booking', async () => {
+  it('keeps the signal visible and books nothing when the atomic RPC fails', async () => {
     db.pending = [signal()];
-    db.updateError = { message: 'network down' };
+    db.rpcError = { message: 'Insufficient cash' };
     renderSignedIn();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
-    expect(store.portfolios.paper_trading.positions).toHaveLength(1);
-    expect(toast.error).toHaveBeenCalledWith(
-      'Trade booked, but the signal could not be marked executed',
-      { description: 'network down. Dismiss it if it shows up again.' },
-    );
-    // A late realtime echo can't bring it back for a second booking.
-    act(() => db.emit({ eventType: 'INSERT', new: signal() }));
-    expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Insufficient cash'));
+    expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
+    expect(store.portfolios.paper_trading.positions).toHaveLength(0);
+    expect(db.rows).toHaveLength(0);
   });
 
   it('shows an unaffordable BUY with Execute disabled and the reason, without consuming it', async () => {
@@ -303,7 +317,7 @@ describe('Action Center', () => {
       'Not enough cash: this order needs $200,500.00, $100,000.00 available.',
     );
     fireEvent.click(execute);
-    expect(paperDb.insertPaperTransaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
     expect(store.portfolios.paper_trading.positions).toHaveLength(0);
@@ -320,7 +334,7 @@ describe('Action Center', () => {
     expect(
       screen.getByText('Portfolio max risk reached: 0% open + 10% new would pass the 6% limit.'),
     ).toBeInTheDocument();
-    expect(paperDb.insertPaperTransaction).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it('Dismiss resolves the signal and leaves the ledger untouched', async () => {

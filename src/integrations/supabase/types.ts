@@ -70,6 +70,7 @@ export type Database = {
           id: string;
           price: number | null;
           quantity: number | null;
+          signal_id: string | null;
           ticker: string | null;
           user_id: string;
         };
@@ -80,6 +81,7 @@ export type Database = {
           id?: string;
           price?: number | null;
           quantity?: number | null;
+          signal_id?: string | null;
           ticker?: string | null;
           user_id?: string;
         };
@@ -90,6 +92,7 @@ export type Database = {
           id?: string;
           price?: number | null;
           quantity?: number | null;
+          signal_id?: string | null;
           ticker?: string | null;
           user_id?: string;
         };
@@ -253,6 +256,10 @@ export type Database = {
           id: string;
           snapshot: Json;
         }[];
+      };
+      execute_tactical_signal: {
+        Args: { execution_price: number; signal_id: string; user_id: string };
+        Returns: Database['public']['Tables']['paper_transactions']['Row'];
       };
       rotate_signal_webhook_token: {
         Args: never;

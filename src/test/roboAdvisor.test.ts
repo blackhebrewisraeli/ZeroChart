@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildQuantPortfolio, scoreTicker, type QuantDeps } from '@/lib/roboAdvisor';
+import {
+  RISK_PROFILE_POLICIES,
+  buildQuantPortfolio,
+  qualifiesForRiskProfile,
+  scoreTicker,
+  type QuantDeps,
+} from '@/lib/roboAdvisor';
 import type { Asset } from '@/lib/assets';
 import { evaluateCandles, MIN_CANDLES, type EngineCandle } from '@/lib/canonicalModel';
 import { recommendPositionSize } from '@/lib/risk';
@@ -62,6 +68,38 @@ describe('scoreTicker', () => {
 });
 
 describe('buildQuantPortfolio', () => {
+  it('enforces the hard conservative and aggressive risk policies', () => {
+    expect(RISK_PROFILE_POLICIES.conservative.maxAllocation).toBe(0.1);
+    expect(
+      qualifiesForRiskProfile('conservative', {
+        signal_score: 90,
+        regime: 'HIGH_VOLATILITY',
+        components: { momentumScore: 90 },
+      }),
+    ).toBe(false);
+    expect(
+      qualifiesForRiskProfile('aggressive', {
+        signal_score: 70,
+        regime: 'TRENDING',
+        components: { momentumScore: 90 },
+      }),
+    ).toBe(false);
+    expect(
+      qualifiesForRiskProfile('aggressive', {
+        signal_score: 90,
+        regime: 'TRENDING',
+        components: { momentumScore: 50 },
+      }),
+    ).toBe(false);
+    expect(
+      qualifiesForRiskProfile('aggressive', {
+        signal_score: 71,
+        regime: 'TRENDING',
+        components: { momentumScore: 51 },
+      }),
+    ).toBe(true);
+  });
+
   it('ranks by the canonical score and caps the 2%-risk size at the allocation', async () => {
     const candles = makeCandles(200);
     const engine = engineScore(candles);
@@ -69,20 +107,20 @@ describe('buildQuantPortfolio', () => {
     const assets = [makeAsset('A'), makeAsset('B'), makeAsset('C'), makeAsset('D')];
 
     const result = await buildQuantPortfolio(
-      { preferences: { totalCapital: 30000, riskProfile: 'aggressive' }, availableAssets: assets },
+      { preferences: { totalCapital: 30000, riskProfile: 'moderate' }, availableAssets: assets },
       deps,
     );
 
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
     for (const allocation of result) {
-      expect(allocation.weight).toBeCloseTo(1 / 3, 5);
-      expect(allocation.allocatedAmount).toBeCloseTo(10000, 2);
+      expect(allocation.weight).toBeCloseTo(0.25, 5);
+      expect(allocation.allocatedAmount).toBeCloseTo(7500, 2);
       // The exact engine score — never a static-table proxy.
       expect(allocation.score).toBe(engine.signal_score);
       expect(allocation.regime).toBe(engine.regime);
       // ATR ≈ 1 on $100: 2% × 30,000 = $600 risk → ~600 risk-optimal shares
-      // ($60,000 notional) — capped at the $10,000 allocation → 100 shares.
-      expect(allocation.suggestedShares).toBe(100);
+      // ($60,000 notional) — capped at the $7,500 allocation → 75 shares.
+      expect(allocation.suggestedShares).toBe(75);
       expect((allocation.suggestedShares ?? 0) * 100).toBeLessThanOrEqual(
         allocation.allocatedAmount,
       );
@@ -105,7 +143,7 @@ describe('buildQuantPortfolio', () => {
     );
 
     expect(result.map((allocation) => allocation.ticker)).toEqual(['BTC']);
-    expect(result[0]?.weight).toBeCloseTo(1, 5);
+    expect(result[0]?.weight).toBeCloseTo(0.1, 5);
     expect(deps.fetchCandles).toHaveBeenCalledTimes(4);
   });
 
@@ -128,7 +166,7 @@ describe('buildQuantPortfolio', () => {
 
     const result = await buildQuantPortfolio(
       {
-        preferences: { totalCapital: 30000, riskProfile: 'aggressive' },
+        preferences: { totalCapital: 30000, riskProfile: 'moderate' },
         availableAssets: assets,
         excludeTickers: new Set(['A']),
       },
@@ -145,21 +183,21 @@ describe('buildQuantPortfolio', () => {
 
     const [live] = await buildQuantPortfolio(
       {
-        preferences: { totalCapital: 10000, riskProfile: 'aggressive' },
+        preferences: { totalCapital: 10000, riskProfile: 'moderate' },
         availableAssets: [makeAsset('LIVE', 120)],
       },
       deps,
     );
     const [close] = await buildQuantPortfolio(
       {
-        preferences: { totalCapital: 10000, riskProfile: 'aggressive' },
+        preferences: { totalCapital: 10000, riskProfile: 'moderate' },
         availableAssets: [makeAsset('CLOSE', null)],
       },
       deps,
     );
 
     const size = (price: number) =>
-      recommendPositionSize({ capital: 10000, price, atr: engine.atr, allocatedCapital: 10000 })
+      recommendPositionSize({ capital: 10000, price, atr: engine.atr, allocatedCapital: 2500 })
         .shares;
     expect(live?.suggestedShares).toBe(size(120));
     expect(close?.suggestedShares).toBe(size(engine.close));
@@ -171,7 +209,7 @@ describe('buildQuantPortfolio', () => {
 
     const [allocation] = await buildQuantPortfolio(
       {
-        preferences: { totalCapital: 10000, riskProfile: 'aggressive' },
+        preferences: { totalCapital: 10000, riskProfile: 'moderate' },
         availableAssets: [makeAsset('BTC')],
       },
       depsFor({ BTC: candles }),

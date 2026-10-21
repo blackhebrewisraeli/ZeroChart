@@ -7,7 +7,59 @@ import {
   ASSET_COUNT_BY_RISK,
   type Allocation,
   type PortfolioPreferences,
+  type RiskProfile,
 } from '@/lib/portfolioBuilder';
+
+export const RISK_PROFILE_POLICIES = {
+  conservative: {
+    maxAllocation: 0.1,
+    excludeHighVolatility: true,
+    minimumScoreExclusive: null,
+    requirePositiveMomentum: false,
+  },
+  moderate: {
+    maxAllocation: 0.25,
+    excludeHighVolatility: false,
+    minimumScoreExclusive: null,
+    requirePositiveMomentum: false,
+  },
+  aggressive: {
+    maxAllocation: 0.5,
+    excludeHighVolatility: false,
+    minimumScoreExclusive: 70,
+    requirePositiveMomentum: true,
+  },
+} as const satisfies Record<
+  RiskProfile,
+  {
+    maxAllocation: number;
+    excludeHighVolatility: boolean;
+    minimumScoreExclusive: number | null;
+    requirePositiveMomentum: boolean;
+  }
+>;
+
+type RiskPolicyCandidate = Pick<CanonicalResult & { status: 'OK' }, 'signal_score' | 'regime'> & {
+  components: { momentumScore: number };
+};
+
+/** Hard eligibility gate for each portfolio risk profile. */
+export function qualifiesForRiskProfile(
+  profile: RiskProfile,
+  candidate: RiskPolicyCandidate,
+): boolean {
+  const policy = RISK_PROFILE_POLICIES[profile];
+  if (policy.excludeHighVolatility && candidate.regime === 'HIGH_VOLATILITY') return false;
+  if (
+    policy.minimumScoreExclusive !== null &&
+    candidate.signal_score <= policy.minimumScoreExclusive
+  ) {
+    return false;
+  }
+  // The canonical momentum score is 50 at zero momentum and monotonic around it.
+  if (policy.requirePositiveMomentum && candidate.components.momentumScore <= 50) return false;
+  return true;
+}
 
 export interface QuantDeps {
   /** Daily OHLC candles, oldest first; `[]` when the ticker has no candle source. */
@@ -75,7 +127,11 @@ export async function buildQuantPortfolio(
   );
   const qualified = scored
     .flatMap(({ asset, result }) =>
-      result.status === 'OK' && result.signal_score > 0 ? [{ asset, result }] : [],
+      result.status === 'OK' &&
+      result.signal_score > 0 &&
+      qualifiesForRiskProfile(preferences.riskProfile, result)
+        ? [{ asset, result }]
+        : [],
     )
     .sort((a, b) => b.result.signal_score - a.result.signal_score)
     .slice(0, ASSET_COUNT_BY_RISK[preferences.riskProfile]);
@@ -84,10 +140,11 @@ export async function buildQuantPortfolio(
 
   const totalScore = qualified.reduce((sum, item) => sum + item.result.signal_score, 0);
   const capital = preferences.totalCapital;
+  const policy = RISK_PROFILE_POLICIES[preferences.riskProfile];
 
   return qualified.map(({ asset, result }) => {
     const { signal_score: score, components, regime, rationale, atr } = result;
-    const weight = score / totalScore;
+    const weight = Math.min(score / totalScore, policy.maxAllocation);
     const allocatedAmount = Number((capital * weight).toFixed(2));
     // Live price when the provider has one, else the last candle close. The
     // suggested size is bounded by this asset's allocation so the risk model

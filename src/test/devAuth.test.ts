@@ -25,6 +25,11 @@ describe('readDevAuthUser', () => {
     expect(readDevAuthUser()?.app_metadata['is_pro']).toBe(true);
   });
 
+  it('accepts the IPv6 loopback host', () => {
+    at('http://[::1]:8080/?devAuth=1');
+    expect(readDevAuthUser()?.id).toBe('00000000-0000-4000-8000-000000000001');
+  });
+
   it.each([
     ['production build', 'http://localhost:8080/?devAuth=1', { DEV: false, MODE: 'production' }],
     ['vitest run', 'http://localhost:8080/?devAuth=1', { MODE: 'test' }],

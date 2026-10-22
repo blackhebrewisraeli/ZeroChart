@@ -124,6 +124,10 @@ describe('RoboAdvisor execution, signed in', () => {
         { ticker: 'ETH', amount: 2500, score: 75 },
       ],
     });
+    // Rows show the units the server will book, not the browser's 0.05 estimate.
+    const sizes = screen.getAllByTitle(/Suggested position size/);
+    expect(sizes[0]).toHaveTextContent('0.0499 shares');
+    expect(sizes[1]).toHaveTextContent('0.9975 shares');
     expect(screen.getByRole('rowheader', { name: 'BTC' })).toBeVisible();
     expect(screen.getByText('$95,000.01')).toBeVisible();
 

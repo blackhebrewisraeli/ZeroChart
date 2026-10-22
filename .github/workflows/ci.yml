@@ -62,11 +62,14 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   migrations:
-    name: Migrations build a fresh database
+    name: Database migrations and SQL tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The upgrade check rebuilds the base commit's schema from its migrations.
+          fetch-depth: 0
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
@@ -75,5 +78,21 @@ jobs:
 
       # Starts an empty local Postgres and applies supabase/migrations in order,
       # so a migration that depends on schema made outside that folder fails here.
-      - name: Apply every migration
+      - name: Apply every migration to a fresh database
         run: supabase db start
+
+      - name: SQL tests (pgTAP)
+        run: supabase test db
+
+      - name: Concurrent sessions
+        run: supabase/tests/concurrency.sh
+
+      # Production already holds the base commit's schema and real rows, so the
+      # new migrations must also apply on top of that, not only from scratch.
+      - name: Upgrade from the base commit
+        run: supabase/tests/upgrade.sh "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+      - name: SQL tests on the upgraded database
+        run: supabase test db

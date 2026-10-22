@@ -8,6 +8,9 @@ import type { Position } from '@/lib/portfolioAccounting';
 
 /** A holding more than 5 percentage points off its target triggers a rebalance. */
 export const REBALANCE_BAND = 0.05;
+
+const SIDE_ORDER = { sell: 0, buy: 1 } as const;
+
 /** Trades under $1 or 0.1% of the portfolio are fee noise and are not suggested. */
 const MIN_TRADE_VALUE = 1;
 const MIN_TRADE_SHARE = 0.001;
@@ -113,7 +116,8 @@ export function computeRebalancePlan(
         price,
       });
     }
-    trades.sort((a, b) => (a.side === b.side ? 0 : a.side === 'sell' ? -1 : 1));
+    // Sells first: they free the cash the buys spend.
+    trades.sort((a, b) => SIDE_ORDER[a.side] - SIDE_ORDER[b.side]);
   }
 
   return { rows, cashWeight, breached, trades, totalValue };

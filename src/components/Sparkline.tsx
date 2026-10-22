@@ -25,7 +25,9 @@ export function Sparkline({
   const points = data.map((value) => ({ value }));
   const isUp = change != null && change > 0;
   const isDown = change != null && change < 0;
-  const stroke = isUp ? TREND_UP : isDown ? TREND_DOWN : TREND_FLAT;
+  let stroke = TREND_FLAT;
+  if (isUp) stroke = TREND_UP;
+  else if (isDown) stroke = TREND_DOWN;
 
   return (
     <div className="sparkline" style={{ width, height }} aria-hidden="true">

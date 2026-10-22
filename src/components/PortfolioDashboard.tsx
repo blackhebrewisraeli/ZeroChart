@@ -83,6 +83,8 @@ const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
 /** Profit/loss color class, shared by the KPI cards and the day-change line. */
 type PnlTone = 'pnl-up' | 'pnl-down';
 
+const PNL_ACCENT = { 'pnl-up': 'green', 'pnl-down': 'red' } as const;
+
 function KpiCard({
   label,
   value,
@@ -139,7 +141,9 @@ function TelemetryItem({
 
 function healthTone(score: number | null) {
   if (score === null) return 'health-none';
-  return score >= 80 ? 'health-green' : score >= 50 ? 'health-yellow' : 'health-red';
+  if (score >= 80) return 'health-green';
+  if (score >= 50) return 'health-yellow';
+  return 'health-red';
 }
 
 /** `score` is null when no holding has a canonical score yet — shown as "—", never 0. */
@@ -175,6 +179,12 @@ function HealthRing({ score }: Readonly<{ score: number | null }>) {
       </div>
     </div>
   );
+}
+
+function SignalValue({ result }: Readonly<{ result: CanonicalResult | undefined }>) {
+  if (result?.status === 'OK') return <>{result.signal_score}</>;
+  if (result?.status === 'INSUFFICIENT_DATA') return <InsufficientDataBadge />;
+  return <>—</>;
 }
 
 function HoldingRow({
@@ -214,7 +224,8 @@ function HoldingRow({
   const costBasis = positionCostBasis(position);
   const pnl = marketValue - costBasis;
   const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-  const tone = !hasLivePrice ? undefined : pnl >= 0 ? 'pnl-up' : 'pnl-down';
+  let tone: PnlTone | undefined;
+  if (hasLivePrice) tone = pnl >= 0 ? 'pnl-up' : 'pnl-down';
   const priceFlash = usePriceFlash(currentPrice);
   // A simulated close is a sell at the live price; with no price there is nothing to fill at.
   const closeBlocked = position.isSimulation && !hasLivePrice;
@@ -315,13 +326,7 @@ function HoldingRow({
             <div className="holding-metric">
               <span className="holding-metric-label">Signal</span>
               <span className="holding-metric-value">
-                {result?.status === 'OK' ? (
-                  result.signal_score
-                ) : result?.status === 'INSUFFICIENT_DATA' ? (
-                  <InsufficientDataBadge />
-                ) : (
-                  '—'
-                )}
+                <SignalValue result={result} />
               </span>
             </div>
             <div className="holding-metric">
@@ -606,11 +611,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     dayChange += price * position.shares * change;
     hasDayChange = true;
   }
-  const dayTone: PnlTone | undefined = hasDayChange
-    ? dayChange >= 0
-      ? 'pnl-up'
-      : 'pnl-down'
-    : undefined;
+  let dayTone: PnlTone | undefined;
+  if (hasDayChange) dayTone = dayChange >= 0 ? 'pnl-up' : 'pnl-down';
   let dayIcon = <Activity size={18} />;
   if (dayTone === 'pnl-up') dayIcon = <TrendingUp size={18} />;
   else if (dayTone === 'pnl-down') dayIcon = <TrendingDown size={18} />;
@@ -797,7 +799,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           value={formatPrice(valuation.marketValue)}
           sub={hasDayChange ? `24h ${formatPnl(dayChange)}` : 'Live prices'}
           icon={dayIcon}
-          accent={dayTone === 'pnl-up' ? 'green' : dayTone === 'pnl-down' ? 'red' : 'blue'}
+          accent={dayTone ? PNL_ACCENT[dayTone] : 'blue'}
           tone={dayTone}
         />
         <KpiCard

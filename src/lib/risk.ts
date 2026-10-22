@@ -268,7 +268,9 @@ export function checkNewEntry(
 /** Formats a share quantity for display, trimming to sensible precision. */
 export function formatShares(shares: number): string {
   if (!Number.isFinite(shares) || shares <= 0) return '—';
-  const decimals = shares >= 100 ? 1 : shares >= 1 ? 2 : 4;
+  let decimals = 4;
+  if (shares >= 100) decimals = 1;
+  else if (shares >= 1) decimals = 2;
   return Number(shares.toFixed(decimals)).toLocaleString('en-US', {
     maximumFractionDigits: 4,
   });

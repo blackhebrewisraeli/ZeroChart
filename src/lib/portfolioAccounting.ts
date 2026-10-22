@@ -187,24 +187,26 @@ export function positionCostBasis(position: Position): number {
 }
 
 /** Creates a canonical lot representation without mutating the input. */
-export function normalizePositionLots(position: Position): Position {
-  const ticker = normalizeTicker(position.ticker);
+/** A position's open lots; a legacy position without lots becomes one opening lot. */
+function openLots(position: Position): PositionLot[] {
   const existingLots = position.lots?.filter(
     (lot) => Number.isFinite(lot.shares) && lot.shares > ZERO_SHARE_EPSILON,
   );
-  const lots: PositionLot[] =
-    existingLots && existingLots.length > 0
-      ? existingLots.map((lot) => ({ ...lot }))
-      : position.shares > ZERO_SHARE_EPSILON
-        ? [
-            {
-              id: `${position.id}-opening-lot`,
-              shares: position.shares,
-              buyPrice: position.buyPrice,
-              acquiredAt: position.dateAdded,
-            },
-          ]
-        : [];
+  if (existingLots && existingLots.length > 0) return existingLots.map((lot) => ({ ...lot }));
+  if (position.shares <= ZERO_SHARE_EPSILON) return [];
+  return [
+    {
+      id: `${position.id}-opening-lot`,
+      shares: position.shares,
+      buyPrice: position.buyPrice,
+      acquiredAt: position.dateAdded,
+    },
+  ];
+}
+
+export function normalizePositionLots(position: Position): Position {
+  const ticker = normalizeTicker(position.ticker);
+  const lots = openLots(position);
   const shares = lots.reduce((sum, lot) => sum + lot.shares, 0);
 
   return {

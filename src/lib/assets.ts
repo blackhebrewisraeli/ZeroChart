@@ -51,7 +51,9 @@ export function formatPrice(value: number | null) {
 }
 
 export function formatPnl(value: number) {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  let sign = '';
+  if (value > 0) sign = '+';
+  else if (value < 0) sign = '-';
   return `${sign}${formatPrice(Math.abs(value))}`;
 }
 
@@ -60,7 +62,17 @@ export function formatSignedPercent(value: number) {
 }
 
 export function pnlTone(value: number): 'pnl-up' | 'pnl-down' | undefined {
-  return value > 0 ? 'pnl-up' : value < 0 ? 'pnl-down' : undefined;
+  if (value > 0) return 'pnl-up';
+  if (value < 0) return 'pnl-down';
+  return undefined;
+}
+
+/** Signal Score pill class: above 85 high, 70-85 mid, below 70 low. */
+export function scoreTone(score: number | null) {
+  if (score === null) return '';
+  if (score > 85) return 'score-high';
+  if (score >= 70) return 'score-mid';
+  return 'score-low';
 }
 
 export function formatRisk(value: number | null) {
@@ -99,7 +111,9 @@ export type AssetClass = 'Crypto' | 'Forex' | 'Stocks';
  */
 export function getAssetClass(ticker: string): AssetClass {
   const kind = classifyTicker(ticker);
-  return kind === 'crypto' ? 'Crypto' : kind === 'forex' ? 'Forex' : 'Stocks';
+  if (kind === 'crypto') return 'Crypto';
+  if (kind === 'forex') return 'Forex';
+  return 'Stocks';
 }
 
 /**

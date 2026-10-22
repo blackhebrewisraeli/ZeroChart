@@ -9,6 +9,8 @@ import type { Position } from '@/lib/portfolioAccounting';
  * Portfolio never calls this — its trades come from `rebalance.ts`.
  */
 
+const TYPE_ORDER = { SELL: 0, BUY: 1 } as const;
+
 export interface TacticalSignal {
   type: 'BUY' | 'SELL';
   ticker: string;
@@ -59,9 +61,8 @@ export function generateTacticalSignals(
     else if (!isHeld && score >= BUY_AT) signals.push({ type: 'BUY', ...base });
   }
 
-  return signals.sort((a, b) =>
-    a.type === b.type ? b.score - a.score : a.type === 'SELL' ? -1 : 1,
-  );
+  // SELLs first (they protect what is held), then the strongest score.
+  return signals.sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || b.score - a.score);
 }
 
 /**

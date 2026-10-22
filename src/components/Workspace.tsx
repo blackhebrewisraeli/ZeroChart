@@ -41,6 +41,7 @@ import {
   generateTrendData,
   getAssetClass,
   sampleAssets,
+  scoreTone,
   type Asset,
   type AssetClass,
 } from '@/lib/assets';
@@ -50,6 +51,7 @@ import { scoreOf, type CanonicalResult } from '@/lib/canonicalModel';
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
+import type { User } from '@supabase/supabase-js';
 import { useAuth } from '@/lib/authStore';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useHydrationState } from '@/lib/hydrationStore';
@@ -88,10 +90,6 @@ const Sparkline = lazy(() =>
 const sparklineFallback = <div className="sparkline" style={{ height: 30 }} aria-hidden="true" />;
 const zoneFallback = <div aria-busy="true" className="skeleton h-96 w-full" />;
 
-function scoreToneOf(score: number) {
-  return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
-}
-
 function ScoreRing({ result }: Readonly<{ result: CanonicalResult | undefined }>) {
   const score = scoreOf(result);
   if (score === null) {
@@ -109,7 +107,7 @@ function ScoreRing({ result }: Readonly<{ result: CanonicalResult | undefined }>
   }
   return (
     <div
-      className={cn('score-ring', scoreToneOf(score))}
+      className={cn('score-ring', scoreTone(score))}
       role="img"
       aria-label={`Signal score ${score} out of 100`}
     >
@@ -221,6 +219,21 @@ function sortMarkets(
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
 }
 
+function MarketScore({
+  score,
+  result,
+}: Readonly<{ score: number | null; result: CanonicalResult | undefined }>) {
+  if (score !== null) {
+    return <span className={cn('markets-score', scoreTone(score))}>{score}</span>;
+  }
+  if (result?.status === 'INSUFFICIENT_DATA') return <InsufficientDataBadge compact />;
+  return (
+    <span className="markets-score score-none" aria-label="Signal score loading">
+      —
+    </span>
+  );
+}
+
 const MarketRow = memo(function MarketRow({
   asset,
   result,
@@ -279,15 +292,7 @@ const MarketRow = memo(function MarketRow({
         {formatChange(change)}
       </span>
       <span className="markets-score-cell">
-        {score !== null ? (
-          <span className={cn('markets-score', scoreToneOf(score))}>{score}</span>
-        ) : result?.status === 'INSUFFICIENT_DATA' ? (
-          <InsufficientDataBadge compact />
-        ) : (
-          <span className="markets-score score-none" aria-label="Signal score loading">
-            —
-          </span>
-        )}
+        <MarketScore score={score} result={result} />
       </span>
       <span // NOSONAR(S6819): keeps Trade clicks (and its modal's) from selecting the row
         role="presentation"
@@ -307,6 +312,203 @@ const VIEW_PATHS = {
   paper: '/paper-trading',
   account: '/account',
 } as const satisfies Record<WorkspaceView, string>;
+
+/** The feed status pill: the connection first, then where the prices come from. */
+function feedStatusLabel(
+  reconnecting: boolean,
+  preview: boolean,
+  query: { isPending: boolean; isError: boolean },
+): string {
+  if (reconnecting) return 'Reconnecting…';
+  if (preview) return 'Sample data';
+  if (query.isPending) return 'Connecting';
+  if (query.isError) return 'Offline';
+  return 'Live';
+}
+
+function HeaderProfile({ user, onSignOut }: Readonly<{ user: User; onSignOut: () => void }>) {
+  return (
+    <>
+      <span className="header-divider" aria-hidden="true" />
+      <div className="header-profile flex items-center gap-1.5">
+        <Avatar className="header-avatar h-8 w-8 border border-border">
+          <AvatarFallback className="text-[11px] font-semibold">
+            {(user.email ?? '?').slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="header-logout h-9 w-9 flex-shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label="Log out"
+          title="Log out"
+          onClick={onSignOut}
+        >
+          <LogOut size={15} />
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function MarketsSkeleton() {
+  return (
+    <div aria-busy="true">
+      <div className="hero skeleton-hero">
+        <div className="skeleton h-7 w-56" />
+        <div className="skeleton mt-5 h-14 w-44" />
+        <div className="skeleton mt-6 h-9 w-64" />
+        <div className="skeleton mt-6 h-4 w-full max-w-md" />
+      </div>
+      <div className="markets-table mt-14">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="markets-row markets-row-skeleton">
+            <div className="skeleton markets-skeleton" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NoSignals({ onPreview }: Readonly<{ onPreview: () => void }>) {
+  return (
+    <div className="empty-state">
+      <CandlestickChart size={32} className="mx-auto mb-4 text-muted-foreground" />
+      <h3>No signals yet</h3>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Your watchlist is empty. Check back soon, or preview sample data.
+      </p>
+      <Button variant="outline" className="mt-5" onClick={onPreview}>
+        View sample data
+      </Button>
+    </div>
+  );
+}
+
+function MarketsSection({
+  rows,
+  scores,
+  assets,
+  marketView,
+  onMarketView,
+  assetClass,
+  onAssetClass,
+  onSelect,
+  onInvest,
+}: Readonly<{
+  rows: Asset[];
+  scores: ReadonlyMap<string, CanonicalResult>;
+  assets: Asset[];
+  marketView: MarketView;
+  onMarketView: (view: MarketView) => void;
+  assetClass: AssetClassFilter;
+  onAssetClass: (filter: AssetClassFilter) => void;
+  onSelect: (asset: Asset) => void;
+  onInvest: () => void;
+}>) {
+  return (
+    <section className="markets" data-tour="markets" aria-label="Markets">
+      <div className="markets-head">
+        <h2 className="markets-title">Markets</h2>
+        <div className="markets-head-actions">
+          <span className="markets-count font-mono">
+            {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
+          </span>
+          <Suspense fallback={null}>
+            <RoboAdvisor assets={assets} onInvest={onInvest} />
+          </Suspense>
+        </div>
+      </div>
+      <div className="markets-controls">
+        <div className="markets-pills" role="group" aria-label="Market view">
+          {MARKET_VIEWS.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              className={cn('markets-pill', marketView === view.id && 'markets-pill-active')}
+              aria-pressed={marketView === view.id}
+              onClick={() => onMarketView(view.id)}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+        <div className="markets-pills" role="group" aria-label="Asset class">
+          {ASSET_CLASS_FILTERS.map((filter) => (
+            <button
+              key={filter}
+              type="button"
+              className={cn('markets-pill', assetClass === filter && 'markets-pill-active')}
+              aria-pressed={assetClass === filter}
+              onClick={() => onAssetClass(filter)}
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="markets-empty">No assets match this filter.</div>
+      ) : (
+        <div className="markets-table">
+          <div className="markets-row markets-row-head" aria-hidden="true">
+            <span className="markets-head-cell markets-rank-head">#</span>
+            <span className="markets-head-cell">Asset</span>
+            <span className="markets-head-cell">Price</span>
+            <span />
+            <span className="markets-head-cell">24h %</span>
+            <span className="markets-head-cell">Signal</span>
+            <span />
+          </div>
+          {rows.map((asset, index) => (
+            <MarketRow
+              key={asset.ticker}
+              asset={asset}
+              result={scores.get(asset.ticker)}
+              rank={index + 1}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Research: a loading skeleton, the markets with today's top pick, or an empty watchlist. */
+function ResearchZone({
+  pending,
+  failed,
+  topPick,
+  scores,
+  assets,
+  user,
+  onPreview,
+  markets,
+}: Readonly<{
+  pending: boolean;
+  failed: boolean;
+  topPick: Asset | undefined;
+  scores: ReadonlyMap<string, CanonicalResult>;
+  assets: Asset[];
+  user: User | null;
+  onPreview: () => void;
+  markets: ReactNode;
+}>) {
+  if (pending) return <MarketsSkeleton />;
+  if (!topPick) return failed ? null : <NoSignals onPreview={onPreview} />;
+  return (
+    <>
+      <Hero asset={topPick} result={scores.get(topPick.ticker)} />
+      <TacticalSignals assets={assets} />
+      {markets}
+      <section className="portfolio-section" aria-label="Price alerts">
+        <PriceAlerts assets={assets} user={user} />
+      </section>
+    </>
+  );
+}
 
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
@@ -429,15 +631,7 @@ function Terminal() {
                     !reconnecting && query.isError && !preview && 'status-error',
                   )}
                 />
-                {reconnecting
-                  ? 'Reconnecting…'
-                  : preview
-                    ? 'Sample data'
-                    : query.isPending
-                      ? 'Connecting'
-                      : query.isError
-                        ? 'Offline'
-                        : 'Live'}
+                {feedStatusLabel(reconnecting, preview, query)}
               </span>
               <Button
                 variant="outline"
@@ -452,28 +646,7 @@ function Terminal() {
               </Button>
               <ThemeToggle />
             </div>
-            {user ? (
-              <>
-                <span className="header-divider" aria-hidden="true" />
-                <div className="header-profile flex items-center gap-1.5">
-                  <Avatar className="header-avatar h-8 w-8 border border-border">
-                    <AvatarFallback className="text-[11px] font-semibold">
-                      {(user.email ?? '?').slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="header-logout h-9 w-9 flex-shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label="Log out"
-                    title="Log out"
-                    onClick={() => void signOut()}
-                  >
-                    <LogOut size={15} />
-                  </Button>
-                </div>
-              </>
-            ) : null}
+            {user && <HeaderProfile user={user} onSignOut={() => void signOut()} />}
             <TourGuide onViewChange={setView} />
           </div>
         </div>
@@ -507,120 +680,42 @@ function Terminal() {
             </Button>
           </div>
         )}
-        {view === 'paper' ? (
+        {view === 'paper' && (
           <Suspense fallback={zoneFallback}>
             <PaperTradingTerminal assets={baseAssets} />
             <hr className="zone-divider" />
             <PortfolioDashboard assets={baseAssets} portfolioType="long_term_sim" />
           </Suspense>
-        ) : view === 'account' ? (
+        )}
+        {view === 'account' && (
           <Suspense fallback={zoneFallback}>
             <AccountPanel assets={baseAssets} />
           </Suspense>
-        ) : query.isPending && !preview ? (
-          <div aria-busy="true">
-            <div className="hero skeleton-hero">
-              <div className="skeleton h-7 w-56" />
-              <div className="skeleton mt-5 h-14 w-44" />
-              <div className="skeleton mt-6 h-9 w-64" />
-              <div className="skeleton mt-6 h-4 w-full max-w-md" />
-            </div>
-            <div className="markets-table mt-14">
-              {Array.from({ length: 6 }, (_, i) => (
-                <div key={i} className="markets-row markets-row-skeleton">
-                  <div className="skeleton markets-skeleton" />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : topPick ? (
-          <>
-            <Hero asset={topPick} result={scores.get(topPick.ticker)} />
-            <TacticalSignals assets={baseAssets} />
-            <section className="markets" data-tour="markets" aria-label="Markets">
-              <div className="markets-head">
-                <h2 className="markets-title">Markets</h2>
-                <div className="markets-head-actions">
-                  <span className="markets-count font-mono">
-                    {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
-                  </span>
-                  <Suspense fallback={null}>
-                    <RoboAdvisor assets={baseAssets} onInvest={() => setView('paper')} />
-                  </Suspense>
-                </div>
-              </div>
-              <div className="markets-controls">
-                <div className="markets-pills" role="group" aria-label="Market view">
-                  {MARKET_VIEWS.map((view) => (
-                    <button
-                      key={view.id}
-                      type="button"
-                      className={cn(
-                        'markets-pill',
-                        marketView === view.id && 'markets-pill-active',
-                      )}
-                      aria-pressed={marketView === view.id}
-                      onClick={() => setMarketView(view.id)}
-                    >
-                      {view.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="markets-pills" role="group" aria-label="Asset class">
-                  {ASSET_CLASS_FILTERS.map((filter) => (
-                    <button
-                      key={filter}
-                      type="button"
-                      className={cn('markets-pill', assetClass === filter && 'markets-pill-active')}
-                      aria-pressed={assetClass === filter}
-                      onClick={() => setAssetClass(filter)}
-                    >
-                      {filter}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {rows.length === 0 ? (
-                <div className="markets-empty">No assets match this filter.</div>
-              ) : (
-                <div className="markets-table">
-                  <div className="markets-row markets-row-head" aria-hidden="true">
-                    <span className="markets-head-cell markets-rank-head">#</span>
-                    <span className="markets-head-cell">Asset</span>
-                    <span className="markets-head-cell">Price</span>
-                    <span />
-                    <span className="markets-head-cell">24h %</span>
-                    <span className="markets-head-cell">Signal</span>
-                    <span />
-                  </div>
-                  {rows.map((asset, index) => (
-                    <MarketRow
-                      key={asset.ticker}
-                      asset={asset}
-                      result={scores.get(asset.ticker)}
-                      rank={index + 1}
-                      onSelect={setSelectedAsset}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-            <section className="portfolio-section" aria-label="Price alerts">
-              <PriceAlerts assets={baseAssets} user={user} />
-            </section>
-          </>
-        ) : !query.isError ? (
-          <div className="empty-state">
-            <CandlestickChart size={32} className="mx-auto mb-4 text-muted-foreground" />
-            <h3>No signals yet</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Your watchlist is empty. Check back soon, or preview sample data.
-            </p>
-            <Button variant="outline" className="mt-5" onClick={() => setSource('sample')}>
-              View sample data
-            </Button>
-          </div>
-        ) : null}
+        )}
+        {view === 'research' && (
+          <ResearchZone
+            pending={query.isPending && !preview}
+            failed={query.isError}
+            topPick={topPick}
+            scores={scores}
+            assets={baseAssets}
+            user={user}
+            onPreview={() => setSource('sample')}
+            markets={
+              <MarketsSection
+                rows={rows}
+                scores={scores}
+                assets={baseAssets}
+                marketView={marketView}
+                onMarketView={setMarketView}
+                assetClass={assetClass}
+                onAssetClass={setAssetClass}
+                onSelect={setSelectedAsset}
+                onInvest={() => setView('paper')}
+              />
+            }
+          />
+        )}
       </main>
       <footer className="terminal-footer page-width">
         <div className="flex items-center gap-2">

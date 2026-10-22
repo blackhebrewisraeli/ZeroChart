@@ -45,6 +45,12 @@ import { cn } from '@/lib/utils';
 const SIZE_STEP = 0.25;
 const LEDGER_FILENAME = 'zerochart-ledger-paper.csv';
 
+/** "+$12.00 · +3.40%": the dollar P&L and its return on what the position cost. */
+function pnlLabel(pnl: number, costBasis: number): string {
+  const returnPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  return `${formatPnl(pnl)} · ${formatSignedPercent(returnPercent)}`;
+}
+
 function Stat({
   label,
   value,
@@ -109,9 +115,7 @@ function PositionRow({
       <td className={priceFlash}>{hasPrice ? formatPrice(price) : '—'}</td>
       <td>{hasPrice ? formatPrice(price * position.shares) : '—'}</td>
       <td className={pnl === null ? undefined : pnlTone(pnl)}>
-        {pnl === null
-          ? '—'
-          : `${formatPnl(pnl)} · ${formatSignedPercent(costBasis > 0 ? (pnl / costBasis) * 100 : 0)}`}
+        {pnl === null ? '—' : pnlLabel(pnl, costBasis)}
       </td>
       <td>
         <span className="paper-row-actions">
@@ -432,14 +436,15 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
               </button>
             </div>
             <div className="analytics-workspace-panel">
-              {tab === 'ledger' ? (
+              {tab === 'ledger' && (
                 <TradeLedger
                   embedded
                   title="Paper Trade Ledger"
                   transactions={paper.transactions}
                   filename={LEDGER_FILENAME}
                 />
-              ) : openCount > 0 ? (
+              )}
+              {tab !== 'ledger' && openCount > 0 && (
                 <div className="ledger-scroll" role="region" aria-label="Open positions">
                   <table className="ledger-table paper-positions">
                     <thead>
@@ -470,7 +475,8 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
                     </tbody>
                   </table>
                 </div>
-              ) : (
+              )}
+              {tab !== 'ledger' && openCount === 0 && (
                 <div className="holdings-empty">
                   <Activity size={26} />
                   <span className="holdings-empty-title">No open paper positions</span>

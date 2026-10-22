@@ -11,7 +11,7 @@ import {
   Shield,
   X,
 } from 'lucide-react';
-import { formatPrice, type Asset } from '@/lib/assets';
+import { formatPrice, scoreTone, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { useAuth } from '@/lib/authStore';
@@ -65,11 +65,6 @@ const FACTOR_CHIPS = [
 
 function formatWeight(weight: number) {
   return `${(weight * 100).toFixed(1)}%`;
-}
-
-function scoreTone(score: number | null) {
-  if (score === null) return '';
-  return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
 }
 
 type Proposal = ReturnType<typeof useProposalExecution>;

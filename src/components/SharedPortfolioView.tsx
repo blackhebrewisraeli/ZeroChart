@@ -18,7 +18,9 @@ function pnlTone(value: number | null): string | undefined {
 
 function scoreTone(score: number | null): string {
   if (score === null) return 'score-none';
-  return score >= 80 ? 'shared-score-high' : score >= 60 ? 'shared-score-mid' : 'shared-score-low';
+  if (score >= 80) return 'shared-score-high';
+  if (score >= 60) return 'shared-score-mid';
+  return 'shared-score-low';
 }
 
 function AllocationTooltip({

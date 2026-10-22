@@ -148,11 +148,11 @@ export function PriceAlerts({ assets, user }: Readonly<{ assets: Asset[]; user: 
       )}
 
       <div className="price-alerts-list">
-        {sync.status === 'loading' ? (
-          <div className="price-alerts-empty">Loading alerts…</div>
-        ) : alerts.length === 0 ? (
+        {sync.status === 'loading' && <div className="price-alerts-empty">Loading alerts…</div>}
+        {sync.status !== 'loading' && alerts.length === 0 && (
           <div className="price-alerts-empty">No active alerts yet.</div>
-        ) : (
+        )}
+        {sync.status !== 'loading' &&
           alerts.map((alert) => (
             <div key={alert.id} className="price-alert-item">
               <span className="price-alert-ticker">{toDisplayTicker(alert.ticker)}</span>
@@ -179,8 +179,7 @@ export function PriceAlerts({ assets, user }: Readonly<{ assets: Asset[]; user: 
                 <Trash2 size={14} />
               </button>
             </div>
-          ))
-        )}
+          ))}
       </div>
     </div>
   );

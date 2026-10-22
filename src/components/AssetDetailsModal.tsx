@@ -7,7 +7,7 @@ import { AssetChart } from '@/components/AssetChart';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
-import { REGIME_LABELS } from '@/lib/canonicalModel';
+import { REGIME_LABELS, type CanonicalResult } from '@/lib/canonicalModel';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { getBrokerUrl } from '@/lib/tradeRouter';
@@ -24,6 +24,81 @@ const QUANT_FACTORS = [
   { label: 'Momentum', source: 'MACD', score: 'momentumScore', weight: 'momentum' },
   { label: 'Volatility Regime', source: 'ATR', score: 'volatilityScore', weight: 'volatility' },
 ] as const;
+
+/**
+ * The engine's verdict on one asset: regime, score, factor breakdown and ATR
+ * size once scored, else why there is no score yet.
+ */
+function QuantDetails({
+  ticker,
+  result,
+  livePrice,
+}: Readonly<{ ticker: string; result: CanonicalResult | undefined; livePrice: number | null }>) {
+  if (result?.status === 'INSUFFICIENT_DATA') {
+    return (
+      <div className="quant-insight-summary">
+        <InsufficientDataBadge />
+        <p className="quant-breakdown-note">
+          The engine needs {result.required} daily candles to score {ticker} and has{' '}
+          {result.received}. No score is shown rather than a guess.
+        </p>
+      </div>
+    );
+  }
+  if (result?.status !== 'OK') {
+    return <p className="quant-breakdown-note">Computing signal…</p>;
+  }
+  const hasLivePrice = livePrice !== null && Number.isFinite(livePrice) && livePrice > 0;
+  const sizing = recommendPositionSize({
+    capital: REFERENCE_CAPITAL,
+    price: hasLivePrice ? livePrice : result.close,
+    atr: result.atr,
+  });
+  return (
+    <>
+      <div className="quant-insight-summary">
+        <span className="regime-badge" data-regime={result.regime} title="Detected market regime">
+          {REGIME_LABELS[result.regime]}
+        </span>
+        <span className="quant-breakdown-score" title="Signal Score (0–100)">
+          {result.signal_score}
+        </span>
+      </div>
+      <p className="quant-rationale">{result.rationale}</p>
+      <ul className="quant-factors">
+        {QUANT_FACTORS.map((factor) => {
+          const value = result.components[factor.score];
+          const weight = result.components.weights[factor.weight];
+          return (
+            <li key={factor.label} className="quant-factor">
+              <span className="quant-factor-label">
+                {factor.label} <span>({factor.source})</span>
+              </span>
+              <span className="quant-factor-track" aria-hidden="true">
+                <span className="quant-factor-bar" style={{ width: `${value}%` }} />
+              </span>
+              <span className="quant-factor-value">{Math.round(value)}</span>
+              <span className="quant-factor-weight" title="Applied weight">
+                {Math.round(weight * 100)}%
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="quant-sizing">
+        ATR position size · ${REFERENCE_CAPITAL.toLocaleString('en-US')} account, 2% risk:{' '}
+        {sizing.shares > 0 ? (
+          <strong>
+            {formatShares(sizing.shares)} shares ≈ {formatPrice(sizing.notional)} · stop{' '}
+            {formatPrice(sizing.stopPrice)}
+          </strong>
+        ) : (
+          <strong>— (no price/ATR data)</strong>
+        )}
+      </p>
+    </>
+  );
+}
 
 /**
  * A modal shown when a user clicks a row in the Markets table. It fetches daily
@@ -84,18 +159,6 @@ export function AssetDetailsModal({
 
   // Same cached engine result the scanner row shows (undefined while loading).
   const result = useCanonicalScores([asset.ticker]).get(asset.ticker);
-  const quant = result?.status === 'OK' ? result : null;
-  const livePrice = asset.current_price;
-  const sizing = quant
-    ? recommendPositionSize({
-        capital: REFERENCE_CAPITAL,
-        price:
-          livePrice !== null && Number.isFinite(livePrice) && livePrice > 0
-            ? livePrice
-            : quant.close,
-        atr: quant.atr,
-      })
-    : null;
 
   return (
     <>
@@ -169,67 +232,11 @@ export function AssetDetailsModal({
                   className={cn('pro-feature-content', !isPro && 'is-locked')}
                   aria-hidden={!isPro}
                 >
-                  {quant && (
-                    <div className="quant-insight-summary">
-                      <span
-                        className="regime-badge"
-                        data-regime={quant.regime}
-                        title="Detected market regime"
-                      >
-                        {REGIME_LABELS[quant.regime]}
-                      </span>
-                      <span className="quant-breakdown-score" title="Signal Score (0–100)">
-                        {quant.signal_score}
-                      </span>
-                    </div>
-                  )}
-                  {result?.status === 'INSUFFICIENT_DATA' ? (
-                    <div className="quant-insight-summary">
-                      <InsufficientDataBadge />
-                      <p className="quant-breakdown-note">
-                        The engine needs {result.required} daily candles to score {asset.ticker} and
-                        has {result.received}. No score is shown rather than a guess.
-                      </p>
-                    </div>
-                  ) : !quant ? (
-                    <p className="quant-breakdown-note">Computing signal…</p>
-                  ) : (
-                    <>
-                      <p className="quant-rationale">{quant.rationale}</p>
-                      <ul className="quant-factors">
-                        {QUANT_FACTORS.map((factor) => {
-                          const value = quant.components[factor.score];
-                          const weight = quant.components.weights[factor.weight];
-                          return (
-                            <li key={factor.label} className="quant-factor">
-                              <span className="quant-factor-label">
-                                {factor.label} <span>({factor.source})</span>
-                              </span>
-                              <span className="quant-factor-track" aria-hidden="true">
-                                <span className="quant-factor-bar" style={{ width: `${value}%` }} />
-                              </span>
-                              <span className="quant-factor-value">{Math.round(value)}</span>
-                              <span className="quant-factor-weight" title="Applied weight">
-                                {Math.round(weight * 100)}%
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      <p className="quant-sizing">
-                        ATR position size · ${REFERENCE_CAPITAL.toLocaleString('en-US')} account, 2%
-                        risk:{' '}
-                        {sizing && sizing.shares > 0 ? (
-                          <strong>
-                            {formatShares(sizing.shares)} shares ≈ {formatPrice(sizing.notional)} ·
-                            stop {formatPrice(sizing.stopPrice)}
-                          </strong>
-                        ) : (
-                          <strong>— (no price/ATR data)</strong>
-                        )}
-                      </p>
-                    </>
-                  )}
+                  <QuantDetails
+                    ticker={asset.ticker}
+                    result={result}
+                    livePrice={asset.current_price}
+                  />
                 </div>
                 {!isPro && (
                   <button

@@ -18,6 +18,17 @@ const SPRING = { type: 'spring' as const, stiffness: 320, damping: 30 };
 
 type Side = 'buy' | 'sell';
 
+/** What the ticket's fill does, by the ledger it books to (none: a mock). */
+function ticketFootnote(portfolioType: PortfolioType | undefined): string {
+  if (portfolioType === undefined) {
+    return 'Mock execution — no real funds move. Slippage controls ship with the broker integration.';
+  }
+  if (portfolioType === 'real_tracking') {
+    return 'Recorded in your Live Tracking ledger and cash at the live price. ZeroChart places no real orders — log trades you made at your broker.';
+  }
+  return `Simulated fill at the live price, recorded in your ${LEDGER_NAMES[portfolioType]} ledger. No real funds move.`;
+}
+
 export function TradeTicket({
   asset,
   variant = 'compact',
@@ -63,7 +74,8 @@ export function TradeTicket({
     Number.isFinite(numericAmount) && numericAmount > 0 && price != null && price > 0;
   const estimatedQty = canSubmit ? numericAmount / price : 0;
   const fee = canSubmit ? numericAmount * FEE_RATE : 0;
-  const total = canSubmit ? numericAmount + (side === 'buy' ? fee : -fee) : 0;
+  const signedFee = side === 'buy' ? fee : -fee;
+  const total = canSubmit ? numericAmount + signedFee : 0;
   // Paper entries must clear the portfolio risk manager first.
   const entry =
     isPaper && side === 'buy' && canSubmit
@@ -334,13 +346,7 @@ export function TradeTicket({
                       </p>
                     )}
 
-                    <p className="ticket-footnote">
-                      {!recordsFills
-                        ? 'Mock execution — no real funds move. Slippage controls ship with the broker integration.'
-                        : portfolioType === 'real_tracking'
-                          ? 'Recorded in your Live Tracking ledger and cash at the live price. ZeroChart places no real orders — log trades you made at your broker.'
-                          : `Simulated fill at the live price, recorded in your ${LEDGER_NAMES[portfolioType]} ledger. No real funds move.`}
-                    </p>
+                    <p className="ticket-footnote">{ticketFootnote(portfolioType)}</p>
                   </div>
                 </motion.aside>
               </motion.div>

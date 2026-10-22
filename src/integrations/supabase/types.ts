@@ -11,6 +11,7 @@ export type Database = {
       assets_status: {
         Row: {
           analytics_updated_at: string | null;
+          atr_14: number | null;
           current_price: number | null;
           change_24h: number | null;
           radar_explanation: string | null;
@@ -28,6 +29,7 @@ export type Database = {
         };
         Insert: {
           analytics_updated_at?: string | null;
+          atr_14?: number | null;
           current_price?: number | null;
           change_24h?: number | null;
           radar_explanation?: string | null;
@@ -45,6 +47,7 @@ export type Database = {
         };
         Update: {
           analytics_updated_at?: string | null;
+          atr_14?: number | null;
           current_price?: number | null;
           change_24h?: number | null;
           radar_explanation?: string | null;
@@ -62,37 +65,76 @@ export type Database = {
         };
         Relationships: [];
       };
+      paper_order_batches: {
+        Row: {
+          budget: number;
+          created_at: string;
+          id: string;
+          policy_version: string;
+          receipt: Json;
+          risk_profile: string;
+          user_id: string;
+        };
+        Insert: {
+          budget: number;
+          created_at?: string;
+          id: string;
+          policy_version: string;
+          receipt: Json;
+          risk_profile: string;
+          user_id: string;
+        };
+        Update: {
+          budget?: number;
+          created_at?: string;
+          id?: string;
+          policy_version?: string;
+          receipt?: Json;
+          risk_profile?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       paper_transactions: {
         Row: {
           action: string;
+          atr: number | null;
+          batch_id: string | null;
           created_at: string;
           fees: number;
           id: string;
           price: number | null;
           quantity: number | null;
           signal_id: string | null;
+          stop_price: number | null;
           ticker: string | null;
           user_id: string;
         };
         Insert: {
           action: string;
+          atr?: number | null;
+          batch_id?: string | null;
           created_at?: string;
           fees?: number;
           id?: string;
           price?: number | null;
           quantity?: number | null;
           signal_id?: string | null;
+          stop_price?: number | null;
           ticker?: string | null;
           user_id?: string;
         };
         Update: {
           action?: string;
+          atr?: number | null;
+          batch_id?: string | null;
           created_at?: string;
           fees?: number;
           id?: string;
           price?: number | null;
           quantity?: number | null;
           signal_id?: string | null;
+          stop_price?: number | null;
           ticker?: string | null;
           user_id?: string;
         };
@@ -124,41 +166,53 @@ export type Database = {
       trading_signals: {
         Row: {
           action: string;
+          bar_time: string | null;
           created_at: string;
           event_id: string | null;
+          exchange: string | null;
           id: string;
+          model_version: string | null;
           price: number | null;
           quantity: number;
           signal_score: number;
           status: string;
           stop_loss: number | null;
           ticker: string;
+          timeframe: string | null;
           user_id: string;
         };
         Insert: {
           action: string;
+          bar_time?: string | null;
           created_at?: string;
           event_id?: string | null;
+          exchange?: string | null;
           id?: string;
+          model_version?: string | null;
           price?: number | null;
           quantity: number;
           signal_score: number;
           status?: string;
           stop_loss?: number | null;
           ticker: string;
+          timeframe?: string | null;
           user_id: string;
         };
         Update: {
           action?: string;
+          bar_time?: string | null;
           created_at?: string;
           event_id?: string | null;
+          exchange?: string | null;
           id?: string;
+          model_version?: string | null;
           price?: number | null;
           quantity?: number;
           signal_score?: number;
           status?: string;
           stop_loss?: number | null;
           ticker?: string;
+          timeframe?: string | null;
           user_id?: string;
         };
         Relationships: [];
@@ -257,9 +311,23 @@ export type Database = {
           snapshot: Json;
         }[];
       };
+      execute_paper_portfolio: {
+        Args: {
+          budget: number;
+          dry_run?: boolean;
+          holdings: Json;
+          request_id: string;
+          risk_profile: string;
+        };
+        Returns: Json;
+      };
       execute_tactical_signal: {
         Args: { execution_price: number; signal_id: string; user_id: string };
         Returns: Database['public']['Tables']['paper_transactions']['Row'];
+      };
+      ingest_tradingview_signal: {
+        Args: { signal: Json; token_hash: string };
+        Returns: string;
       };
       rotate_signal_webhook_token: {
         Args: never;

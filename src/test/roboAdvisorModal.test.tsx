@@ -100,6 +100,9 @@ async function confirmInvest() {
 
 async function investOnce() {
   await confirmInvest();
+  // The receipt stays up until the user leaves it.
+  expect(await screen.findByText(/Booked 2 orders in one transaction/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Done' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 }
 
@@ -152,7 +155,7 @@ describe('RoboAdvisor invest', () => {
 
     await confirmInvest();
 
-    expect(toast.error).toHaveBeenCalledWith('Simulated rejection');
+    expect(await screen.findByText('Not booked: Simulated rejection')).toBeVisible();
     expect(document.querySelector('.robo-overlay')).not.toHaveClass('is-closing');
     // Preflight rejects the batch before the first Paper Trading row is booked.
     expect(paper).toEqual(before);

@@ -38,8 +38,35 @@ describe('tv-webhook payload', () => {
         quantity: 0.05,
         stop_loss: 48_000,
         event_id: '2026-10-20T12:00:00Z',
+        exchange: 'BINANCE',
       },
     });
+  });
+
+  it('keeps source context when the HUD sends it', () => {
+    expect(
+      parseSignal({
+        ...valid,
+        exchange: 'binance',
+        timeframe: '60',
+        bar_time: Date.UTC(2026, 9, 21, 23),
+        model_version: '1.0.0',
+      }),
+    ).toMatchObject({
+      signal: {
+        exchange: 'BINANCE',
+        timeframe: '60',
+        bar_time: '2026-10-21T23:00:00.000Z',
+        model_version: '1.0.0',
+      },
+    });
+    // TradingView's {{time}} placeholder is ISO.
+    expect(parseSignal({ ...valid, bar_time: '2026-10-21T23:00:00Z' })).toMatchObject({
+      signal: { bar_time: '2026-10-21T23:00:00.000Z' },
+    });
+    // Alerts made before these fields existed still parse, without them.
+    const legacy = parseSignal(valid);
+    expect(legacy.ok && Object.keys(legacy.signal)).not.toContain('timeframe');
   });
 
   it('keys an alert without event_id to its minute, so a re-send dedupes', () => {
@@ -63,6 +90,11 @@ describe('tv-webhook payload', () => {
     [{ ...valid, stop_loss: -1 }, 'stop_loss must be greater than zero'],
     [{ ...valid, event_id: 42 }, 'event_id must be a string'],
     [{ ...valid, event_id: 'x'.repeat(65) }, 'event_id is too long'],
+    [{ ...valid, exchange: 'BIN ANCE' }, 'exchange is invalid'],
+    [{ ...valid, timeframe: '' }, 'timeframe is invalid'],
+    [{ ...valid, timeframe: '1 hour' }, 'timeframe is invalid'],
+    [{ ...valid, bar_time: 'yesterday' }, 'bar_time is invalid'],
+    [{ ...valid, model_version: { v: 1 } }, 'model_version is invalid'],
   ])('rejects %j', (body, error) => {
     expect(parseSignal(body)).toEqual({ ok: false, error });
   });

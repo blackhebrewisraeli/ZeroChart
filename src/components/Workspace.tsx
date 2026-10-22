@@ -92,7 +92,7 @@ function scoreToneOf(score: number) {
   return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
 }
 
-function ScoreRing({ result }: { result: CanonicalResult | undefined }) {
+function ScoreRing({ result }: Readonly<{ result: CanonicalResult | undefined }>) {
   const score = scoreOf(result);
   if (score === null) {
     const insufficient = result?.status === 'INSUFFICIENT_DATA';
@@ -119,7 +119,7 @@ function ScoreRing({ result }: { result: CanonicalResult | undefined }) {
   );
 }
 
-function Hero({ asset, result }: { asset: Asset; result: CanonicalResult | undefined }) {
+function Hero({ asset, result }: Readonly<{ asset: Asset; result: CanonicalResult | undefined }>) {
   const surging = asset.volume_spike !== null && asset.volume_spike > 1;
   return (
     <section className="hero" data-tour="hero" aria-label="Top signal">
@@ -665,7 +665,7 @@ export function Workspace() {
         <div className="page-width mx-auto flex min-h-screen w-full items-center justify-center">
           <div aria-busy="true" className="landing-loading">
             <span className="landing-loading-cursor" />
-            Loading your workspace…
+            {'Loading your workspace…'}
           </div>
         </div>
       </div>

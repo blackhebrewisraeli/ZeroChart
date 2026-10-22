@@ -13,10 +13,10 @@ interface TooltipEntry {
 function AllocationTooltip({
   active,
   payload,
-}: {
+}: Readonly<{
   active?: boolean;
   payload?: ReadonlyArray<TooltipEntry>;
-}) {
+}>) {
   if (!active || !payload || payload.length === 0) return null;
   const slice = payload[0]?.payload;
   if (!slice) return null;
@@ -29,7 +29,10 @@ function AllocationTooltip({
   );
 }
 
-export function AllocationChart({ positions, assets }: { positions: Position[]; assets: Asset[] }) {
+export function AllocationChart({
+  positions,
+  assets,
+}: Readonly<{ positions: Position[]; assets: Asset[] }>) {
   const data = useMemo<AllocationSlice[]>(
     () => computeAllocation(positions, assets),
     [positions, assets],

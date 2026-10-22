@@ -51,10 +51,10 @@ const TRADFI_BROKERS: BrokerOption[] = [
 export function BrokerModal({
   asset,
   variant = 'row',
-}: {
+}: Readonly<{
   asset: Asset;
   variant?: 'hero' | 'row';
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);

@@ -10,10 +10,10 @@ const HINT = `Not enough data — scoring needs ${MIN_CANDLES} daily candles`;
 export function InsufficientDataBadge({
   compact = false,
   className,
-}: {
+}: Readonly<{
   compact?: boolean;
   className?: string;
-}) {
+}>) {
   return (
     <span
       className={cn('insufficient-data-badge', compact && 'is-compact', className)}

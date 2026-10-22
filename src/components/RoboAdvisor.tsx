@@ -241,7 +241,10 @@ function ProposalFooter({
   );
 }
 
-export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: () => void }) {
+export function RoboAdvisor({
+  assets,
+  onInvest,
+}: Readonly<{ assets: Asset[]; onInvest?: () => void }>) {
   const { isPro } = useAuth();
   const [open, setOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);

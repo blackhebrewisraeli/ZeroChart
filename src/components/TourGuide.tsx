@@ -34,7 +34,7 @@ const joyrideStyles: Partial<Styles> = {
   buttonSkip: { color: '#9aa4b2', fontSize: 12 },
 };
 
-export function TourGuide({ onViewChange }: { onViewChange: (view: TourView) => void }) {
+export function TourGuide({ onViewChange }: Readonly<{ onViewChange: (view: TourView) => void }>) {
   const [run, setRun] = useState(false);
   const steps = useMemo(() => withViewSwitching(tourSteps, onViewChange), [onViewChange]);
 

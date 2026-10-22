@@ -358,8 +358,7 @@ export function computeBacktest({
 
   const toPoints = (curve: Float64Array): BacktestPoint[] =>
     timeline.map((timestamp, index) => ({ timestamp, value: curve[index] ?? initialValue }));
-  const finalOf = (curve: Float64Array) =>
-    curve.length > 0 ? (curve[curve.length - 1] ?? initialValue) : initialValue;
+  const finalOf = (curve: Float64Array) => curve.at(-1) ?? initialValue;
   const returnOf = (final: number) => (initialValue > 0 ? (final / initialValue - 1) * 100 : 0);
 
   const points = toPoints(values);

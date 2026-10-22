@@ -51,13 +51,13 @@ function Stat({
   sub,
   tone,
   primary = false,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   sub: string;
   tone?: 'pnl-up' | 'pnl-down' | undefined;
   primary?: boolean;
-}) {
+}>) {
   return (
     <div role="group" aria-label={label} className={cn('paper-stat', primary && 'is-primary')}>
       <span className="paper-stat-label">{label}</span>
@@ -74,7 +74,7 @@ function PositionRow({
   onResize,
   onClose,
   addRejection,
-}: {
+}: Readonly<{
   position: Position;
   asset: Asset | undefined;
   onSelect: (ticker: string) => void;
@@ -82,7 +82,7 @@ function PositionRow({
   onClose: (position: Position, price: number) => void;
   /** Why the risk manager refuses a +25% add at `price`, or null. */
   addRejection: (position: Position, price: number) => string | null;
-}) {
+}>) {
   const price = asset?.current_price;
   const hasPrice = typeof price === 'number' && Number.isFinite(price) && price > 0;
   const priceFlash = usePriceFlash(hasPrice ? price : null);
@@ -232,7 +232,7 @@ function PaperAccountControls() {
  * `paper_trading` ledger only. Every fill here is a simulated tactical trade;
  * the Core Simulation and Live Tracking ledgers never see it.
  */
-export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }) {
+export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: Asset[] }>) {
   const { portfolios, executePaperTrade } = usePortfolio();
   const risk = usePaperRisk();
   const { triggered } = useAlerts();

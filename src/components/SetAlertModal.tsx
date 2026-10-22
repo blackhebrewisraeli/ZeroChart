@@ -17,7 +17,7 @@ const CLOSE_MS = 260;
  * M1-T4 F-5.1): guests get session-scoped alerts, signed-in users get cloud
  * alerts synced to `user_alerts`.
  */
-export function SetAlertButton({ asset }: { asset: Asset }) {
+export function SetAlertButton({ asset }: Readonly<{ asset: Asset }>) {
   const { user } = useAuth();
   const { alerts, createAlert } = useAlertController(user);
   const [open, setOpen] = useState(false);

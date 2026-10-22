@@ -18,10 +18,10 @@ const FRESHNESS_COPY: Record<FreshnessState, { label: string; hint: string }> = 
 export function FreshnessBadge({
   state,
   className,
-}: {
+}: Readonly<{
   state: FreshnessState;
   className?: string;
-}) {
+}>) {
   const copy = FRESHNESS_COPY[state];
   return (
     <span

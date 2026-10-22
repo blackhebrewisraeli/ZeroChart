@@ -16,7 +16,12 @@ interface SparklineProps {
  * the data-ink ratio maximal. Color is deterministic: signal green for a positive
  * 24h change, signal red for negative, and neutral gray for missing/flat data.
  */
-export function Sparkline({ data, change = null, width = 80, height = 30 }: SparklineProps) {
+export function Sparkline({
+  data,
+  change = null,
+  width = 80,
+  height = 30,
+}: Readonly<SparklineProps>) {
   const points = data.map((value) => ({ value }));
   const isUp = change != null && change > 0;
   const isDown = change != null && change < 0;

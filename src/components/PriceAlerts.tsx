@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
  * synced to `user_alerts`. Notifications come exclusively from the engine's
  * toast channel — this panel only renders the list and creation form.
  */
-export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | null }) {
+export function PriceAlerts({ assets, user }: Readonly<{ assets: Asset[]; user: User | null }>) {
   const { alerts, sync, createAlert, deleteAlert } = useAlertController(user);
 
   const tradableAssets = useMemo(

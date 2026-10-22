@@ -44,7 +44,7 @@ export function calculatePortfolioStats(
   for (const position of positions) {
     const invested = position.buyPrice * position.shares;
     const livePrice = priceByTicker.get(position.ticker);
-    const currentPrice = livePrice !== undefined ? livePrice : position.buyPrice;
+    const currentPrice = livePrice ?? position.buyPrice;
     const currentValue = currentPrice * position.shares;
 
     totalInvested += invested;

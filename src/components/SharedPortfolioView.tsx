@@ -24,10 +24,10 @@ function scoreTone(score: number | null): string {
 function AllocationTooltip({
   active,
   payload,
-}: {
+}: Readonly<{
   active?: boolean;
   payload?: ReadonlyArray<{ payload?: SharedPortfolioHolding }>;
-}) {
+}>) {
   const holding = payload?.[0]?.payload;
   if (!active || !holding) return null;
   return (
@@ -39,7 +39,7 @@ function AllocationTooltip({
   );
 }
 
-function BrandCta({ compact = false }: { compact?: boolean }) {
+function BrandCta({ compact = false }: Readonly<{ compact?: boolean }>) {
   return (
     <Link to="/" className={cn('shared-portfolio-cta', compact && 'is-compact')}>
       <span>Built with ZeroChart - Create your own Quant Portfolio</span>
@@ -48,7 +48,7 @@ function BrandCta({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function SharedPortfolioView({ record }: { record: SharedPortfolioRecord }) {
+export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfolioRecord }>) {
   const { snapshot } = record;
   const largest = snapshot.holdings[0];
   const { maxDrawdownPercent: drawdown, alphaPercent: alpha } = snapshot;

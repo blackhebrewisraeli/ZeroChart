@@ -26,7 +26,7 @@ export function TradeTicket({
   initialSide = 'buy',
   initialAmount,
   label,
-}: {
+}: Readonly<{
   asset: Asset;
   variant?: 'hero' | 'compact';
   /** Ledger that records fills (the active one). Omitted: mock execution only. */
@@ -38,7 +38,7 @@ export function TradeTicket({
   initialAmount?: number;
   /** Compact trigger text; defaults to "Trade". */
   label?: string;
-}) {
+}>) {
   const { executeBuy, executeSell, executePaperTrade, portfolios } = usePortfolio();
   const recordsFills = portfolioType !== undefined;
   const isPaper = portfolioType === 'paper_trading';

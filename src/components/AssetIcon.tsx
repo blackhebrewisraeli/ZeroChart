@@ -39,7 +39,7 @@ export interface AssetIconProps {
  * is supplied, otherwise falls back to a sleek circular monogram that blends
  * into the terminal theme.
  */
-export function AssetIcon({ symbol, name, src, size = 'md', className }: AssetIconProps) {
+export function AssetIcon({ symbol, name, src, size = 'md', className }: Readonly<AssetIconProps>) {
   const label = monogramFor(symbol);
   const accessibleName = name ? `${symbol} · ${name}` : symbol;
 

@@ -28,9 +28,8 @@ serveFeed(async () => {
   const rows: (AnalyticsRow & { analytics_updated_at: string })[] = [];
   for (let i = 0; i < tickers.length; i += CONCURRENCY) {
     const batch = tickers.slice(i, i + CONCURRENCY);
-    const bodies = await Promise.all(
-      batch.map((ticker) => fetchJson(FN, candlesUrl(ticker), 10000)),
-    );
+    const requests = batch.map((ticker) => fetchJson(FN, candlesUrl(ticker), 10000));
+    const bodies = await Promise.all(requests); // NOSONAR(S9382): batches run one at a time on purpose
     batch.forEach((ticker, j) => {
       const row = toRow(ticker, bodies[j]);
       if (row) rows.push({ ...row, analytics_updated_at: analyticsUpdatedAt });

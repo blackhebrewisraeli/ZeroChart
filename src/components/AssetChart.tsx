@@ -35,12 +35,12 @@ export function AssetChart({
   ticker,
   quantHeight = 276,
   actions,
-}: {
+}: Readonly<{
   ticker: string;
   quantHeight?: number;
   /** Extra controls shown beside the chart-mode toggle. */
   actions?: ReactNode;
-}) {
+}>) {
   const isCrypto = isBinanceCrypto(ticker);
   // Our own candles are crypto-only, so other assets open on TradingView.
   const [chartMode, setChartMode] = useState<ChartMode>(isCrypto ? 'quant' : 'tradingview');

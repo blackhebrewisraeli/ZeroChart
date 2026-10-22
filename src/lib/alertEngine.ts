@@ -97,7 +97,7 @@ export async function withRetry(
       await task();
       return true;
     } catch {
-      if (attempt < attempts - 1) await sleep(baseDelayMs * 2 ** attempt);
+      if (attempt < attempts - 1) await sleep(baseDelayMs * 2 ** attempt); // NOSONAR(S9382): a retry backs off before the next attempt
     }
   }
   return false;

@@ -31,7 +31,7 @@ export function AdInterstitialModal() {
 }
 
 /** Mounted per ad, so every ad starts a fresh countdown. */
-function AdDialog({ onUpgrade }: { onUpgrade: () => void }) {
+function AdDialog({ onUpgrade }: Readonly<{ onUpgrade: () => void }>) {
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
   const locked = secondsLeft > 0;
 

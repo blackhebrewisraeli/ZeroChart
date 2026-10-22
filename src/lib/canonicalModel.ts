@@ -147,7 +147,7 @@ function clamp(value: number, min: number, max: number): number {
 /** Piecewise-linear interpolation through ascending `[x, y]` control points. */
 function interpolate(x: number, points: ReadonlyArray<readonly [number, number]>): number {
   const first = points[0];
-  const last = points[points.length - 1];
+  const last = points.at(-1);
   if (first === undefined || last === undefined) return 0;
   if (x <= first[0]) return first[1];
   if (x >= last[0]) return last[1];

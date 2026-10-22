@@ -20,7 +20,7 @@ const PRO_FEATURES = [
   'Zero Ads: a trading experience free of pop-up ads',
 ] as const;
 
-export function PricingModal({ open, onOpenChange }: PricingModalProps) {
+export function PricingModal({ open, onOpenChange }: Readonly<PricingModalProps>) {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual');
   const isAnnual = billingCycle === 'annual';
   const { activateSandboxPro } = useAuth();

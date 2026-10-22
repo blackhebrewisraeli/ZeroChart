@@ -19,10 +19,10 @@ const BAND_POINTS = REBALANCE_BAND * 100;
 export function RebalancePanel({
   portfolioType,
   assets,
-}: {
+}: Readonly<{
   portfolioType: PortfolioType;
   assets: Asset[];
-}) {
+}>) {
   const { portfolios, setTargetAllocations } = usePortfolio();
   const portfolio = portfolios[portfolioType];
   const targets = portfolio.targetAllocations ?? {};

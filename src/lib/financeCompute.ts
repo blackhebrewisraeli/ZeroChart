@@ -37,7 +37,7 @@ export function cacheKey(request: FinanceRequest): string {
 
 /** In-memory request cache used inside the Web Worker. */
 export class FinanceCache {
-  private store = new Map<string, FinanceResult>();
+  private readonly store = new Map<string, FinanceResult>();
 
   get(key: string): FinanceResult | undefined {
     return this.store.get(key);

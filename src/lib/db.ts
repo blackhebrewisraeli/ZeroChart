@@ -60,7 +60,7 @@ export async function savePortfolioStateV3(userId: string, state: PortfolioState
   await savePortfolioPayload(userId, { ...state, portfolios: { real_tracking, long_term_sim } });
 }
 
-async function loadPortfolioPayload(userId: string): Promise<unknown | null> {
+async function loadPortfolioPayload(userId: string): Promise<unknown> {
   const { data, error } = await supabase
     .from('user_portfolios')
     .select('positions')

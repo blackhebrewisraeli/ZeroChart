@@ -56,7 +56,10 @@ function sharpeTone(sharpe: number): string {
   return 'backtest-risk-bad';
 }
 
-export function BacktestChart({ positions, assets }: { positions: Position[]; assets: Asset[] }) {
+export function BacktestChart({
+  positions,
+  assets,
+}: Readonly<{ positions: Position[]; assets: Asset[] }>) {
   const { isPro } = useAuth();
   const [pricingOpen, setPricingOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -205,7 +208,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
       <div className="backtest-controls" aria-label="Simulation settings">
         <div className="backtest-control-row">
           <label className={cn('backtest-control', !isPro && 'is-locked')}>
-            Realistic Friction
+            {'Realistic Friction'}
             <input
               type="checkbox"
               name="realistic-friction"
@@ -230,7 +233,7 @@ export function BacktestChart({ positions, assets }: { positions: Position[]; as
         </div>
         <div className="backtest-control-row">
           <label className={cn('backtest-control', !isPro && 'is-locked')}>
-            Trailing Stop
+            {'Trailing Stop'}
             <select
               className="backtest-select"
               name="trailing-stop"

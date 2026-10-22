@@ -80,6 +80,9 @@ type AnalyticsTab = 'backtest' | 'ledger';
 
 const SPRING: Transition = { type: 'spring', stiffness: 300, damping: 30 };
 
+/** Profit/loss color class, shared by the KPI cards and the day-change line. */
+type PnlTone = 'pnl-up' | 'pnl-down';
+
 function KpiCard({
   label,
   value,
@@ -87,14 +90,14 @@ function KpiCard({
   icon,
   accent = 'blue',
   tone,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   sub?: string;
   icon?: ReactNode;
   accent?: 'blue' | 'green' | 'red';
-  tone?: 'pnl-up' | 'pnl-down' | undefined;
-}) {
+  tone?: PnlTone | undefined;
+}>) {
   return (
     <div className={cn('kpi-card', `is-${accent}`)}>
       <div className="kpi-card-head">
@@ -114,14 +117,14 @@ function TelemetryItem({
   icon,
   accent,
   tone,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   sub: string;
   icon: ReactNode;
   accent: 'violet' | 'green' | 'amber';
-  tone?: 'pnl-up' | 'pnl-down' | undefined;
-}) {
+  tone?: PnlTone | undefined;
+}>) {
   return (
     <div className={cn('portfolio-telemetry-item', `is-${accent}`)}>
       <span className="portfolio-telemetry-icon">{icon}</span>
@@ -140,7 +143,7 @@ function healthTone(score: number | null) {
 }
 
 /** `score` is null when no holding has a canonical score yet — shown as "—", never 0. */
-function HealthRing({ score }: { score: number | null }) {
+function HealthRing({ score }: Readonly<{ score: number | null }>) {
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.min(100, Math.max(0, score ?? 0));
@@ -180,13 +183,13 @@ function HoldingRow({
   result,
   onClose,
   onUpdate,
-}: {
+}: Readonly<{
   position: Position;
   assets: Asset[];
   result: CanonicalResult | undefined;
   onClose: (position: Position, livePrice: number | undefined) => void;
   onUpdate: (id: string, updates: Partial<Pick<Position, 'shares' | 'buyPrice'>>) => void;
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draftShares, setDraftShares] = useState(String(position.shares));
@@ -413,13 +416,13 @@ export function TradeLedger({
   title = 'Trade Ledger',
   defaultOpen = false,
   embedded = false,
-}: {
+}: Readonly<{
   transactions: PortfolioTransaction[];
   filename: string;
   title?: string;
   defaultOpen?: boolean;
   embedded?: boolean;
-}) {
+}>) {
   const [open, setOpen] = useState(defaultOpen);
   const newestFirst = [...transactions].reverse();
 
@@ -603,8 +606,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     dayChange += price * position.shares * change;
     hasDayChange = true;
   }
-  const dayChangePct = stats.totalValue > 0 ? (dayChange / stats.totalValue) * 100 : 0;
-  const dayTone: 'pnl-up' | 'pnl-down' | undefined = hasDayChange
+  const dayTone: PnlTone | undefined = hasDayChange
     ? dayChange >= 0
       ? 'pnl-up'
       : 'pnl-down'

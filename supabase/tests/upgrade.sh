@@ -16,9 +16,13 @@ base=$(git ls-tree --name-only "$BASE_REF" supabase/migrations/ | sed -En 's#.*/
 echo "# base $BASE_REF is at migration $base"
 supabase db reset "${WORKDIR[@]}" --local --version "$base" >/dev/null
 
-sql() { psql "$DB" -X -q -At -v ON_ERROR_STOP=1 -c "$1"; }
+sql() {
+  local query=$1
+  psql "$DB" -X -q -At -v ON_ERROR_STOP=1 -c "$query"
+}
 check() {
-  if [[ "$2" == "$3" ]]; then echo "ok - $1"; else echo "not ok - $1: got '$2', want '$3'"; failures=$((failures + 1)); fi
+  local name=$1 got=$2 want=$3
+  if [[ "$got" == "$want" ]]; then echo "ok - $name"; else echo "not ok - $name: got '$got', want '$want'"; failures=$((failures + 1)); fi
 }
 
 # Only columns every released schema has: the seed must load on the base.

@@ -80,6 +80,14 @@ describe('tv-webhook handler', () => {
     });
   });
 
+  it('answers before TradingView gives up when the database call times out', async () => {
+    const timeout = Object.assign(new Error('signal timed out'), { name: 'TimeoutError' });
+    const { status, body, log } = await deliver(alert, timeout);
+    expect(status).toBe(503);
+    expect(body).toEqual({ error: 'Signal not confirmed in time; it may still record' });
+    expect(log[0]).toMatchObject({ outcome: 'db_timeout', event_id: alert.event_id });
+  });
+
   it('answers 500, never 2xx, when the database call fails', async () => {
     const { status, log } = await deliver(alert, new Error('ingest_tradingview_signal 503'));
     expect(status).toBe(500);

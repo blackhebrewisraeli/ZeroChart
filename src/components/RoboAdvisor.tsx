@@ -633,7 +633,14 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                           {result.map((allocation, index) => {
                             const asset = assetByTicker.get(allocation.ticker);
                             const score = allocation.score ?? null;
-                            const shares = allocation.suggestedShares ?? null;
+                            // Once priced, the size is what the order books, so the row
+                            // and the orders table never show two quantities.
+                            const shares =
+                              proposal.plan?.orders.find(
+                                (order) => order.ticker === allocation.ticker.toUpperCase(),
+                              )?.quantity ??
+                              allocation.suggestedShares ??
+                              null;
                             return (
                               <li
                                 key={allocation.ticker}

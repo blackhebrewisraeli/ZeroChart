@@ -21,6 +21,7 @@ export type Outcome =
   | 'auth_invalid'
   | 'validation_failed'
   | 'db_error'
+  | 'db_timeout'
   | 'bad_json'
   | 'method_not_allowed';
 
@@ -77,6 +78,13 @@ export async function handleWebhook(req: Request, deps: WebhookDeps): Promise<Re
   try {
     result = await deps.ingest(await sha256Hex(token), signal);
   } catch (error) {
+    // ingest's deadline: answer before TradingView's 3 s cutoff, saying the
+    // row may still commit (a redelivery would then be a duplicate).
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return done('db_timeout', 503, {
+        error: 'Signal not confirmed in time; it may still record',
+      });
+    }
     return done('db_error', 500, { error: 'Could not record signal' }, String(error).slice(0, 200));
   }
 

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(34);
+select plan(35);
 
 insert into auth.users (id)
 values
@@ -208,14 +208,19 @@ select throws_ok(
   $$select pg_temp.invest('20000000-0000-4000-8000-000000000005', 'moderate', 10000,
     '[{"ticker": "BTC", "amount": 2500, "score": 80}, {"ticker": "SOL", "amount": 2500, "score": 70}]')$$,
   '23514',
-  'Portfolio max risk reached: 5.8% open + 0.3% new would pass the 6% limit. Lower the amount.',
+  'Portfolio max risk reached: 5.8% open + 0.3% new would pass the 6% limit. No current ATR(14) reading for NOATR, so its whole entry counts as at risk until the next daily market analytics run. Lower the amount.',
   'open risk plus the proposal''s planned risk may not pass 6% of total equity'
 );
 select throws_ok(
   $$insert into public.paper_transactions (action, ticker, quantity, price, fees) values ('BUY', 'NOATR', 3, 100, 0.75)$$,
   '23514',
-  'Portfolio max risk reached: 5.8% open + 0.3% new would pass the 6% limit.',
+  'Portfolio max risk reached: 5.8% open + 0.3% new would pass the 6% limit. No current ATR(14) reading for NOATR, so its whole entry counts as at risk until the next daily market analytics run.',
   'the same cap applies to a single order from the trade ticket'
+);
+select is(
+  (select unsized from public.paper_account_book('00000000-0000-4000-8000-000000000022')),
+  'NOATR',
+  'the account book names the position whose risk is its whole entry for want of an ATR'
 );
 
 -- ===== Access =====

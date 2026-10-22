@@ -84,11 +84,12 @@ flowchart TB
 - ATR-based sizing in [`risk.ts`](./src/lib/risk.ts): the position is sized `q = min(risk budget / stop distance, capital / price)`, so a stop two ATRs away loses at most your chosen risk (2% of capital by default).
 - Hard invariants: notional never exceeds the capital or per-asset budget, the stop price is floored at zero, and shares round to four decimals (down, when needed, to stay within budget). When the budget binds, the position and its risk come in below the target.
 - The Quant Analyzer and the asset detail view call `risk.ts` directly. The Pine HUD applies the same budget-capped sizing and the same 2× ATR stop by default; its stop multiplier is configurable.
+- The server enforces the same limits. Every Paper Trading BUY must keep Aggregate Open Risk within 6% of total equity ([`check_paper_transaction`](./supabase/migrations/20261022130000_paper_portfolio_execution.sql)). The Quant Analyzer books a whole proposal through `execute_paper_portfolio`: one transaction from existing Paper Cash, priced at the server quote, sized under each holding's ATR risk cap, and idempotent on its request ID. Planned stops are sizing assumptions; Paper Trading places no stop orders.
 
 ### Real-time webhook Action Center
 
 - TradingView alerts post to the [`tv-webhook`](./supabase/functions/tv-webhook/index.ts) Edge Function. Each user authenticates with a rotating `secret_token` that is stored only as a SHA-256 hash.
-- The token is checked before anything else. Payloads are then validated (ticker, BUY/SELL action, 0–100 `signal_score`, `price`, `quantity` in units, optional stop) and land in `trading_signals` as `PENDING`. A unique `(user, ticker, action, event_id)` index drops re-delivered alerts.
+- TradingView cancels a delivery after 3 seconds, so one database call (`ingest_tradingview_signal`) authenticates the token and records the signal, and the function answers only once the row has committed. Validation errors are reported only to an authenticated caller. Payloads carry ticker, BUY/SELL action, 0–100 `signal_score`, `price`, `quantity` in units, an optional stop, and, from the current HUD, exchange, timeframe, bar time and model version. They land in `trading_signals` as `PENDING`. A unique `(user, ticker, action, event_id)` index turns a re-delivered alert into a `200 duplicate`. Each delivery logs one JSON line naming its outcome.
 - The [Action Center](./src/components/ActionCenter.tsx) streams new signals over Supabase Realtime. **Execute** books a tactical fill into the Paper Trading ledger at the live price, and only then marks the signal `EXECUTED`; **Dismiss** retires the signal.
 - Row-level security lets users read only their own signals and move them out of `PENDING` once. Ticker, size, and stop are writable only by the webhook, so the audit trail can't be rewritten.
 
@@ -99,7 +100,7 @@ flowchart TB
 | **Live market stream**   | Binance all-market ticker over WebSocket, batched into a `useSyncExternalStore` store so only rows whose price changed re-render |
 | **Canvas charts**        | `lightweight-charts` candlesticks with SMA 50/200 and a synchronized RSI pane                                                    |
 | **Backtesting**          | Replays an allocation over a year of daily candles, with max drawdown and Sharpe ratio                                           |
-| **Quant Analyzer**       | Builds a signal-ranked, risk-weighted portfolio from your capital and risk profile, then simulates it                            |
+| **Quant Analyzer**       | Builds a signal-ranked, risk-weighted portfolio from your Paper Cash and risk profile, then books it in one server transaction   |
 | **Price alerts**         | Cloud-synced (RLS) for signed-in users, session-only for guests; each alert fires exactly once                                   |
 | **Shareable portfolios** | Read-only snapshot links at `/p/:portfolioId` that anyone can open                                                               |
 

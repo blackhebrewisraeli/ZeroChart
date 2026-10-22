@@ -11,7 +11,6 @@ import {
   Shield,
   X,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';

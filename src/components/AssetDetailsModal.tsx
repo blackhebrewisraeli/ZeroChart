@@ -168,9 +168,9 @@ export function AssetDetailsModal({
           className={cn('asset-details-overlay', closing && 'is-closing')}
           onClick={closeOnBackdrop(close)}
         >
-          <div
+          <dialog
+            open
             className={cn('asset-details-sheet', closing && 'is-closing')}
-            role="dialog"
             aria-modal="true"
             aria-label={`${asset.ticker} details`}
           >
@@ -249,7 +249,7 @@ export function AssetDetailsModal({
                 )}
               </div>
             </section>
-          </div>
+          </dialog>
         </div>,
         document.body,
       )}

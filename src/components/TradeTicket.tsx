@@ -275,7 +275,7 @@ export function TradeTicket({
                   <p className="ticket-name">{asset.name || 'Asset'}</p>
 
                   <div className="ticket-body">
-                    <div className="ticket-side" role="group" aria-label="Order side">
+                    <fieldset className="ticket-side" aria-label="Order side">
                       <button
                         type="button"
                         aria-pressed={side === 'buy'}
@@ -292,7 +292,7 @@ export function TradeTicket({
                       >
                         Sell
                       </button>
-                    </div>
+                    </fieldset>
 
                     <div className="ticket-field">
                       <label className="ticket-label" htmlFor="ticket-amount">

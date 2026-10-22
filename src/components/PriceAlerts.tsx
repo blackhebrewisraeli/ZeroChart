@@ -100,7 +100,7 @@ export function PriceAlerts({ assets, user }: Readonly<{ assets: Asset[]; user: 
 
           <div className="price-alerts-field">
             <span className="price-alerts-label">Condition</span>
-            <div className="price-alerts-condition" role="group" aria-label="Alert condition">
+            <fieldset className="price-alerts-condition" aria-label="Alert condition">
               <button
                 type="button"
                 className={cn('price-alerts-condition-btn', condition === 'above' && 'is-active')}
@@ -117,7 +117,7 @@ export function PriceAlerts({ assets, user }: Readonly<{ assets: Asset[]; user: 
               >
                 Fall below
               </button>
-            </div>
+            </fieldset>
           </div>
 
           <label className="price-alerts-field">

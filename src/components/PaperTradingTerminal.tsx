@@ -65,11 +65,11 @@ function Stat({
   primary?: boolean;
 }>) {
   return (
-    <div role="group" aria-label={label} className={cn('paper-stat', primary && 'is-primary')}>
+    <fieldset aria-label={label} className={cn('paper-stat', primary && 'is-primary')}>
       <span className="paper-stat-label">{label}</span>
       <span className={cn('paper-stat-value', tone)}>{value}</span>
       <span className={cn('paper-stat-sub', tone)}>{sub}</span>
-    </div>
+    </fieldset>
   );
 }
 
@@ -445,7 +445,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
                 />
               )}
               {tab !== 'ledger' && openCount > 0 && (
-                <div className="ledger-scroll" role="region" aria-label="Open positions">
+                <section className="ledger-scroll" aria-label="Open positions">
                   <table className="ledger-table paper-positions">
                     <thead>
                       <tr>
@@ -474,7 +474,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </section>
               )}
               {tab !== 'ledger' && openCount === 0 && (
                 <div className="holdings-empty">

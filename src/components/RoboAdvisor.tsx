@@ -418,9 +418,9 @@ export function RoboAdvisor({
             className={cn('robo-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}
           >
-            <div
+            <dialog
+              open
               className={cn('robo-panel', closing && 'is-closing')}
-              role="dialog"
               aria-modal="true"
               aria-labelledby="robo-title"
             >
@@ -791,7 +791,7 @@ export function RoboAdvisor({
                   />
                 </>
               )}
-            </div>
+            </dialog>
           </div>,
           document.body,
         )}

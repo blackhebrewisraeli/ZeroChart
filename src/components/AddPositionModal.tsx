@@ -114,84 +114,85 @@ export function AddPositionModal() {
             className={cn('position-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}
           >
-            <form
+            <dialog
+              open
               className={cn('position-sheet', closing && 'is-closing')}
-              role="dialog"
               aria-modal="true"
               aria-label="Add live position"
-              onSubmit={handleSubmit}
             >
-              <header className="position-header">
-                <div>
-                  <span className="position-eyebrow">Live Tracking</span>
-                  <h3 className="position-title">Add a position</h3>
-                </div>
-                <button
-                  type="button"
-                  className="position-close"
-                  onClick={closeModal}
-                  aria-label="Close"
-                >
-                  <X size={18} />
-                </button>
-              </header>
+              <form className="sheet-form" onSubmit={handleSubmit}>
+                <header className="position-header">
+                  <div>
+                    <span className="position-eyebrow">Live Tracking</span>
+                    <h3 className="position-title">Add a position</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="position-close"
+                    onClick={closeModal}
+                    aria-label="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </header>
 
-              <div className="position-body">
-                <label className="position-field">
-                  <span className="position-label">Ticker</span>
-                  <input
-                    ref={tickerRef}
-                    className="position-input"
-                    type="text"
-                    value={ticker}
-                    placeholder="e.g. NVDA"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                  />
-                </label>
-
-                <div className="position-row">
+                <div className="position-body">
                   <label className="position-field">
-                    <span className="position-label">Buy Price ($)</span>
+                    <span className="position-label">Ticker</span>
                     <input
+                      ref={tickerRef}
                       className="position-input"
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
-                      value={buyPrice}
-                      placeholder="0.00"
-                      onChange={(e) => setBuyPrice(e.target.value)}
+                      type="text"
+                      value={ticker}
+                      placeholder="e.g. NVDA"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(e) => setTicker(e.target.value.toUpperCase())}
                     />
                   </label>
-                  <label className="position-field">
-                    <span className="position-label">Quantity</span>
-                    <input
-                      className="position-input"
-                      type="number"
-                      min="0"
-                      step="any"
-                      inputMode="decimal"
-                      value={quantity}
-                      placeholder="Shares / Coins"
-                      onChange={(e) => setQuantity(e.target.value)}
-                    />
-                  </label>
+
+                  <div className="position-row">
+                    <label className="position-field">
+                      <span className="position-label">Buy Price ($)</span>
+                      <input
+                        className="position-input"
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        value={buyPrice}
+                        placeholder="0.00"
+                        onChange={(e) => setBuyPrice(e.target.value)}
+                      />
+                    </label>
+                    <label className="position-field">
+                      <span className="position-label">Quantity</span>
+                      <input
+                        className="position-input"
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        value={quantity}
+                        placeholder="Shares / Coins"
+                        onChange={(e) => setQuantity(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  {error && <p className="position-error">{error}</p>}
                 </div>
 
-                {error && <p className="position-error">{error}</p>}
-              </div>
-
-              <footer className="position-footer">
-                <button type="button" className="position-cancel" onClick={closeModal}>
-                  Cancel
-                </button>
-                <button type="submit" className="position-submit">
-                  Save Position
-                </button>
-              </footer>
-            </form>
+                <footer className="position-footer">
+                  <button type="button" className="position-cancel" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="position-submit">
+                    Save Position
+                  </button>
+                </footer>
+              </form>
+            </dialog>
           </div>,
           document.body,
         )}

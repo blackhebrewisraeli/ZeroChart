@@ -127,77 +127,78 @@ export function SetAlertButton({ asset }: Readonly<{ asset: Asset }>) {
             className={cn('alert-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}
           >
-            <form
+            <dialog
+              open
               className={cn('alert-sheet', closing && 'is-closing')}
-              role="dialog"
               aria-modal="true"
               aria-label={`Set price alert for ${asset.ticker}`}
-              onSubmit={handleSubmit}
             >
-              <header className="alert-header">
-                <div>
-                  <span className="alert-eyebrow">Price alert</span>
-                  <h3 className="alert-title">{asset.ticker}</h3>
-                </div>
-                <button
-                  type="button"
-                  className="alert-close"
-                  onClick={closeModal}
-                  aria-label="Close"
-                >
-                  <X size={18} />
-                </button>
-              </header>
-
-              <div className="alert-body">
-                <p className="alert-current">
-                  Current price <span>{formatPrice(asset.current_price)}</span>
-                </p>
-
-                <label className="alert-field">
-                  <span className="alert-label">Target price (USD)</span>
-                  <input
-                    ref={inputRef}
-                    className="alert-input"
-                    type="number"
-                    min="0"
-                    step="any"
-                    inputMode="decimal"
-                    value={target}
-                    placeholder="0.00"
-                    onChange={(e) => setTarget(e.target.value)}
-                  />
-                </label>
-
-                <div className="alert-direction" role="group" aria-label="Alert direction">
+              <form className="sheet-form" onSubmit={handleSubmit}>
+                <header className="alert-header">
+                  <div>
+                    <span className="alert-eyebrow">Price alert</span>
+                    <h3 className="alert-title">{asset.ticker}</h3>
+                  </div>
                   <button
                     type="button"
-                    className={cn('alert-direction-btn', direction === 'above' && 'is-active')}
-                    aria-pressed={direction === 'above'}
-                    onClick={() => setDirection('above')}
+                    className="alert-close"
+                    onClick={closeModal}
+                    aria-label="Close"
                   >
-                    Rise above
+                    <X size={18} />
                   </button>
-                  <button
-                    type="button"
-                    className={cn('alert-direction-btn', direction === 'below' && 'is-active')}
-                    aria-pressed={direction === 'below'}
-                    onClick={() => setDirection('below')}
-                  >
-                    Fall below
-                  </button>
-                </div>
-              </div>
+                </header>
 
-              <footer className="alert-footer">
-                <button type="button" className="alert-cancel" onClick={closeModal}>
-                  Cancel
-                </button>
-                <button type="submit" className="alert-submit" disabled={!canSubmit}>
-                  Set Alert
-                </button>
-              </footer>
-            </form>
+                <div className="alert-body">
+                  <p className="alert-current">
+                    Current price <span>{formatPrice(asset.current_price)}</span>
+                  </p>
+
+                  <label className="alert-field">
+                    <span className="alert-label">Target price (USD)</span>
+                    <input
+                      ref={inputRef}
+                      className="alert-input"
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      value={target}
+                      placeholder="0.00"
+                      onChange={(e) => setTarget(e.target.value)}
+                    />
+                  </label>
+
+                  <fieldset className="alert-direction" aria-label="Alert direction">
+                    <button
+                      type="button"
+                      className={cn('alert-direction-btn', direction === 'above' && 'is-active')}
+                      aria-pressed={direction === 'above'}
+                      onClick={() => setDirection('above')}
+                    >
+                      Rise above
+                    </button>
+                    <button
+                      type="button"
+                      className={cn('alert-direction-btn', direction === 'below' && 'is-active')}
+                      aria-pressed={direction === 'below'}
+                      onClick={() => setDirection('below')}
+                    >
+                      Fall below
+                    </button>
+                  </fieldset>
+                </div>
+
+                <footer className="alert-footer">
+                  <button type="button" className="alert-cancel" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="alert-submit" disabled={!canSubmit}>
+                    Set Alert
+                  </button>
+                </footer>
+              </form>
+            </dialog>
           </div>,
           document.body,
         )}

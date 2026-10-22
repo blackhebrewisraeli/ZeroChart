@@ -190,7 +190,7 @@ export function AuthModal({
           </button>
         </header>
 
-        <div className="auth-mode" role="group" aria-label="Authentication mode">
+        <fieldset className="auth-mode" aria-label="Authentication mode">
           <button
             type="button"
             className={cn('auth-mode-btn', mode === 'signin' && 'is-active')}
@@ -213,7 +213,7 @@ export function AuthModal({
           >
             Sign Up
           </button>
-        </div>
+        </fieldset>
 
         <div className="oauth-buttons">
           <button

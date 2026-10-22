@@ -253,7 +253,7 @@ const MarketRow = memo(function MarketRow({
   const streamConnected = useConnectionState() === 'connected';
   const freshness = assetFreshness(asset, live, { streamConnected });
   return (
-    <div
+    <div // NOSONAR(S6819): the row holds its own Trade and alert buttons, which a <button> cannot contain
       className="markets-row markets-row-clickable"
       role="button"
       tabIndex={0}
@@ -421,7 +421,7 @@ function MarketsSection({
         </div>
       </div>
       <div className="markets-controls">
-        <div className="markets-pills" role="group" aria-label="Market view">
+        <fieldset className="markets-pills" aria-label="Market view">
           {MARKET_VIEWS.map((view) => (
             <button
               key={view.id}
@@ -433,8 +433,8 @@ function MarketsSection({
               {view.label}
             </button>
           ))}
-        </div>
-        <div className="markets-pills" role="group" aria-label="Asset class">
+        </fieldset>
+        <fieldset className="markets-pills" aria-label="Asset class">
           {ASSET_CLASS_FILTERS.map((filter) => (
             <button
               key={filter}
@@ -446,7 +446,7 @@ function MarketsSection({
               {filter}
             </button>
           ))}
-        </div>
+        </fieldset>
       </div>
       {rows.length === 0 ? (
         <div className="markets-empty">No assets match this filter.</div>

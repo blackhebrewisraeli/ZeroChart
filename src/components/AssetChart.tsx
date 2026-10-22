@@ -125,7 +125,7 @@ export function AssetChart({
       </div>
 
       {chartMode === 'quant' && isCrypto && status === 'success' && (
-        <div className="indicator-toggles" role="group" aria-label="Technical indicators">
+        <fieldset className="indicator-toggles" aria-label="Technical indicators">
           {INDICATOR_OPTIONS.map((option) => (
             <button
               key={option.key}
@@ -139,7 +139,7 @@ export function AssetChart({
               {option.label}
             </button>
           ))}
-        </div>
+        </fieldset>
       )}
 
       <section

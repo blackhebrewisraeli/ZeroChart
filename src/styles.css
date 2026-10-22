@@ -1364,6 +1364,102 @@ body {
   color: var(--muted-foreground);
 }
 
+/* Orders the server will book, then the receipt it booked. */
+.robo-plan {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+.robo-plan-title {
+  margin: 0 0 10px;
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.robo-plan-scroll {
+  overflow-x: auto;
+}
+.robo-plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.robo-plan-table th,
+.robo-plan-table td {
+  padding: 6px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.robo-plan-table th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.robo-plan-table thead th {
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.robo-plan-table tbody th {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.robo-plan-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+.robo-plan-totals dt {
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.robo-plan-totals dd {
+  margin: 4px 0 0;
+  font:
+    600 14px 'JetBrains Mono',
+    monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.robo-plan-uncertain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--signal-yellow);
+}
+.robo-plan-uncertain p {
+  margin: 0;
+}
+.robo-plan-receipt {
+  margin: 10px 0 0;
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  color: var(--signal-green);
+}
+.robo-submit:disabled,
+.robo-back:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+  transform: none;
+}
+
 .robo-allocation-list {
   list-style: none;
   margin: 0;
@@ -1692,6 +1788,16 @@ body {
   }
   .robo-summary {
     grid-template-columns: 1fr;
+  }
+  .robo-plan {
+    padding: 12px;
+  }
+  .robo-plan-table {
+    font-size: 11px;
+  }
+  .robo-plan-table th,
+  .robo-plan-table td {
+    padding: 5px 4px;
   }
   .robo-header {
     padding: 18px 18px 14px;

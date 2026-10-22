@@ -10,7 +10,7 @@ vi.mock('@/lib/authStore', () => ({ useAuth: () => auth }));
 vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
 
 import { PineScriptModal } from '@/components/PineScriptModal';
-import { REGIME_WEIGHTS, type MarketRegime } from '@/lib/canonicalModel';
+import { CANONICAL_MODEL_VERSION, REGIME_WEIGHTS, type MarketRegime } from '@/lib/canonicalModel';
 import { buildPineScript } from '@/lib/pineScriptTemplate';
 import { DEFAULT_ATR_STOP_MULTIPLIER } from '@/lib/risk';
 import {
@@ -142,7 +142,10 @@ describe('buildPineScript', () => {
         .replace('{{close}}', '50000.5')
         .replace('{{plot("ZC Quantity")}}', '0.05')
         .replace('{{plot("ZC Stop")}}', '48000')
-        .replace('{{timenow}}', '2026-10-20T12:00:00Z');
+        .replace('{{timenow}}', '2026-10-20T12:00:00Z')
+        .replace('{{exchange}}', 'BINANCE')
+        .replace('{{interval}}', '60')
+        .replace('{{time}}', '2026-10-20T11:00:00Z');
 
     const messages = [...script.matchAll(/^alertcondition\(.*?, "[^"]+", (.*)\)$/gm)].map(
       ([, expr]) => JSON.parse(fill(evaluate(expr ?? ''))) as unknown,
@@ -159,10 +162,20 @@ describe('buildPineScript', () => {
           quantity: 0.05,
           stop_loss: 48_000,
           event_id: '2026-10-20T12:00:00Z',
+          exchange: 'BINANCE',
+          timeframe: '60',
+          bar_time: '2026-10-20T11:00:00.000Z',
+          model_version: CANONICAL_MODEL_VERSION,
         },
       })),
     );
     expect(messages.map(readToken)).toEqual(['tok123', 'tok123', 'tok123']);
+  });
+
+  it('stamps alerts with the canonical model version', () => {
+    expect(buildPineScript()).toContain(
+      `const string MODEL_VERSION = "${CANONICAL_MODEL_VERSION}"`,
+    );
   });
 
   it('injects the webhook token everywhere, but only a token-shaped one', () => {

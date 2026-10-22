@@ -1,7 +1,7 @@
 // Pure daily candles → assets_status analytics, ported from the archived
 // trading-agent scanner (agent.py): no Deno or Supabase imports, so vitest
 // covers it from src/test.
-import { rsi, sma } from '../../../src/lib/indicators.ts';
+import { atr, rsi, sma } from '../../../src/lib/indicators.ts';
 import { toBinanceSymbol } from '../../../src/lib/ticker.ts';
 
 const RADAR_MIN_RATIO = 3;
@@ -10,6 +10,8 @@ const RADAR_MIN_VOLUME_SPIKE = 1.5;
 export interface AnalyticsRow {
   ticker: string;
   rsi_14: number | null;
+  /** Wilder ATR(14), the same as the canonical engine's; sizes Paper Trading risk server-side. */
+  atr_14: number | null;
   sma_50: number | null;
   sma_200: number | null;
   volume_spike: number | null;
@@ -25,6 +27,7 @@ export interface AnalyticsRow {
 interface Candles {
   close: number[];
   high: number[];
+  low: number[];
   volume: number[];
 }
 
@@ -49,10 +52,17 @@ export function toRow(ticker: string, body: unknown, now = Date.now()): Analytic
 const isNum = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
-function push(candles: Candles, close: unknown, high: unknown, volume: unknown): void {
-  if (isNum(close) && isNum(high) && isNum(volume) && close > 0) {
+function push(
+  candles: Candles,
+  close: unknown,
+  high: unknown,
+  low: unknown,
+  volume: unknown,
+): void {
+  if (isNum(close) && isNum(high) && isNum(low) && isNum(volume) && close > 0) {
     candles.close.push(close);
     candles.high.push(high);
+    candles.low.push(low);
     candles.volume.push(volume);
   }
 }
@@ -63,12 +73,12 @@ function push(candles: Candles, close: unknown, high: unknown, volume: unknown):
  * 3-day volume average down.
  */
 function fromKlines(body: unknown, now: number): Candles {
-  const candles: Candles = { close: [], high: [], volume: [] };
+  const candles: Candles = { close: [], high: [], low: [], volume: [] };
   // A Binance error ({code, msg}) is not an array.
   if (!Array.isArray(body)) return candles;
   for (const kline of body) {
     if (Array.isArray(kline) && Number(kline[6]) < now) {
-      push(candles, Number(kline[4]), Number(kline[2]), Number(kline[5]));
+      push(candles, Number(kline[4]), Number(kline[2]), Number(kline[3]), Number(kline[5]));
     }
   }
   return candles;
@@ -78,7 +88,7 @@ interface ChartBody {
   chart?: {
     result?: {
       indicators?: {
-        quote?: { close?: unknown[]; high?: unknown[]; volume?: unknown[] }[];
+        quote?: { close?: unknown[]; high?: unknown[]; low?: unknown[]; volume?: unknown[] }[];
         adjclose?: { adjclose?: unknown[] }[];
       };
     }[];
@@ -87,19 +97,21 @@ interface ChartBody {
 
 /**
  * Yahoo's chart body, dividend-adjusted like the scanner's yfinance
- * auto_adjust: adjclose replaces close and scales high by the same factor.
+ * auto_adjust: adjclose replaces close and scales high and low by the same factor.
  * Bars with a null field (gaps Yahoo leaves in the series) are dropped.
  */
 function fromChart(body: unknown): Candles {
-  const candles: Candles = { close: [], high: [], volume: [] };
+  const candles: Candles = { close: [], high: [], low: [], volume: [] };
   const indicators = (body as ChartBody | null)?.chart?.result?.[0]?.indicators;
   const quote = indicators?.quote?.[0];
   const adjclose = indicators?.adjclose?.[0]?.adjclose ?? quote?.close ?? [];
   adjclose.forEach((adjusted, i) => {
     const close = quote?.close?.[i];
     const high = quote?.high?.[i];
-    if (isNum(adjusted) && isNum(close) && isNum(high) && close > 0) {
-      push(candles, adjusted, (high * adjusted) / close, quote?.volume?.[i]);
+    const low = quote?.low?.[i];
+    if (isNum(adjusted) && isNum(close) && isNum(high) && isNum(low) && close > 0) {
+      const factor = adjusted / close;
+      push(candles, adjusted, high * factor, low * factor, quote?.volume?.[i]);
     }
   });
   return candles;
@@ -174,7 +186,7 @@ function radar(rewardRisk: number, spike: number, price: number, sma50: number):
  * The scanner's analyze_ticker. Risk runs down to the 50-day SMA and reward up
  * to the 20-day high, both as fractions of the close.
  */
-function analyze(ticker: string, { close, high, volume }: Candles): AnalyticsRow {
+function analyze(ticker: string, { close, high, low, volume }: Candles): AnalyticsRow {
   const price = last(close);
   const sma50 = last(sma(close, 50));
   const sma200 = last(sma(close, 200));
@@ -184,6 +196,7 @@ function analyze(ticker: string, { close, high, volume }: Candles): AnalyticsRow
   return {
     ticker,
     rsi_14: stored(last(rsi(close, 14))),
+    atr_14: stored(last(atr(high, low, close, 14))),
     sma_50: stored(sma50),
     sma_200: stored(sma200),
     volume_spike: stored(spike),

@@ -1442,10 +1442,11 @@ body {
   font-size: 12px;
   color: var(--signal-yellow);
 }
-.robo-plan-uncertain p {
-  margin: 0;
+.robo-plan output.robo-hint {
+  display: block;
 }
 .robo-plan-receipt {
+  display: block;
   margin: 10px 0 0;
   font:
     600 12px 'JetBrains Mono',

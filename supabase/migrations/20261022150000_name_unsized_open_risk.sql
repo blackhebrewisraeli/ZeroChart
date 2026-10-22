@@ -30,10 +30,10 @@ begin
   raise exception '%', concat_ws(
     ' ',
     format(
-      'Portfolio max risk reached: %s open + %s new would pass the %s limit.',
-      to_char(100 * open_risk / equity, 'FM990.0') || '%',
-      to_char(100 * added_risk / equity, 'FM990.0') || '%',
-      trim_scale(cap * 100) || '%'
+      'Portfolio max risk reached: %s%% open + %s%% new would pass the %s%% limit.',
+      to_char(100 * open_risk / equity, 'FM990.0'),
+      to_char(100 * added_risk / equity, 'FM990.0'),
+      trim_scale(cap * 100)
     ),
     case when unsized is not null then format(
       'No current ATR(14) reading for %s, so %s whole entry counts as at risk until the next daily market analytics run.',

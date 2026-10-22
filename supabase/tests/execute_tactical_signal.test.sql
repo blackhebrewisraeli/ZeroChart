@@ -12,87 +12,16 @@ values
 insert into public.assets_status (ticker, current_price, updated_at)
 values ('AAPL', 100, now()), ('STALECOIN', 10, now() - interval '3 hours');
 
-insert into public.trading_signals (
-  id,
-  user_id,
-  ticker,
-  action,
-  signal_score,
-  quantity,
-  price,
-  event_id
-)
+insert into public.trading_signals
+  (id, user_id, ticker, action, signal_score, quantity, price, event_id)
 values
-  (
-    '10000000-0000-4000-8000-000000000001',
-    '00000000-0000-4000-8000-000000000001',
-    'AAPL',
-    'BUY',
-    85,
-    10,
-    100,
-    'atomic-success'
-  ),
-  (
-    '10000000-0000-4000-8000-000000000002',
-    '00000000-0000-4000-8000-000000000001',
-    'AAPL',
-    'BUY',
-    85,
-    2000,
-    100,
-    'insufficient-cash'
-  ),
-  (
-    '10000000-0000-4000-8000-000000000003',
-    '00000000-0000-4000-8000-000000000001',
-    'AAPL',
-    'BUY',
-    85,
-    1,
-    100,
-    'bad-price'
-  ),
-  (
-    '10000000-0000-4000-8000-000000000004',
-    '00000000-0000-4000-8000-000000000001',
-    'AAPL',
-    'SELL',
-    20,
-    100,
-    100,
-    'insufficient-shares'
-  ),
-  (
-    '10000000-0000-4000-8000-000000000005',
-    '00000000-0000-4000-8000-000000000001',
-    'NOPRICE',
-    'BUY',
-    85,
-    1,
-    100,
-    'missing-price'
-  ),
-  (
-    '10000000-0000-4000-8000-000000000006',
-    '00000000-0000-4000-8000-000000000001',
-    'STALECOIN',
-    'BUY',
-    85,
-    1,
-    10,
-    'stale-price'
-  ),
-  (
-    '10000000-0000-4000-8000-000000000007',
-    '00000000-0000-4000-8000-000000000002',
-    'AAPL',
-    'BUY',
-    85,
-    1,
-    100,
-    'other-account'
-  );
+  ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 10, 100, 'atomic-success'),
+  ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 2000, 100, 'insufficient-cash'),
+  ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'bad-price'),
+  ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'AAPL', 'SELL', 20, 100, 100, 'insufficient-shares'),
+  ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'NOPRICE', 'BUY', 85, 1, 100, 'missing-price'),
+  ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'STALECOIN', 'BUY', 85, 1, 10, 'stale-price'),
+  ('10000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000002', 'AAPL', 'BUY', 85, 1, 100, 'other-account');
 
 set local role authenticated;
 select set_config(
@@ -233,36 +162,28 @@ select is(
 );
 
 -- ===== Access =====
+-- Signed in as the first account: its own id on the second account's signal,
+-- then the second account's id.
 select throws_ok(
-  $$
-    select public.execute_tactical_signal(
-      '10000000-0000-4000-8000-000000000007',
-      '00000000-0000-4000-8000-000000000001',
-      100
-    )
-  $$,
-  'P0002',
-  'Signal not found',
-  'another account''s signal cannot be executed'
-);
+  format(
+    'select public.execute_tactical_signal(%L, %L, 100)',
+    '10000000-0000-4000-8000-000000000007',
+    claimed.user_id
+  ),
+  claimed.code,
+  claimed.message,
+  claimed.description
+)
+from (
+  values
+    ('00000000-0000-4000-8000-000000000001', 'P0002', 'Signal not found',
+      'another account''s signal cannot be executed'),
+    ('00000000-0000-4000-8000-000000000002', '42501', 'Not authorized to execute this signal',
+      'claiming another account''s user_id is refused')
+) as claimed (user_id, code, message, description);
+
 select throws_ok(
-  $$
-    select public.execute_tactical_signal(
-      '10000000-0000-4000-8000-000000000007',
-      '00000000-0000-4000-8000-000000000002',
-      100
-    )
-  $$,
-  '42501',
-  'Not authorized to execute this signal',
-  'claiming another account''s user_id is refused'
-);
-select throws_ok(
-  $$
-    update public.trading_signals
-    set status = 'EXECUTED'
-    where id = '10000000-0000-4000-8000-000000000002'
-  $$,
+  $$update public.trading_signals set status = 'EXECUTED' where id = '10000000-0000-4000-8000-000000000002'$$,
   '42501',
   null,
   'a client cannot mark a signal EXECUTED without its fill'
@@ -270,13 +191,7 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '', true);
 select throws_ok(
-  $$
-    select public.execute_tactical_signal(
-      '10000000-0000-4000-8000-000000000002',
-      '00000000-0000-4000-8000-000000000001',
-      100
-    )
-  $$,
+  $$select public.execute_tactical_signal('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 100)$$,
   '42501',
   'Not authorized to execute this signal',
   'a request without a signed-in user is refused'

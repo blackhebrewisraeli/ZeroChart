@@ -10,23 +10,31 @@ import {
   type RiskProfile,
 } from '@/lib/portfolioBuilder';
 
+/**
+ * Hard limits per risk profile. maxAllocation is a share of the proposal
+ * budget. execute_paper_portfolio enforces the same numbers on the server
+ * (paper_risk_policy, src/test/paperRiskPolicy.test.ts keeps them in step).
+ * minimumScore is inclusive; 60 is the model's own BUY band (the Pine HUD reads
+ * score >= 60 as BUY), so the gentler profiles never buy a weak score just
+ * because it is above 0.
+ */
 export const RISK_PROFILE_POLICIES = {
   conservative: {
     maxAllocation: 0.1,
     excludeHighVolatility: true,
-    minimumScoreExclusive: null,
+    minimumScore: 60,
     requirePositiveMomentum: false,
   },
   moderate: {
     maxAllocation: 0.25,
     excludeHighVolatility: false,
-    minimumScoreExclusive: null,
+    minimumScore: 60,
     requirePositiveMomentum: false,
   },
   aggressive: {
     maxAllocation: 0.5,
     excludeHighVolatility: false,
-    minimumScoreExclusive: 70,
+    minimumScore: 71,
     requirePositiveMomentum: true,
   },
 } as const satisfies Record<
@@ -34,7 +42,7 @@ export const RISK_PROFILE_POLICIES = {
   {
     maxAllocation: number;
     excludeHighVolatility: boolean;
-    minimumScoreExclusive: number | null;
+    minimumScore: number;
     requirePositiveMomentum: boolean;
   }
 >;
@@ -50,12 +58,7 @@ export function qualifiesForRiskProfile(
 ): boolean {
   const policy = RISK_PROFILE_POLICIES[profile];
   if (policy.excludeHighVolatility && candidate.regime === 'HIGH_VOLATILITY') return false;
-  if (
-    policy.minimumScoreExclusive !== null &&
-    candidate.signal_score <= policy.minimumScoreExclusive
-  ) {
-    return false;
-  }
+  if (candidate.signal_score < policy.minimumScore) return false;
   // The canonical momentum score is 50 at zero momentum and monotonic around it.
   if (policy.requirePositiveMomentum && candidate.components.momentumScore <= 50) return false;
   return true;
@@ -127,9 +130,7 @@ export async function buildQuantPortfolio(
   );
   const qualified = scored
     .flatMap(({ asset, result }) =>
-      result.status === 'OK' &&
-      result.signal_score > 0 &&
-      qualifiesForRiskProfile(preferences.riskProfile, result)
+      result.status === 'OK' && qualifiesForRiskProfile(preferences.riskProfile, result)
         ? [{ asset, result }]
         : [],
     )

@@ -54,7 +54,7 @@ const LOW_VOLATILITY = 0.005;
 const HIGH_VOLATILITY = 0.055;
 
 /** ATR/price at or above 4% classifies the HIGH_VOLATILITY regime. */
-const REGIME_HIGH_VOLATILITY = 0.04;
+export const REGIME_HIGH_VOLATILITY = 0.04;
 /** Volatility below 2% reads as "calm" in the rationale. */
 const CALM_VOLATILITY = 0.02;
 /** |MACD histogram|/price at or above 0.5% (half saturation) classifies TRENDING. */

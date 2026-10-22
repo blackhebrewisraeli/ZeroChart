@@ -31,8 +31,12 @@ function makeAsset(ticker: string, currentPrice: number | null = 100): Asset {
   };
 }
 
-/** Deterministic daily candles around $100 with a ±`range` intraday spread. */
-function makeCandles(count: number, range = 0.5, drift = 0.1): EngineCandle[] {
+/**
+ * Deterministic daily candles from $100 with a ±`range` intraday spread. The
+ * default slow decline is oversold enough to score 82, above every profile's
+ * minimum.
+ */
+function makeCandles(count: number, range = 0.5, drift = -0.1): EngineCandle[] {
   return Array.from({ length: count }, (_, i) => {
     const close = 100 + Math.sin(i / 5) + drift * i;
     return { high: close + range, low: close - range, close };
@@ -98,6 +102,39 @@ describe('buildQuantPortfolio', () => {
         components: { momentumScore: 51 },
       }),
     ).toBe(true);
+  });
+
+  it('keeps conservative and moderate portfolios out of weak scores', () => {
+    for (const profile of ['conservative', 'moderate'] as const) {
+      const candidate = (signal_score: number) =>
+        qualifiesForRiskProfile(profile, {
+          signal_score,
+          regime: 'NEUTRAL',
+          components: { momentumScore: 40 },
+        });
+      // The model's own BUY band starts at 60; a score above 0 is not enough.
+      expect(candidate(1)).toBe(false);
+      expect(candidate(59)).toBe(false);
+      expect(candidate(60)).toBe(true);
+    }
+  });
+
+  it('retains cash instead of buying weak assets when too few qualify', async () => {
+    const strong = makeCandles(200);
+    // A steady climb is overbought: the engine scores it well under 60.
+    const weak = makeCandles(200, 0.5, 0.1);
+    const result = await buildQuantPortfolio(
+      {
+        preferences: { totalCapital: 10000, riskProfile: 'conservative' },
+        availableAssets: [makeAsset('STRONG'), makeAsset('WEAK')],
+      },
+      depsFor({ STRONG: strong, WEAK: weak }),
+    );
+
+    expect(engineScore(weak).signal_score).toBeLessThan(60);
+    expect(result.map((allocation) => allocation.ticker)).toEqual(['STRONG']);
+    // One qualifying holding at the 10% cap: the other 90% stays Paper Cash.
+    expect(result[0]?.allocatedAmount).toBe(1000);
   });
 
   it('ranks by the canonical score and caps the 2%-risk size at the allocation', async () => {
@@ -177,7 +214,7 @@ describe('buildQuantPortfolio', () => {
   });
 
   it('sizes on the engine ATR, at the live price or else the last close', async () => {
-    const candles = makeCandles(200, 5);
+    const candles = makeCandles(200);
     const engine = engineScore(candles);
     const deps = depsFor({ LIVE: candles, CLOSE: candles });
 
@@ -204,7 +241,7 @@ describe('buildQuantPortfolio', () => {
   });
 
   it('attaches the engine breakdown (components, regime, rationale) to each row', async () => {
-    const candles = makeCandles(200, 3);
+    const candles = makeCandles(200);
     const engine = engineScore(candles);
 
     const [allocation] = await buildQuantPortfolio(

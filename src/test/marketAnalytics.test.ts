@@ -17,6 +17,7 @@ describe('market-analytics', () => {
     const close = [...Array<number>(200).fill(100), ...Array<number>(49).fill(110), 112];
     const high = close.map((value, i) => (i === 245 ? 120 : value));
     const volume = close.map((_, i) => (i >= 247 ? 2000 : 1000));
+    // Lows sit on the close, so true range is the gap from the prior close.
     // Yahoo's raw series sits at twice the adjusted one, after a leading gap.
     const body = {
       chart: {
@@ -27,6 +28,7 @@ describe('market-analytics', () => {
                 {
                   close: [null, ...close.map((value) => value * 2)],
                   high: [null, ...high.map((value) => value * 2)],
+                  low: [null, ...close.map((value) => value * 2)],
                   volume: [null, ...volume],
                 },
               ],
@@ -40,6 +42,8 @@ describe('market-analytics', () => {
     expect(toRow('AAPL', body)).toEqual({
       ticker: 'AAPL',
       rsi_14: 100,
+      // Wilder-smoothed: the 10-point jump on day 245 and the 2-point one on day 249.
+      atr_14: 0.69282,
       sma_50: 110.04,
       sma_200: 102.51,
       volume_spike: 2,
@@ -64,6 +68,7 @@ describe('market-analytics', () => {
     expect(toRow('BTC-USD', klines, 5000)).toEqual({
       ticker: 'BTC-USD',
       rsi_14: null,
+      atr_14: null,
       sma_50: null,
       sma_200: null,
       volume_spike: null,

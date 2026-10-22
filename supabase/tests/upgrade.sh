@@ -4,7 +4,16 @@
 # then proves the old rows survived and still work with the new code.
 # Usage: supabase/tests/upgrade.sh <base git ref> [postgres URL]
 # Set SUPABASE_WORKDIR to run against a stack started with --workdir.
+#
+# It wipes and rebuilds the local database, so outside CI it needs
+# ALLOW_DB_RESET=1. Run it from the stack's own folder: from inside the repo
+# the CLI resolves the linked project instead and resets that local stack.
 set -euo pipefail
+
+if [[ "${CI:-}" != "true" && "${ALLOW_DB_RESET:-}" != "1" ]]; then
+  echo "upgrade.sh resets the local database; rerun with ALLOW_DB_RESET=1 if that is intended." >&2
+  exit 2
+fi
 
 BASE_REF="${1:?base git ref, e.g. origin/main}"
 DB="${2:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"

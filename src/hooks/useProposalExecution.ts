@@ -132,19 +132,25 @@ export function useProposalExecution({
   const [execution, setExecution] = useState<Execution>({ state: 'idle' });
   const executingRef = useRef(false);
 
-  // A new proposal gets a new request ID and, signed in, a server price check:
-  // the quantities, fees and cash shown are the ones Confirm will book.
-  useEffect(() => {
-    if (phase !== 'results' || !result || result.length === 0) return;
-    const id = crypto.randomUUID();
-    setRequestId(id);
+  // A new proposal starts clean: new request ID, no plan, nothing booked.
+  // Reset while rendering, not in an effect: an effect can run after a Confirm
+  // clicked the moment the results appear, and would erase its outcome.
+  const [proposalFor, setProposalFor] = useState(result);
+  if (proposalFor !== result) {
+    setProposalFor(result);
+    setRequestId(crypto.randomUUID());
     setServerPlan(null);
     setServerError(null);
     setExecution({ state: 'idle' });
-    if (userId === null) return;
+  }
+
+  // Signed in, the server prices the proposal: the quantities, fees and cash
+  // shown are the ones Confirm will book.
+  useEffect(() => {
+    if (phase !== 'results' || !result || result.length === 0 || userId === null) return;
     let live = true;
     executePaperPortfolio({
-      requestId: id,
+      requestId,
       riskProfile,
       budget,
       holdings: toHoldings(result),
@@ -159,7 +165,7 @@ export function useProposalExecution({
     return () => {
       live = false;
     };
-  }, [phase, result, budget, riskProfile, userId]);
+  }, [phase, result, budget, riskProfile, userId, requestId]);
 
   const guest = useMemo(() => {
     if (userId !== null || !result || result.length === 0) return null;

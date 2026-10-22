@@ -161,6 +161,44 @@ describe('RoboAdvisor invest', () => {
     expect(paper).toEqual(before);
   });
 
+  it('keeps the outcome of a Confirm clicked before React runs its effects', async () => {
+    // CI's timing: Confirm is clicked the moment the results commit, before
+    // React flushes that render's effects. A reset in an effect then erased
+    // the refusal the click had just recorded.
+    rejectBuyOf.ticker = 'ETH';
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+      </PortfolioProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+    const dialog = await screen.findByRole('dialog');
+
+    const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean | undefined };
+    const previous = actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      const clicked = new Promise<void>((resolve) => {
+        const observer = new MutationObserver(() => {
+          const confirm = screen.queryByRole('button', { name: /simulate on paper desk/i });
+          if (confirm instanceof HTMLButtonElement && !confirm.disabled) {
+            observer.disconnect();
+            confirm.click();
+            resolve();
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+      within(dialog)
+        .getByRole('button', { name: /build portfolio/i })
+        .click();
+      await clicked;
+      expect(await screen.findByText('Not booked: Simulated rejection')).toBeVisible();
+    } finally {
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = previous;
+    }
+  });
+
   it('refuses to build with more than the actual available Paper Cash', async () => {
     render(
       <PortfolioProvider>

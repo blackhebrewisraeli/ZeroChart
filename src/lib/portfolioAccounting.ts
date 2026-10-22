@@ -303,6 +303,98 @@ function validateTradeInput(
   return null;
 }
 
+/** The ledger row for a buy or a sell; fee, slippage and intent only when the trade gave them. */
+function tradeRecord(
+  container: PortfolioContainer,
+  type: 'buy' | 'sell',
+  ticker: string,
+  input: BuyTransactionInput | SellTransactionInput,
+  amount: number,
+  timestamp: string,
+): PortfolioTransaction {
+  return {
+    id:
+      input.transactionId ??
+      deterministicId(type, ticker, timestamp, container.transactions.length),
+    portfolioType: container.type,
+    type,
+    ticker,
+    shares: input.shares,
+    price: input.price,
+    ...(input.fee !== undefined ? { fee: input.fee } : {}),
+    ...(input.slippage !== undefined ? { slippage: input.slippage } : {}),
+    amount,
+    timestamp,
+    ...(input.intent ? { intent: input.intent } : {}),
+  };
+}
+
+/** The position once `lot` is bought: added to the existing lots, or a new position. */
+function positionAfterBuy(
+  container: PortfolioContainer,
+  input: BuyTransactionInput,
+  ticker: string,
+  existing: Position | undefined,
+  lot: PositionLot,
+): Position {
+  const name = input.name !== undefined ? { name: input.name } : {};
+  if (existing) {
+    const lots = [...(existing.lots ?? []), lot];
+    return {
+      ...existing,
+      ...name,
+      shares: lots.reduce((sum, current) => sum + current.shares, 0),
+      buyPrice: weightedAverageBuyPrice(lots),
+      lots,
+    };
+  }
+  return {
+    id: input.positionId ?? `position-${ticker.toLowerCase()}`,
+    ticker,
+    ...name,
+    shares: input.shares,
+    buyPrice: input.price,
+    isSimulation: container.type !== 'real_tracking',
+    dateAdded: lot.acquiredAt,
+    lots: [lot],
+  };
+}
+
+/**
+ * Sells `shares` from the oldest lots first (acquired date, then lot order):
+ * the cost basis sold, fees included pro rata, and the lots left.
+ */
+function consumeLotsFifo(
+  lots: readonly PositionLot[],
+  shares: number,
+): { costBasisSold: number; remainingLots: PositionLot[] } {
+  const orderedLots = lots
+    .map((lot, index) => ({ lot, index }))
+    .sort((left, right) => {
+      const dateOrder = left.lot.acquiredAt.localeCompare(right.lot.acquiredAt);
+      return dateOrder !== 0 ? dateOrder : left.index - right.index;
+    });
+  let sharesToSell = shares;
+  let costBasisSold = 0;
+  const remainingLots: PositionLot[] = [];
+
+  for (const { lot } of orderedLots) {
+    const consumed = Math.min(lot.shares, sharesToSell);
+    const feeSold = lot.feePaid ? (lot.feePaid * consumed) / lot.shares : 0;
+    costBasisSold += consumed * lot.buyPrice + feeSold;
+    sharesToSell -= consumed;
+    const remainingShares = lot.shares - consumed;
+    if (remainingShares > ZERO_SHARE_EPSILON) {
+      remainingLots.push({
+        ...lot,
+        shares: remainingShares,
+        ...(lot.feePaid ? { feePaid: lot.feePaid - feeSold } : {}),
+      });
+    }
+  }
+  return { costBasisSold, remainingLots };
+}
+
 /** Applies a buy as an immutable, deterministic state transition. */
 export function applyBuyTransaction(
   container: PortfolioContainer,
@@ -335,45 +427,13 @@ export function applyBuyTransaction(
     ...(fee + slippage > 0 ? { feePaid: fee + slippage } : {}),
     acquiredAt: timestamp,
   };
-  const lots = [...(normalizedExisting?.lots ?? []), lot];
-  const position: Position = normalizedExisting
-    ? {
-        ...normalizedExisting,
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        shares: lots.reduce((sum, current) => sum + current.shares, 0),
-        buyPrice: weightedAverageBuyPrice(lots),
-        lots,
-      }
-    : {
-        id: input.positionId ?? `position-${ticker.toLowerCase()}`,
-        ticker,
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        shares: input.shares,
-        buyPrice: input.price,
-        isSimulation: container.type !== 'real_tracking',
-        dateAdded: timestamp,
-        lots,
-      };
+  const position = positionAfterBuy(container, input, ticker, normalizedExisting, lot);
 
   const positions = [...container.positions];
   if (existingIndex >= 0) positions[existingIndex] = position;
   else positions.push(position);
 
-  const transaction: PortfolioTransaction = {
-    id:
-      input.transactionId ??
-      deterministicId('buy', ticker, timestamp, container.transactions.length),
-    portfolioType: container.type,
-    type: 'buy',
-    ticker,
-    shares: input.shares,
-    price: input.price,
-    ...(input.fee !== undefined ? { fee } : {}),
-    ...(input.slippage !== undefined ? { slippage } : {}),
-    amount: totalCost,
-    timestamp,
-    ...(input.intent ? { intent: input.intent } : {}),
-  };
+  const transaction = tradeRecord(container, 'buy', ticker, input, totalCost, timestamp);
 
   return {
     ok: true,
@@ -410,30 +470,7 @@ export function applySellTransaction(
     return { ok: false, container, error: 'Insufficient shares' };
   }
 
-  const orderedLots = (normalized.lots ?? [])
-    .map((lot, index) => ({ lot, index }))
-    .sort((left, right) => {
-      const dateOrder = left.lot.acquiredAt.localeCompare(right.lot.acquiredAt);
-      return dateOrder !== 0 ? dateOrder : left.index - right.index;
-    });
-  let sharesToSell = input.shares;
-  let costBasisSold = 0;
-  const remainingLots: PositionLot[] = [];
-
-  for (const { lot } of orderedLots) {
-    const consumed = Math.min(lot.shares, sharesToSell);
-    const feeSold = lot.feePaid ? (lot.feePaid * consumed) / lot.shares : 0;
-    costBasisSold += consumed * lot.buyPrice + feeSold;
-    sharesToSell -= consumed;
-    const remainingShares = lot.shares - consumed;
-    if (remainingShares > ZERO_SHARE_EPSILON) {
-      remainingLots.push({
-        ...lot,
-        shares: remainingShares,
-        ...(lot.feePaid ? { feePaid: lot.feePaid - feeSold } : {}),
-      });
-    }
-  }
+  const { costBasisSold, remainingLots } = consumeLotsFifo(normalized.lots ?? [], input.shares);
 
   const netProceeds = input.shares * input.price - fee - slippage;
   const realizedPnl = netProceeds - costBasisSold;
@@ -451,21 +488,9 @@ export function applySellTransaction(
   }
 
   const timestamp = input.timestamp ?? DEFAULT_TIMESTAMP;
-  const transaction: PortfolioTransaction = {
-    id:
-      input.transactionId ??
-      deterministicId('sell', ticker, timestamp, container.transactions.length),
-    portfolioType: container.type,
-    type: 'sell',
-    ticker,
-    shares: input.shares,
-    price: input.price,
-    ...(input.fee !== undefined ? { fee } : {}),
-    ...(input.slippage !== undefined ? { slippage } : {}),
-    amount: netProceeds,
+  const transaction = {
+    ...tradeRecord(container, 'sell', ticker, input, netProceeds, timestamp),
     realizedPnl,
-    timestamp,
-    ...(input.intent ? { intent: input.intent } : {}),
   };
 
   return {

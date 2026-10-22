@@ -18,6 +18,20 @@ const SPRING = { type: 'spring' as const, stiffness: 320, damping: 30 };
 
 type Side = 'buy' | 'sell';
 
+/** What a USD amount buys or sells at `price`: units, the 0.25% fee, and the cash it moves. */
+function orderEstimate(amount: number, price: number | null | undefined, side: Side) {
+  if (!(Number.isFinite(amount) && amount > 0 && price != null && price > 0)) {
+    return { canSubmit: false, estimatedQty: 0, fee: 0, total: 0 };
+  }
+  const fee = amount * FEE_RATE;
+  return {
+    canSubmit: true,
+    estimatedQty: amount / price,
+    fee,
+    total: side === 'buy' ? amount + fee : amount - fee,
+  };
+}
+
 /** What the ticket's fill does, by the ledger it books to (none: a mock). */
 function ticketFootnote(portfolioType: PortfolioType | undefined): string {
   if (portfolioType === undefined) {
@@ -70,15 +84,10 @@ export function TradeTicket({
   const assetClass = getAssetClass(asset.ticker);
 
   const numericAmount = Number(amount);
-  const canSubmit =
-    Number.isFinite(numericAmount) && numericAmount > 0 && price != null && price > 0;
-  const estimatedQty = canSubmit ? numericAmount / price : 0;
-  const fee = canSubmit ? numericAmount * FEE_RATE : 0;
-  const signedFee = side === 'buy' ? fee : -fee;
-  const total = canSubmit ? numericAmount + signedFee : 0;
+  const { canSubmit, estimatedQty, fee, total } = orderEstimate(numericAmount, price, side);
   // Paper entries must clear the portfolio risk manager first.
   const entry =
-    isPaper && side === 'buy' && canSubmit
+    isPaper && side === 'buy' && canSubmit && price != null
       ? paperRisk.checkBuy(asset.ticker, { shares: estimatedQty, price, fee })
       : null;
   const rejection = entry?.ok === false ? entry.reason : null;
@@ -167,7 +176,7 @@ export function TradeTicket({
   }
 
   async function handleSubmit() {
-    if (!canSubmit || booking || rejection) return;
+    if (!canSubmit || price == null || booking || rejection) return;
     if (recordsFills) {
       const shares = fillShares(portfolioType, price);
       const result =

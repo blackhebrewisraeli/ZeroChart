@@ -164,6 +164,48 @@ interface TrailingStop {
   fraction: number;
 }
 
+interface SleeveState {
+  long: boolean;
+  shares: number;
+  cash: number;
+  /** Cash put into the open trade, before costs. */
+  committed: number;
+  /** Peak close while long, trough close while flat. */
+  ref: number;
+  trades: number;
+  wins: number;
+}
+
+/**
+ * One bar of the trailing stop: exit when the close breaks `peak − distance`,
+ * re-enter when it recovers to `trough + distance`. The distance is the bar's
+ * ATR distance, else `stop.fraction` of the reference close.
+ */
+function stepTrailingStop(
+  state: SleeveState,
+  price: number,
+  atrDistance: number,
+  stop: TrailingStop,
+  fillFactor: number,
+): void {
+  state.ref = state.long ? Math.max(state.ref, price) : Math.min(state.ref, price);
+  const distance = Number.isFinite(atrDistance) ? atrDistance : state.ref * stop.fraction;
+  if (state.long && price < state.ref - distance) {
+    state.cash = state.shares * price * fillFactor;
+    state.trades += 1;
+    if (state.cash > state.committed) state.wins += 1;
+    state.long = false;
+    state.shares = 0;
+    state.ref = price;
+  } else if (!state.long && price > state.ref + distance) {
+    state.committed = state.cash;
+    state.shares = (state.cash * fillFactor) / price;
+    state.cash = 0;
+    state.long = true;
+    state.ref = price;
+  }
+}
+
 /**
  * Runs one asset sleeve over its forward-filled timeline closes. Without a
  * stop it is plain buy-and-hold. With one, the sleeve goes to cash when the
@@ -181,43 +223,162 @@ function simulateSleeve(
   stop: TrailingStop | null,
 ): { values: Float64Array; trades: number; wins: number } {
   const values = new Float64Array(closes.length);
-  let long = true;
-  let shares = (capital * entryFactor) / (closes[0] ?? 1);
-  let cash = 0;
-  let committed = capital; // cash put into the open trade, before costs
-  let ref = closes[0] ?? 0; // peak close while long, trough close while flat
-  let trades = 0;
-  let wins = 0;
+  const state: SleeveState = {
+    long: true,
+    shares: (capital * entryFactor) / (closes[0] ?? 1),
+    cash: 0,
+    committed: capital,
+    ref: closes[0] ?? 0,
+    trades: 0,
+    wins: 0,
+  };
 
   for (let i = 0; i < closes.length; i += 1) {
     const price = closes[i] ?? 0;
-    if (stop) {
-      ref = long ? Math.max(ref, price) : Math.min(ref, price);
-      const atrDistance = stop.atrDistance?.[i] ?? Number.NaN;
-      const distance = Number.isFinite(atrDistance) ? atrDistance : ref * stop.fraction;
-      if (long && price < ref - distance) {
-        cash = shares * price * fillFactor;
-        trades += 1;
-        if (cash > committed) wins += 1;
-        long = false;
-        shares = 0;
-        ref = price;
-      } else if (!long && price > ref + distance) {
-        committed = cash;
-        shares = (cash * fillFactor) / price;
-        cash = 0;
-        long = true;
-        ref = price;
-      }
-    }
-    values[i] = long ? shares * price * fillFactor : cash;
+    if (stop) stepTrailingStop(state, price, stop.atrDistance?.[i] ?? Number.NaN, stop, fillFactor);
+    values[i] = state.long ? state.shares * price * fillFactor : state.cash;
   }
 
-  if (long && closes.length > 0) {
-    trades += 1;
-    if ((values[closes.length - 1] ?? 0) > committed) wins += 1;
+  if (state.long && closes.length > 0) {
+    state.trades += 1;
+    if ((values[closes.length - 1] ?? 0) > state.committed) state.wins += 1;
   }
-  return { values, trades, wins };
+  return { values, trades: state.trades, wins: state.wins };
+}
+
+/** Summed positive weight per ticker; non-finite or non-positive weights are dropped. */
+function weightsByTicker(weights: BacktestOptions['weights']): Map<string, number> {
+  const weightByTicker = new Map<string, number>();
+  for (const item of weights) {
+    if (!Number.isFinite(item.weight) || item.weight <= 0) continue;
+    weightByTicker.set(item.ticker, (weightByTicker.get(item.ticker) ?? 0) + item.weight);
+  }
+  return weightByTicker;
+}
+
+/** Each ticker's positive-price points, oldest first; tickers with none are left out. */
+function usableSeries(series: BacktestOptions['series']): Map<string, PricePoint[]> {
+  const seriesByTicker = new Map<string, PricePoint[]>();
+  for (const item of series) {
+    const points = item.points
+      .filter((point) => Number.isFinite(point.price) && point.price > 0)
+      .sort((a, b) => a.timestamp - b.timestamp);
+    if (points.length > 0) seriesByTicker.set(item.ticker, points);
+  }
+  return seriesByTicker;
+}
+
+/**
+ * Coverage audit: every weighted ticker is covered (usable series) or missing
+ * (excluded, held as cash) — surfaced on the result, never silent.
+ */
+function coverageOf(
+  weightByTicker: ReadonlyMap<string, number>,
+  seriesByTicker: ReadonlyMap<string, PricePoint[]>,
+): { coverage: TickerCoverage[]; coveredWeight: number } {
+  const coverage: TickerCoverage[] = [];
+  let coveredWeight = 0;
+  for (const [ticker, weight] of weightByTicker) {
+    const covered = (seriesByTicker.get(ticker)?.length ?? 0) > 0;
+    if (covered) coveredWeight += weight;
+    coverage.push({ ticker, weight, status: covered ? 'covered' : 'missing' });
+  }
+  return { coverage, coveredWeight };
+}
+
+const nonNegative = (value: number | undefined) =>
+  value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;
+const positiveOrZero = (value: number | undefined) =>
+  value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
+
+/**
+ * Friction: every fill pays (fee + slippage) bps; the legacy cost model adds a
+ * one-time drag on the first entry. Invalid inputs are ignored.
+ */
+function frictionFactors(
+  costModel: BacktestOptions['costModel'],
+  feeBps: number | undefined,
+  slippageBps: number | undefined,
+): { fillFactor: number; entryFactor: number } {
+  const perFill = (nonNegative(feeBps) + nonNegative(slippageBps)) / 10000;
+  return {
+    fillFactor: Math.max(0, 1 - perFill),
+    entryFactor: Math.max(
+      0,
+      1 - nonNegative(costModel?.feeRate) - nonNegative(costModel?.slippageRate) - perFill,
+    ),
+  };
+}
+
+function trailingStopSettings(
+  atrMultiplierInput: number | undefined,
+  pctInput: number | undefined,
+): { atrMultiplier: number; stopEnabled: boolean; stopFraction: number } {
+  const atrMultiplier = positiveOrZero(atrMultiplierInput);
+  const stopPct = positiveOrZero(pctInput);
+  return {
+    atrMultiplier,
+    stopEnabled: atrMultiplier > 0 || stopPct > 0,
+    stopFraction: (stopPct || DEFAULT_TRAILING_STOP_PCT) / 100,
+  };
+}
+
+/** Every timestamp of every weighted, covered series, ascending. */
+function timelineOf(
+  seriesByTicker: ReadonlyMap<string, PricePoint[]>,
+  weightByTicker: ReadonlyMap<string, number>,
+): number[] {
+  const timestamps = new Set<number>();
+  for (const [ticker, points] of seriesByTicker) {
+    if ((weightByTicker.get(ticker) ?? 0) > 0) {
+      for (const point of points) timestamps.add(point.timestamp);
+    }
+  }
+  return [...timestamps].sort((a, b) => a - b);
+}
+
+/**
+ * Forward-fills a ticker's closes (and its ATR stop distance) onto the shared
+ * timeline; before its first print the sleeve sits at its entry close, i.e.
+ * flat at notional. ATR needs a full HLC series, else the stop distance is
+ * null and the percent fallback applies.
+ */
+function forwardFill(
+  points: readonly PricePoint[],
+  timeline: readonly number[],
+  atrMultiplier: number,
+): { closes: Float64Array; atrDistance: Float64Array | null } {
+  const hasHlc =
+    atrMultiplier > 0 &&
+    points.every((point) => Number.isFinite(point.high) && Number.isFinite(point.low));
+  const atrValues = hasHlc
+    ? atr(
+        points.map((point) => point.high ?? point.price),
+        points.map((point) => point.low ?? point.price),
+        points.map((point) => point.price),
+        ATR_PERIOD,
+      )
+    : null;
+
+  const closes = new Float64Array(timeline.length);
+  const atrDistance = atrValues ? new Float64Array(timeline.length) : null;
+  let cursor = 0;
+  let lastClose = points[0]?.price ?? 1;
+  let lastAtr = Number.NaN;
+  for (let i = 0; i < timeline.length; i += 1) {
+    const time = timeline[i] ?? 0;
+    while (
+      cursor < points.length &&
+      (points[cursor]?.timestamp ?? Number.POSITIVE_INFINITY) <= time
+    ) {
+      lastClose = points[cursor]?.price ?? lastClose;
+      lastAtr = atrValues?.[cursor] ?? Number.NaN;
+      cursor += 1;
+    }
+    closes[i] = lastClose;
+    if (atrDistance) atrDistance[i] = lastAtr * atrMultiplier;
+  }
+  return { closes, atrDistance };
 }
 
 /**
@@ -243,56 +404,16 @@ export function computeBacktest({
   trailingStopAtrMultiplier,
   trailingStopPct,
 }: BacktestOptions): BacktestResult {
-  const weightByTicker = new Map<string, number>();
-  for (const item of weights) {
-    if (!Number.isFinite(item.weight) || item.weight <= 0) continue;
-    weightByTicker.set(item.ticker, (weightByTicker.get(item.ticker) ?? 0) + item.weight);
-  }
-
-  const seriesByTicker = new Map<string, PricePoint[]>();
-  for (const item of series) {
-    const points = item.points
-      .filter((point) => Number.isFinite(point.price) && point.price > 0)
-      .sort((a, b) => a.timestamp - b.timestamp);
-    if (points.length > 0) seriesByTicker.set(item.ticker, points);
-  }
-
-  // Coverage audit: every weighted ticker is covered (usable series) or
-  // missing (excluded, held as cash) — surfaced on the result, never silent.
-  const coverage: TickerCoverage[] = [];
-  let coveredWeight = 0;
-  for (const [ticker, weight] of weightByTicker) {
-    const covered = (seriesByTicker.get(ticker)?.length ?? 0) > 0;
-    if (covered) coveredWeight += weight;
-    coverage.push({ ticker, weight, status: covered ? 'covered' : 'missing' });
-  }
+  const weightByTicker = weightsByTicker(weights);
+  const seriesByTicker = usableSeries(series);
+  const { coverage, coveredWeight } = coverageOf(weightByTicker, seriesByTicker);
   const cashWeight = Math.max(0, 1 - coveredWeight);
-
-  // Friction: every fill pays (fee + slippage) bps; the legacy cost model adds
-  // a one-time drag on the first entry. Invalid inputs are ignored.
-  const rate = (value: number | undefined) =>
-    value !== undefined && Number.isFinite(value) && value >= 0 ? value : 0;
-  const perFill = (rate(feeBps) + rate(slippageBps)) / 10000;
-  const fillFactor = Math.max(0, 1 - perFill);
-  const entryFactor = Math.max(
-    0,
-    1 - rate(costModel?.feeRate) - rate(costModel?.slippageRate) - perFill,
+  const { fillFactor, entryFactor } = frictionFactors(costModel, feeBps, slippageBps);
+  const { atrMultiplier, stopEnabled, stopFraction } = trailingStopSettings(
+    trailingStopAtrMultiplier,
+    trailingStopPct,
   );
-
-  const positive = (value: number | undefined) =>
-    value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
-  const atrMultiplier = positive(trailingStopAtrMultiplier);
-  const stopPct = positive(trailingStopPct);
-  const stopEnabled = atrMultiplier > 0 || stopPct > 0;
-  const stopFraction = (stopPct || DEFAULT_TRAILING_STOP_PCT) / 100;
-
-  const timestamps = new Set<number>();
-  for (const [ticker, points] of seriesByTicker) {
-    if ((weightByTicker.get(ticker) ?? 0) > 0) {
-      for (const point of points) timestamps.add(point.timestamp);
-    }
-  }
-  const timeline = [...timestamps].sort((a, b) => a - b);
+  const timeline = timelineOf(seriesByTicker, weightByTicker);
 
   // Strategy and buy-and-hold benchmark share the cash sleeve for missing weight.
   const cash = cashWeight * initialValue;
@@ -306,39 +427,7 @@ export function computeBacktest({
     if (entry.status !== 'covered') continue;
     const points = seriesByTicker.get(entry.ticker) ?? [];
 
-    // ATR needs a full HLC series; otherwise the stop uses the percent fallback.
-    const hasHlc =
-      atrMultiplier > 0 &&
-      points.every((point) => Number.isFinite(point.high) && Number.isFinite(point.low));
-    const atrValues = hasHlc
-      ? atr(
-          points.map((point) => point.high ?? point.price),
-          points.map((point) => point.low ?? point.price),
-          points.map((point) => point.price),
-          ATR_PERIOD,
-        )
-      : null;
-
-    // Forward-fill closes (and ATR) onto the shared timeline; before its first
-    // print the sleeve sits at its entry close, i.e. flat at notional.
-    const closes = new Float64Array(timeline.length);
-    const atrDistance = atrValues ? new Float64Array(timeline.length) : null;
-    let cursor = 0;
-    let lastClose = points[0]?.price ?? 1;
-    let lastAtr = Number.NaN;
-    for (let i = 0; i < timeline.length; i += 1) {
-      const time = timeline[i] ?? 0;
-      while (
-        cursor < points.length &&
-        (points[cursor]?.timestamp ?? Number.POSITIVE_INFINITY) <= time
-      ) {
-        lastClose = points[cursor]?.price ?? lastClose;
-        lastAtr = atrValues?.[cursor] ?? Number.NaN;
-        cursor += 1;
-      }
-      closes[i] = lastClose;
-      if (atrDistance) atrDistance[i] = lastAtr * atrMultiplier;
-    }
+    const { closes, atrDistance } = forwardFill(points, timeline, atrMultiplier);
 
     const capital = entry.weight * initialValue;
     const held = simulateSleeve(closes, capital, entryFactor, fillFactor, null);

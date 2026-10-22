@@ -85,6 +85,70 @@ type PnlTone = 'pnl-up' | 'pnl-down';
 
 const PNL_ACCENT = { 'pnl-up': 'green', 'pnl-down': 'red' } as const;
 
+/** "1 fill", "3 fills". */
+function countLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+const PNL_ICON = { 'pnl-up': TrendingUp, 'pnl-down': TrendingDown } as const;
+
+/** What each Core ledger says about itself; Live Tracking mirrors a real broker account. */
+const LEDGER_COPY = {
+  real_tracking: {
+    sectionLabel: 'Tracked real holdings',
+    tour: undefined,
+    eyebrowClass: 'paper-eyebrow real-eyebrow',
+    eyebrow: 'Real holdings · Tracking only',
+    title: 'Tracked Holdings',
+    subtitle: 'Positions you hold at your broker, logged by hand. ZeroChart places no orders.',
+    emptyTitle: 'No tracked holdings yet',
+    emptySub: 'Add a position you hold at your broker to track it here.',
+    csvSlug: 'live',
+  },
+  long_term_sim: {
+    sectionLabel: 'Simulated portfolio',
+    tour: 'sim-portfolio',
+    eyebrowClass: 'paper-eyebrow',
+    eyebrow: 'Simulation Mode',
+    title: 'Simulated Portfolio',
+    subtitle: 'Long-term strategy sandbox: simulated cash, simulated fills. No real money.',
+    emptyTitle: 'No simulation positions',
+    emptySub: 'Your simulated portfolio is empty. Build one with the Quant Analyzer in Research.',
+    csvSlug: 'simulation',
+  },
+} as const satisfies Record<CorePortfolioType, Record<string, string | undefined>>;
+
+/**
+ * Cloud saves stay disabled until this user's cloud hydration settled — never
+ * overwrite a row that is still loading (M1-T1, F-4.1b).
+ */
+function cloudSaveBlocked(
+  userId: string | null,
+  hydration: { userId: string | null; status: string },
+): boolean {
+  if (userId === null) return false;
+  const settled = hydration.status === 'ready' || hydration.status === 'error';
+  return !(hydration.userId === userId && settled);
+}
+
+/** The holdings' 24h change in dollars, if any holding has a 24h change to report. */
+function dayChangeOf(
+  positions: readonly Position[],
+  assets: readonly Asset[],
+): { dayChange: number; hasDayChange: boolean } {
+  let dayChange = 0;
+  let hasDayChange = false;
+  for (const position of positions) {
+    const asset = assets.find((candidate) => candidate.ticker === position.ticker);
+    const change = asset?.change_24h;
+    if (change == null || !Number.isFinite(change)) continue;
+    const price = asset?.current_price ?? position.buyPrice;
+    dayChange += price * position.shares * change;
+    hasDayChange = true;
+  }
+  return { dayChange, hasDayChange };
+}
+
 function KpiCard({
   label,
   value,
@@ -187,6 +251,24 @@ function SignalValue({ result }: Readonly<{ result: CanonicalResult | undefined 
   return <>—</>;
 }
 
+/**
+ * A holding marked at its live price. Without one the totals fall back to cost
+ * basis (no phantom P&L) and carry no tone, so the row doesn't imply the price
+ * is unchanged (M1-T3, F-1.3b). Fees are part of the cost basis, as in the
+ * Invested and P&L cards.
+ */
+function holdingFigures(position: Position, livePrice: number | null | undefined) {
+  const hasLivePrice = typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0;
+  const currentPrice = hasLivePrice ? livePrice : position.buyPrice;
+  const marketValue = currentPrice * position.shares;
+  const costBasis = positionCostBasis(position);
+  const pnl = marketValue - costBasis;
+  const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  let tone: PnlTone | undefined;
+  if (hasLivePrice) tone = pnl >= 0 ? 'pnl-up' : 'pnl-down';
+  return { hasLivePrice, currentPrice, marketValue, costBasis, pnl, pnlPct, tone };
+}
+
 function HoldingRow({
   position,
   assets,
@@ -214,18 +296,10 @@ function HoldingRow({
     streamConnected,
   });
   const livePrice = asset?.current_price;
-  const hasLivePrice = typeof livePrice === 'number' && Number.isFinite(livePrice) && livePrice > 0;
-  // Without a live price the totals fall back to cost basis (no phantom P&L),
-  // but the row must NOT imply the price is unchanged — show '—' instead
-  // (M1-T3, F-1.3b).
-  const currentPrice = hasLivePrice ? livePrice : position.buyPrice;
-  const marketValue = currentPrice * position.shares;
-  // Fees are part of what the holding cost, as in the Invested and P&L cards above.
-  const costBasis = positionCostBasis(position);
-  const pnl = marketValue - costBasis;
-  const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-  let tone: PnlTone | undefined;
-  if (hasLivePrice) tone = pnl >= 0 ? 'pnl-up' : 'pnl-down';
+  const { hasLivePrice, currentPrice, marketValue, costBasis, pnl, pnlPct, tone } = holdingFigures(
+    position,
+    livePrice,
+  );
   const priceFlash = usePriceFlash(currentPrice);
   // A simulated close is a sell at the live price; with no price there is nothing to fill at.
   const closeBlocked = position.isSimulation && !hasLivePrice;
@@ -394,7 +468,7 @@ function HoldingRow({
               className="holding-action holding-action-danger"
               disabled={closeBlocked}
               title={closeBlocked ? 'No live price to close at yet' : undefined}
-              onClick={() => onClose(position, hasLivePrice ? livePrice : undefined)}
+              onClick={() => onClose(position, hasLivePrice ? currentPrice : undefined)}
             >
               <Trash2 size={15} /> Close Position
             </button>
@@ -452,7 +526,7 @@ export function TradeLedger({
           </h3>
           <div className="portfolio-section-actions">
             <span className="portfolio-count">
-              {transactions.length} ENTR{transactions.length === 1 ? 'Y' : 'IES'}
+              {countLabel(transactions.length, 'ENTRY', 'ENTRIES')}
             </span>
             <button
               type="button"
@@ -569,16 +643,12 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     portfolios,
   } = usePortfolio();
   const live = ledgerType === 'real_tracking';
+  const copy = LEDGER_COPY[ledgerType];
   const hydration = useHydrationState();
 
   // Cloud saves stay disabled until this user's cloud hydration settled —
   // never overwrite a row that is still loading (M1-T1, F-4.1b).
-  const saveBlocked =
-    user !== null &&
-    !(
-      hydration.userId === user.id &&
-      (hydration.status === 'ready' || hydration.status === 'error')
-    );
+  const saveBlocked = cloudSaveBlocked(user?.id ?? null, hydration);
 
   const livePrices = useLivePrices();
   const assets = useMemo(() => mergeLivePrices(baseAssets, livePrices), [baseAssets, livePrices]);
@@ -601,21 +671,12 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
     (transaction) => transaction.type === 'sell',
   ).length;
 
-  let dayChange = 0;
-  let hasDayChange = false;
-  for (const position of visible) {
-    const asset = assets.find((candidate) => candidate.ticker === position.ticker);
-    const change = asset?.change_24h;
-    if (change == null || !Number.isFinite(change)) continue;
-    const price = asset?.current_price ?? position.buyPrice;
-    dayChange += price * position.shares * change;
-    hasDayChange = true;
-  }
+  const { dayChange, hasDayChange } = dayChangeOf(visible, assets);
   let dayTone: PnlTone | undefined;
   if (hasDayChange) dayTone = dayChange >= 0 ? 'pnl-up' : 'pnl-down';
-  let dayIcon = <Activity size={18} />;
-  if (dayTone === 'pnl-up') dayIcon = <TrendingUp size={18} />;
-  else if (dayTone === 'pnl-down') dayIcon = <TrendingDown size={18} />;
+  const DayIcon = dayTone ? PNL_ICON[dayTone] : Activity;
+  // The P&L card colors break-even as a gain.
+  const pnlKpiTone: PnlTone = valuation.unrealizedPnl >= 0 ? 'pnl-up' : 'pnl-down';
 
   async function handleShare() {
     if (!user) {
@@ -738,28 +799,14 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
   }
 
   return (
-    <section
-      className="portfolio"
-      aria-label={live ? 'Tracked real holdings' : 'Simulated portfolio'}
-    >
-      <header className="portfolio-head" data-tour={live ? undefined : 'sim-portfolio'}>
+    <section className="portfolio" aria-label={copy.sectionLabel}>
+      <header className="portfolio-head" data-tour={copy.tour}>
         <div>
-          {live ? (
-            <span className="paper-eyebrow real-eyebrow">
-              <span className="paper-eyebrow-dot" aria-hidden="true" /> Real holdings · Tracking
-              only
-            </span>
-          ) : (
-            <span className="paper-eyebrow">
-              <span className="paper-eyebrow-dot" aria-hidden="true" /> Simulation Mode
-            </span>
-          )}
-          <h2 className="portfolio-title">{live ? 'Tracked Holdings' : 'Simulated Portfolio'}</h2>
-          <p className="portfolio-subtitle">
-            {live
-              ? 'Positions you hold at your broker, logged by hand. ZeroChart places no orders.'
-              : 'Long-term strategy sandbox: simulated cash, simulated fills. No real money.'}
-          </p>
+          <span className={copy.eyebrowClass}>
+            <span className="paper-eyebrow-dot" aria-hidden="true" /> {copy.eyebrow}
+          </span>
+          <h2 className="portfolio-title">{copy.title}</h2>
+          <p className="portfolio-subtitle">{copy.subtitle}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -791,14 +838,14 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         <KpiCard
           label="Invested"
           value={formatPrice(valuation.investedCostBasis)}
-          sub={`Cost basis · ${visible.length} ${visible.length === 1 ? 'holding' : 'holdings'}`}
+          sub={`Cost basis · ${countLabel(visible.length, 'holding', 'holdings')}`}
           icon={<Wallet size={18} />}
         />
         <KpiCard
           label="Current Value"
           value={formatPrice(valuation.marketValue)}
           sub={hasDayChange ? `24h ${formatPnl(dayChange)}` : 'Live prices'}
-          icon={dayIcon}
+          icon={<DayIcon size={18} />}
           accent={dayTone ? PNL_ACCENT[dayTone] : 'blue'}
           tone={dayTone}
         />
@@ -807,8 +854,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           value={formatPnl(valuation.unrealizedPnl)}
           sub={formatSignedPercent(valuation.unrealizedPnlPct)}
           icon={<Briefcase size={18} />}
-          accent={valuation.unrealizedPnl >= 0 ? 'green' : 'red'}
-          tone={valuation.unrealizedPnl >= 0 ? 'pnl-up' : 'pnl-down'}
+          accent={PNL_ACCENT[pnlKpiTone]}
+          tone={pnlKpiTone}
         />
         <div className={cn('kpi-card kpi-card-health', healthTone(stats.healthScore))}>
           <span className="overview-label">Signal Health</span>
@@ -832,7 +879,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         <TelemetryItem
           label="Realized P&L"
           value={formatPnl(valuation.realizedPnl)}
-          sub={`${closedCount} closed ${closedCount === 1 ? 'trade' : 'trades'} · FIFO lots`}
+          sub={`${countLabel(closedCount, 'closed trade', 'closed trades')} · FIFO lots`}
           icon={<CheckCircle2 size={16} />}
           accent="green"
           tone={pnlTone(valuation.realizedPnl)}
@@ -840,7 +887,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         <TelemetryItem
           label="Execution Drag"
           value={formatPrice(drag)}
-          sub={`Fees + slippage · ${tradeCount} ${tradeCount === 1 ? 'fill' : 'fills'}`}
+          sub={`Fees + slippage · ${countLabel(tradeCount, 'fill', 'fills')}`}
           icon={<Gauge size={16} />}
           accent="amber"
         />
@@ -856,7 +903,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
               <h3 className="portfolio-section-title">Holdings</h3>
               <div className="portfolio-section-actions">
                 <span className="portfolio-count">
-                  {visible.length} POSITION{visible.length === 1 ? '' : 'S'}
+                  {countLabel(visible.length, 'POSITION', 'POSITIONS')}
                 </span>
                 {live && <AddPositionModal />}
               </div>
@@ -913,14 +960,8 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
           ) : (
             <div className="holdings-empty">
               <Briefcase size={26} />
-              <span className="holdings-empty-title">
-                {live ? 'No tracked holdings yet' : 'No simulation positions'}
-              </span>
-              <span className="holdings-empty-sub">
-                {live
-                  ? 'Add a position you hold at your broker to track it here.'
-                  : 'Your simulated portfolio is empty. Build one with the Quant Analyzer in Research.'}
-              </span>
+              <span className="holdings-empty-title">{copy.emptyTitle}</span>
+              <span className="holdings-empty-sub">{copy.emptySub}</span>
             </div>
           )}
         </section>
@@ -967,7 +1008,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             Trade Ledger ({ledger.transactions.length})
           </button>
           <span className="portfolio-count analytics-entry-count">
-            {ledger.transactions.length} ENTR{ledger.transactions.length === 1 ? 'Y' : 'IES'}
+            {countLabel(ledger.transactions.length, 'ENTRY', 'ENTRIES')}
           </span>
           <button
             type="button"
@@ -975,7 +1016,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             disabled={ledger.transactions.length === 0}
             onClick={() =>
               downloadCsv(
-                `zerochart-ledger-${live ? 'live' : 'simulation'}.csv`,
+                `zerochart-ledger-${copy.csvSlug}.csv`,
                 tradeLedgerCsv(ledger.transactions),
               )
             }

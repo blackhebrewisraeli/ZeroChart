@@ -10,20 +10,25 @@ BATCH_ID=30000000-0000-4000-8000-0000000000c2
 OTHER_BATCH_ID=30000000-0000-4000-8000-0000000000c3
 failures=0
 
-sql() { psql "$DB" -X -q -At -v ON_ERROR_STOP=1 -c "$1"; }
-# One authenticated session: holds its transaction open for $2 seconds after $1.
+sql() {
+  local query=$1
+  psql "$DB" -X -q -At -v ON_ERROR_STOP=1 -c "$query"
+}
+# One authenticated session: runs the statements, then holds its transaction open.
 as_user() {
+  local statements=$1 hold_seconds=${2:-0}
   psql "$DB" -X -q -At 2>&1 <<SQL
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '$USER_ID', true);
-$1
-select pg_sleep(${2:-0});
+$statements
+select pg_sleep($hold_seconds);
 commit;
 SQL
 }
 check() {
-  if [[ "$2" == "$3" ]]; then echo "ok - $1"; else echo "not ok - $1: got '$2', want '$3'"; failures=$((failures + 1)); fi
+  local name=$1 got=$2 want=$3
+  if [[ "$got" == "$want" ]]; then echo "ok - $name"; else echo "not ok - $name: got '$got', want '$want'"; failures=$((failures + 1)); fi
 }
 cleanup() { sql "delete from auth.users where id = '$USER_ID'; delete from public.assets_status where ticker = 'RACE';" >/dev/null; }
 trap cleanup EXIT
@@ -51,7 +56,8 @@ check "one signal books exactly one fill" \
 
 # 2. A retry racing the original request: one batch of fills, the same receipt twice.
 invest() {
-  echo "select public.execute_paper_portfolio('$1', 'moderate', $2, '[{\"ticker\": \"RACE\", \"amount\": $3, \"score\": 70}]')->>'request_id';"
+  local request_id=$1 budget=$2 amount=$3
+  echo "select public.execute_paper_portfolio('$request_id', 'moderate', $budget, '[{\"ticker\": \"RACE\", \"amount\": $amount, \"score\": 70}]')->>'request_id';"
 }
 as_user "$(invest "$BATCH_ID" 60000 15000)" 2 >/dev/null &
 first=$!

@@ -11,7 +11,6 @@ import {
   Shield,
   X,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
@@ -21,16 +20,8 @@ import { buildQuantPortfolio } from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { MIN_CANDLES, REGIME_LABELS } from '@/lib/canonicalModel';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
-import { applyBuyTransaction } from '@/lib/portfolioAccounting';
 import { usePortfolio } from '@/lib/portfolioStore';
-import {
-  executePaperPortfolio,
-  loadPaperTransactions,
-  PortfolioRejectedError,
-  type PortfolioHolding,
-  type PortfolioReceipt,
-} from '@/lib/db';
-import { FEE_RATE } from '@/components/TradeTicket';
+import { useProposalExecution } from '@/hooks/useProposalExecution';
 import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const RISK_OPTIONS: {
@@ -81,86 +72,173 @@ function scoreTone(score: number | null) {
   return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
 }
 
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+type Proposal = ReturnType<typeof useProposalExecution>;
 
-/**
- * Where booking the shown proposal stands. `uncertain` means the request may
- * have committed (the connection dropped): it is reconciled by request ID
- * before anything else can be tried.
- */
-type Execution =
-  | { state: 'idle' }
-  | { state: 'pending' }
-  | { state: 'failed'; reason: string }
-  | { state: 'uncertain'; checking: boolean }
-  | { state: 'completed'; receipt: PortfolioReceipt };
-
-/** What the server needs from a proposal: it prices and sizes each holding itself. */
-function toHoldings(result: Allocation[]): PortfolioHolding[] {
-  return result.map((allocation) => ({
-    ticker: allocation.ticker,
-    amount: allocation.allocatedAmount,
-    score: allocation.score ?? null,
-  }));
-}
-
-/**
- * A signed-out proposal priced in the browser, the way the guest ledger books
- * it: live price, ATR suggested shares capped at the allocation. It has no
- * server risk book, so its risk fields are NaN and stay hidden.
- */
-function guestPlan(
-  result: Allocation[],
-  assetByTicker: ReadonlyMap<string, Asset>,
-  cash: number,
-  budget: number,
-  requestId: string,
-): PortfolioReceipt {
-  const orders = result.flatMap((allocation) => {
-    const price = assetByTicker.get(allocation.ticker)?.current_price;
-    const atrLimit = allocation.suggestedShares;
-    if (!price || !Number.isFinite(price) || price <= 0 || !atrLimit || atrLimit <= 0) return [];
-    const budgetShares = allocation.allocatedAmount / (price * (1 + FEE_RATE));
-    const quantity = Math.floor(Math.min(atrLimit, budgetShares) * 1e8) / 1e8;
-    if (quantity <= 0) return [];
-    const fees = quantity * price * FEE_RATE;
-    return [
-      {
-        ticker: allocation.ticker,
-        quantity,
-        price,
-        fees,
-        cost: quantity * price + fees,
-        stop_price: Number.NaN,
-        atr: Number.NaN,
-        planned_risk: Number.NaN,
-      },
-    ];
-  });
-  if (orders.length === 0) {
-    throw new PortfolioRejectedError(
-      'No holding has a live price and an ATR-sized quantity to buy right now.',
+/** The orders the server will book, or the receipt once it has. */
+function PlanDetails({ proposal }: Readonly<{ proposal: Proposal }>) {
+  const { plan, planError, execution } = proposal;
+  if (planError) {
+    return (
+      <p className="robo-error" role="alert">
+        Can't book this proposal: {planError}
+      </p>
     );
   }
-  const spent = orders.reduce((sum, order) => sum + order.cost, 0);
-  return {
-    request_id: requestId,
-    status: 'planned',
-    replayed: false,
-    policy_version: 'browser',
-    risk_profile: '',
-    budget,
-    cash_before: cash,
-    spent,
-    fees: orders.reduce((sum, order) => sum + order.fees, 0),
-    cash_after: cash - spent,
-    equity: Number.NaN,
-    open_risk_before: Number.NaN,
-    planned_risk: Number.NaN,
-    max_open_risk: Number.NaN,
-    orders,
-    executed_at: null,
-  };
+  if (!plan) {
+    return <output className="robo-hint">Checking prices and Paper Cash on the server…</output>;
+  }
+  const sized = Number.isFinite(plan.planned_risk);
+  return (
+    <>
+      <div className="robo-plan-scroll">
+        <table className="robo-plan-table">
+          <thead>
+            <tr>
+              <th scope="col">Asset</th>
+              <th scope="col">Units</th>
+              <th scope="col">Price</th>
+              <th scope="col">Fee</th>
+              <th scope="col">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.orders.map((order) => (
+              <tr key={order.ticker}>
+                <th scope="row">{order.ticker}</th>
+                <td>{formatShares(order.quantity)}</td>
+                <td>{formatPrice(order.price)}</td>
+                <td>{formatPrice(order.fees)}</td>
+                <td>{formatPrice(order.cost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <dl className="robo-plan-totals">
+        <div>
+          <dt>Paper Cash</dt>
+          <dd>{formatPrice(plan.cash_before)}</dd>
+        </div>
+        <div>
+          <dt>{execution.state === 'completed' ? 'Spent' : 'Planned spend'}</dt>
+          <dd>{formatPrice(plan.spent)}</dd>
+        </div>
+        <div>
+          <dt>Cash after</dt>
+          <dd>{formatPrice(plan.cash_after)}</dd>
+        </div>
+        {sized && (
+          <div>
+            <dt>Risk at planned stops</dt>
+            <dd>
+              {formatPrice(plan.open_risk_before + plan.planned_risk)} of{' '}
+              {formatPrice(plan.max_open_risk)} cap
+            </dd>
+          </div>
+        )}
+      </dl>
+      {sized && (
+        <p className="robo-hint">
+          Units are sized against a 2×ATR planned stop. Paper Trading places no stop orders: nothing
+          sells automatically.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** What happened to the last Confirm, when anything did. */
+function ExecutionNote({ proposal }: Readonly<{ proposal: Proposal }>) {
+  const { execution, checkAgain } = proposal;
+  switch (execution.state) {
+    case 'failed':
+      return (
+        <p className="robo-error" role="alert">
+          Not booked: {execution.reason}
+        </p>
+      );
+    case 'uncertain':
+      return (
+        <output className="robo-plan-uncertain">
+          <span>
+            {execution.checking
+              ? 'The connection dropped before the server answered. Checking whether this request was booked…'
+              : "Couldn't reach the server to check whether this request was booked."}
+          </span>
+          {checkAgain && (
+            <button type="button" className="robo-back" onClick={checkAgain}>
+              <RefreshCw size={14} /> Check again
+            </button>
+          )}
+        </output>
+      );
+    case 'completed': {
+      const count = execution.receipt.orders.length;
+      return (
+        <output className="robo-plan-receipt">
+          Booked {count} {count === 1 ? 'order' : 'orders'} in one transaction · receipt{' '}
+          {execution.receipt.request_id.slice(0, 8)}
+        </output>
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+function ProposalOrders({ proposal }: Readonly<{ proposal: Proposal }>) {
+  return (
+    <section className="robo-plan" aria-labelledby="robo-plan-title">
+      <h3 id="robo-plan-title" className="robo-plan-title">
+        {proposal.execution.state === 'completed' ? 'Receipt' : 'Orders'}
+      </h3>
+      <PlanDetails proposal={proposal} />
+      <ExecutionNote proposal={proposal} />
+    </section>
+  );
+}
+
+function ProposalFooter({
+  proposal,
+  onAdjust,
+  onDone,
+  onViewLedger,
+}: Readonly<{
+  proposal: Proposal;
+  onAdjust: () => void;
+  onDone: () => void;
+  onViewLedger: () => void;
+}>) {
+  const { plan, planError, execution, busy, confirm } = proposal;
+  if (execution.state === 'completed') {
+    return (
+      <footer className="robo-footer">
+        <button type="button" className="robo-back" onClick={onDone}>
+          Done
+        </button>
+        <button type="button" className="robo-submit robo-submit-invest" onClick={onViewLedger}>
+          View in Paper Trading <ArrowRight size={16} />
+        </button>
+      </footer>
+    );
+  }
+  const pending = execution.state === 'pending';
+  return (
+    <footer className="robo-footer">
+      <button type="button" className="robo-back" disabled={busy} onClick={onAdjust}>
+        <ArrowLeft size={16} /> Adjust
+      </button>
+      <button
+        type="button"
+        className="robo-submit robo-submit-invest"
+        onClick={() => void confirm()}
+        disabled={!plan || !!planError || busy}
+        aria-busy={pending}
+      >
+        {pending ? 'Booking orders…' : 'Simulate on Paper Desk'} <Rocket size={16} />
+      </button>
+    </footer>
+  );
 }
 
 export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: () => void }) {
@@ -185,19 +263,15 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
   const closeTimer = useRef<number | undefined>(undefined);
 
   const assetByTicker = useMemo(() => new Map(assets.map((a) => [a.ticker, a])), [assets]);
-  const {
-    executePaperTrade,
-    getPortfolio,
-    replacePaperLedger,
-    scopeUserId: userId,
-  } = usePortfolio();
-  // One request ID per proposal, shared by its preview and every retry, so the
-  // server books it at most once however often Confirm reaches it.
-  const [requestId, setRequestId] = useState('');
-  const [plan, setPlan] = useState<PortfolioReceipt | null>(null);
-  const [planError, setPlanError] = useState<string | null>(null);
-  const [execution, setExecution] = useState<Execution>({ state: 'idle' });
-  const executingRef = useRef(false);
+  const { getPortfolio } = usePortfolio();
+  const proposal = useProposalExecution({
+    phase,
+    result,
+    budget: total,
+    riskProfile,
+    assetByTicker,
+    closingRef,
+  });
 
   function openModal() {
     closingRef.current = false;
@@ -307,159 +381,6 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
       setResult(allocation);
     } finally {
       setBuilding(false);
-    }
-  }
-
-  // A new proposal gets a new request ID and, signed in, a server price check:
-  // the quantities, fees and cash shown are the ones Confirm will book.
-  useEffect(() => {
-    if (phase !== 'results' || !result || result.length === 0) return;
-    const id = crypto.randomUUID();
-    setRequestId(id);
-    setPlan(null);
-    setPlanError(null);
-    setExecution({ state: 'idle' });
-    if (userId === null) return;
-    let live = true;
-    executePaperPortfolio({
-      requestId: id,
-      riskProfile,
-      budget: total,
-      holdings: toHoldings(result),
-      dryRun: true,
-    })
-      .then((priced) => {
-        if (live) setPlan(priced);
-      })
-      .catch((error: unknown) => {
-        if (live) setPlanError(errorMessage(error));
-      });
-    return () => {
-      live = false;
-    };
-  }, [phase, result, total, riskProfile, userId]);
-
-  const guest = useMemo(() => {
-    if (userId !== null || !result || result.length === 0) return null;
-    try {
-      const cash = getPortfolio('paper_trading').cashBalance;
-      return { plan: guestPlan(result, assetByTicker, cash, total, requestId), error: null };
-    } catch (error) {
-      return { plan: null, error: errorMessage(error) };
-    }
-  }, [userId, result, assetByTicker, getPortfolio, total, requestId]);
-
-  const shownPlan =
-    execution.state === 'completed' ? execution.receipt : userId === null ? guest?.plan : plan;
-  const shownPlanError = userId === null ? (guest?.error ?? null) : planError;
-  const busy = execution.state === 'pending' || execution.state === 'uncertain';
-
-  async function settle(receipt: PortfolioReceipt, account: string) {
-    setExecution({ state: 'completed', receipt });
-    try {
-      replacePaperLedger(await loadPaperTransactions(account));
-    } catch {
-      toast.warning('Orders booked; Paper Trading is still syncing');
-    }
-  }
-
-  /** After a lost response: asks the server whether this request ID booked. */
-  async function reconcile(account: string) {
-    if (!result) return;
-    setExecution({ state: 'uncertain', checking: true });
-    try {
-      const found = await executePaperPortfolio({
-        requestId,
-        riskProfile,
-        budget: total,
-        holdings: toHoldings(result),
-        dryRun: true,
-      });
-      if (found.status === 'executed') {
-        await settle(found, account);
-      } else {
-        setExecution({
-          state: 'failed',
-          reason:
-            'The server has no record of this request, so nothing was booked. Trying again is safe: one request can only book once.',
-        });
-      }
-    } catch (error) {
-      setExecution(
-        error instanceof PortfolioRejectedError
-          ? { state: 'failed', reason: error.message }
-          : { state: 'uncertain', checking: false },
-      );
-    }
-  }
-
-  /** Signed out there is no server ledger: book the browser plan, all or nothing. */
-  async function investAsGuest(guestOrders: PortfolioReceipt) {
-    const timestamp = new Date().toISOString();
-    const orders = guestOrders.orders.map((order) => {
-      const name = assetByTicker.get(order.ticker)?.name;
-      return {
-        side: 'buy' as const,
-        ticker: order.ticker,
-        ...(name ? { name } : {}),
-        shares: order.quantity,
-        price: order.price,
-        fee: order.fees,
-      };
-    });
-    // Check the whole batch against the account before booking its first row.
-    let preview = getPortfolio('paper_trading');
-    for (const order of orders) {
-      const bought = applyBuyTransaction(preview, { ...order, timestamp });
-      if (!bought.ok) {
-        setExecution({ state: 'failed', reason: bought.error });
-        return;
-      }
-      preview = bought.container;
-    }
-    for (const order of orders) {
-      const booked = await executePaperTrade(order);
-      if (!booked.ok) {
-        setExecution({ state: 'failed', reason: booked.error ?? 'Order rejected' });
-        return;
-      }
-    }
-    setExecution({
-      state: 'completed',
-      receipt: { ...guestOrders, status: 'executed', executed_at: timestamp },
-    });
-  }
-
-  async function handleConfirmInvest() {
-    // A second click (or Enter) while a request is out must not send another.
-    if (executingRef.current || closingRef.current || !result || result.length === 0) return;
-    if (busy || execution.state === 'completed') return;
-    executingRef.current = true;
-    try {
-      if (userId === null) {
-        if (guest?.plan) await investAsGuest(guest.plan);
-        return;
-      }
-      if (!plan) return;
-      setExecution({ state: 'pending' });
-      try {
-        const receipt = await executePaperPortfolio({
-          requestId,
-          riskProfile,
-          budget: total,
-          holdings: toHoldings(result),
-          dryRun: false,
-        });
-        await settle(receipt, userId);
-      } catch (error) {
-        if (error instanceof PortfolioRejectedError) {
-          setExecution({ state: 'failed', reason: error.message });
-        } else {
-          await reconcile(userId);
-        }
-      }
-    } finally {
-      executingRef.current = false;
     }
   }
 
@@ -809,7 +730,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                                     className="robo-swap"
                                     onClick={() => handleSwap(allocation.ticker)}
                                     disabled={
-                                      !canSwapMore || busy || execution.state === 'completed'
+                                      !canSwapMore ||
+                                      proposal.busy ||
+                                      proposal.execution.state === 'completed'
                                     }
                                     aria-label={`Swap ${allocation.ticker} for the next best asset`}
                                     title={
@@ -836,109 +759,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                           })}
                         </ul>
 
-                        <section className="robo-plan" aria-labelledby="robo-plan-title">
-                          <h3 id="robo-plan-title" className="robo-plan-title">
-                            {execution.state === 'completed' ? 'Receipt' : 'Orders'}
-                          </h3>
-                          {shownPlanError ? (
-                            <p className="robo-error" role="alert">
-                              Can't book this proposal: {shownPlanError}
-                            </p>
-                          ) : !shownPlan ? (
-                            <p className="robo-hint" role="status">
-                              Checking prices and Paper Cash on the server…
-                            </p>
-                          ) : (
-                            <>
-                              <div className="robo-plan-scroll">
-                                <table className="robo-plan-table">
-                                  <thead>
-                                    <tr>
-                                      <th scope="col">Asset</th>
-                                      <th scope="col">Units</th>
-                                      <th scope="col">Price</th>
-                                      <th scope="col">Fee</th>
-                                      <th scope="col">Cost</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {shownPlan.orders.map((order) => (
-                                      <tr key={order.ticker}>
-                                        <th scope="row">{order.ticker}</th>
-                                        <td>{formatShares(order.quantity)}</td>
-                                        <td>{formatPrice(order.price)}</td>
-                                        <td>{formatPrice(order.fees)}</td>
-                                        <td>{formatPrice(order.cost)}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                              <dl className="robo-plan-totals">
-                                <div>
-                                  <dt>Paper Cash</dt>
-                                  <dd>{formatPrice(shownPlan.cash_before)}</dd>
-                                </div>
-                                <div>
-                                  <dt>
-                                    {execution.state === 'completed' ? 'Spent' : 'Planned spend'}
-                                  </dt>
-                                  <dd>{formatPrice(shownPlan.spent)}</dd>
-                                </div>
-                                <div>
-                                  <dt>Cash after</dt>
-                                  <dd>{formatPrice(shownPlan.cash_after)}</dd>
-                                </div>
-                                {Number.isFinite(shownPlan.planned_risk) && (
-                                  <div>
-                                    <dt>Risk at planned stops</dt>
-                                    <dd>
-                                      {formatPrice(
-                                        shownPlan.open_risk_before + shownPlan.planned_risk,
-                                      )}{' '}
-                                      of {formatPrice(shownPlan.max_open_risk)} cap
-                                    </dd>
-                                  </div>
-                                )}
-                              </dl>
-                              {Number.isFinite(shownPlan.planned_risk) && (
-                                <p className="robo-hint">
-                                  Units are sized against a 2×ATR planned stop. Paper Trading places
-                                  no stop orders: nothing sells automatically.
-                                </p>
-                              )}
-                            </>
-                          )}
-                          {execution.state === 'failed' && (
-                            <p className="robo-error" role="alert">
-                              Not booked: {execution.reason}
-                            </p>
-                          )}
-                          {execution.state === 'uncertain' && (
-                            <div className="robo-plan-uncertain" role="status">
-                              <p>
-                                {execution.checking
-                                  ? 'The connection dropped before the server answered. Checking whether this request was booked…'
-                                  : "Couldn't reach the server to check whether this request was booked."}
-                              </p>
-                              {!execution.checking && userId !== null && (
-                                <button
-                                  type="button"
-                                  className="robo-back"
-                                  onClick={() => void reconcile(userId)}
-                                >
-                                  <RefreshCw size={14} /> Check again
-                                </button>
-                              )}
-                            </div>
-                          )}
-                          {execution.state === 'completed' && (
-                            <p className="robo-plan-receipt" role="status">
-                              Booked {execution.receipt.orders.length} orders in one transaction ·
-                              receipt {execution.receipt.request_id.slice(0, 8)}
-                            </p>
-                          )}
-                        </section>
+                        <ProposalOrders proposal={proposal} />
                       </>
                     ) : (
                       <div className="robo-empty">
@@ -954,48 +775,15 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                     )}
                   </div>
 
-                  <footer className="robo-footer">
-                    {execution.state === 'completed' ? (
-                      <>
-                        <button type="button" className="robo-back" onClick={closeModal}>
-                          Done
-                        </button>
-                        <button
-                          type="button"
-                          className="robo-submit robo-submit-invest"
-                          onClick={viewLedger}
-                        >
-                          View in Paper Trading <ArrowRight size={16} />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="robo-back"
-                          disabled={busy}
-                          onClick={() => {
-                            setPhase('config');
-                            setError(null);
-                          }}
-                        >
-                          <ArrowLeft size={16} /> Adjust
-                        </button>
-                        <button
-                          type="button"
-                          className="robo-submit robo-submit-invest"
-                          onClick={handleConfirmInvest}
-                          disabled={!shownPlan || !!shownPlanError || busy}
-                          aria-busy={execution.state === 'pending'}
-                        >
-                          {execution.state === 'pending'
-                            ? 'Booking orders…'
-                            : 'Simulate on Paper Desk'}{' '}
-                          <Rocket size={16} />
-                        </button>
-                      </>
-                    )}
-                  </footer>
+                  <ProposalFooter
+                    proposal={proposal}
+                    onAdjust={() => {
+                      setPhase('config');
+                      setError(null);
+                    }}
+                    onDone={closeModal}
+                    onViewLedger={viewLedger}
+                  />
                 </>
               )}
             </div>

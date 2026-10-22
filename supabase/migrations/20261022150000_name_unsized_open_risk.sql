@@ -31,8 +31,8 @@ begin
     ' ',
     format(
       'Portfolio max risk reached: %s%% open + %s%% new would pass the %s%% limit.',
-      to_char(100 * open_risk / equity, 'FM990.0'),
-      to_char(100 * added_risk / equity, 'FM990.0'),
+      round(100 * open_risk / equity, 1),
+      round(100 * added_risk / equity, 1),
       trim_scale(cap * 100)
     ),
     case when unsized is not null then format(
@@ -271,6 +271,7 @@ as $$
 declare
   account uuid := (select auth.uid());
   rejected constant text := 'check_violation';
+  invalid constant text := 'invalid_parameter_value';
   policy record;
   book record;
   prior public.paper_order_batches%rowtype;
@@ -296,7 +297,7 @@ begin
     raise exception 'Sign in to invest from Paper Cash' using errcode = '42501';
   end if;
   if request_id is null then
-    raise exception 'A request ID is required' using errcode = '22023';
+    raise exception 'A request ID is required' using errcode = invalid;
   end if;
   -- check_paper_transaction's lock: competing proposals and fills on one
   -- account run one at a time and each sees the cash the last one left.
@@ -312,13 +313,13 @@ begin
 
   select * into policy from public.paper_risk_policy(risk_profile);
   if policy.max_holdings is null then
-    raise exception 'Unknown risk profile %', coalesce(risk_profile, 'null') using errcode = '22023';
+    raise exception 'Unknown risk profile %', coalesce(risk_profile, 'null') using errcode = invalid;
   end if;
   if budget is null or budget <= 0 then
-    raise exception 'Enter an investment amount greater than $0' using errcode = '22023';
+    raise exception 'Enter an investment amount greater than $0' using errcode = invalid;
   end if;
   if jsonb_typeof(holdings) is distinct from 'array' or jsonb_array_length(holdings) = 0 then
-    raise exception 'The proposal has no holdings' using errcode = '22023';
+    raise exception 'The proposal has no holdings' using errcode = invalid;
   end if;
   if jsonb_array_length(holdings) > policy.max_holdings then
     raise exception 'A % portfolio holds at most % assets', risk_profile, policy.max_holdings
@@ -326,7 +327,7 @@ begin
   end if;
   if (select count(distinct upper(h ->> 'ticker')) from jsonb_array_elements(holdings) h)
     <> jsonb_array_length(holdings) then
-    raise exception 'Each asset can appear only once in a proposal' using errcode = '22023';
+    raise exception 'Each asset can appear only once in a proposal' using errcode = invalid;
   end if;
 
   select * into book from public.paper_account_book(account);
@@ -343,10 +344,10 @@ begin
     attested_score := case when jsonb_typeof(holding -> 'score') = 'number' then (holding ->> 'score')::numeric end;
 
     if symbol is null or symbol = '' then
-      raise exception 'Every holding needs a ticker' using errcode = '22023';
+      raise exception 'Every holding needs a ticker' using errcode = invalid;
     end if;
     if allocation is null or allocation <= 0 then
-      raise exception '% needs an allocation greater than $0', symbol using errcode = '22023';
+      raise exception '% needs an allocation greater than $0', symbol using errcode = invalid;
     end if;
     -- A cent of slack for the client rounding each allocation to cents.
     if allocation > budget * policy.max_position + 0.01 then

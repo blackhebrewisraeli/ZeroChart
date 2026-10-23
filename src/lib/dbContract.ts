@@ -66,6 +66,35 @@ function accepts(fn: CatalogFunction, sent: readonly string[]): boolean {
   return sent.every((arg) => fn.args.includes(arg)) && required.every((arg) => sent.includes(arg));
 }
 
+/** Whether one call shape resolves to exactly one overload, and (if `roles`) who may run it. */
+function callGaps(
+  name: string,
+  overloads: readonly CatalogFunction[],
+  sent: readonly string[],
+  roles: readonly Role[] | null,
+): string[] {
+  const call = `${name}(${sent.join(', ')})`;
+  const matches = overloads.filter((fn) => accepts(fn, sent));
+  const [fn] = matches;
+  if (!fn) {
+    return [
+      `${call}: no function accepts these arguments (PGRST202), or none that anon or authenticated may execute`,
+    ];
+  }
+  if (matches.length > 1) {
+    return [
+      `${call}: ${matches.length} overloads accept it, so PostgREST can't choose one (PGRST203)`,
+    ];
+  }
+  if (!roles) return [];
+  return (['anon', 'authenticated'] as const)
+    .filter((role) => fn[role] !== roles.includes(role))
+    .map(
+      (role) =>
+        `${call}: ${role} ${fn[role] ? 'can' : 'cannot'} execute it; the frontend needs ${roles.join(' and ')} only`,
+    );
+}
+
 /** Why the database can't serve this frontend; empty when it can. */
 export function contractGaps(
   catalog: ReleaseCatalog,
@@ -76,29 +105,10 @@ export function contractGaps(
     const overloads = catalog.functions.filter((fn) => fn.name === name);
     const every = Object.keys(rpc.args);
     const always = every.filter((arg) => rpc.args[arg] === 'always');
-    // Each call shape the frontend sends must resolve to exactly one overload.
-    for (const sent of always.length === every.length ? [every] : [every, always]) {
-      const call = `${name}(${sent.join(', ')})`;
-      const matches = overloads.filter((fn) => accepts(fn, sent));
-      const [fn] = matches;
-      if (!fn) {
-        gaps.push(
-          `${call}: no function accepts these arguments (PGRST202), or none that anon or authenticated may execute`,
-        );
-      } else if (matches.length > 1) {
-        gaps.push(
-          `${call}: ${matches.length} overloads accept it, so PostgREST can't choose one (PGRST203)`,
-        );
-      } else if (sent === every) {
-        for (const role of ['anon', 'authenticated'] as const) {
-          if (fn[role] !== rpc.roles.includes(role)) {
-            gaps.push(
-              `${call}: ${role} ${fn[role] ? 'can' : 'cannot'} execute it; the frontend needs ${rpc.roles.join(' and ')} only`,
-            );
-          }
-        }
-      }
-    }
+    // Each call shape the frontend sends must resolve to exactly one overload;
+    // grants are checked once, on the full call.
+    gaps.push(...callGaps(name, overloads, every, rpc.roles));
+    if (always.length < every.length) gaps.push(...callGaps(name, overloads, always, null));
   }
   return gaps;
 }

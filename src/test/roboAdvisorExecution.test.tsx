@@ -1,10 +1,12 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { toast } from 'sonner';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoboAdvisor } from '@/components/RoboAdvisor';
 import type { Asset } from '@/lib/assets';
 import {
   executePaperPortfolio,
   loadPaperTransactions,
+  PortfolioChangedError,
   PortfolioRejectedError,
   type PortfolioReceipt,
 } from '@/lib/db';
@@ -15,7 +17,9 @@ const store = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/authStore', () => ({ useAuth: () => ({ isPro: true }) }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), info: vi.fn(), success: vi.fn(), warning: vi.fn() },
+}));
 vi.mock('@/lib/portfolioStore', () => ({
   usePortfolio: () => ({
     ...store,
@@ -89,6 +93,10 @@ const bookingCalls = () =>
 
 async function openProposal() {
   render(<RoboAdvisor assets={assets} />);
+  return buildProposal();
+}
+
+async function buildProposal() {
   fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
   const dialog = await screen.findByRole('dialog');
   fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
@@ -97,6 +105,9 @@ async function openProposal() {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.info).mockClear();
   execute.mockReset();
   store.replacePaperLedger.mockReset();
   vi.mocked(loadPaperTransactions).mockClear();
@@ -138,6 +149,10 @@ describe('RoboAdvisor execution, signed in', () => {
     });
     expect(await screen.findByRole('button', { name: /booking orders/i })).toBeDisabled();
     expect(bookingCalls()).toEqual([preview?.requestId]);
+    // Escape can't close the dialog while the booking is out (closing takes 300 ms).
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(screen.getByRole('dialog')).toBeVisible();
 
     book(receipt('executed', preview?.requestId ?? ''));
     expect(await screen.findByText(/Booked 2 orders in one transaction/)).toBeVisible();
@@ -244,5 +259,104 @@ describe('RoboAdvisor execution, signed in', () => {
     expect(screen.getByRole('button', { name: /simulate on paper desk/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /check again/i })).toBeEnabled();
     expect(bookingCalls()).toHaveLength(1);
+  });
+
+  it('books the previewed orders, or shows the repriced plan for a fresh Confirm when they moved', async () => {
+    let previews = 0;
+    execute.mockImplementation((proposal) => {
+      if (proposal.dryRun) {
+        previews += 1;
+        const plan = receipt('planned', proposal.requestId);
+        // Priced again after the refusal, BTC is 1% higher.
+        if (previews > 1) {
+          plan.orders = plan.orders.map((order) =>
+            order.ticker === 'BTC' ? { ...order, price: 50_500 } : order,
+          );
+        }
+        return Promise.resolve(plan);
+      }
+      return bookingCalls().length === 1
+        ? Promise.reject(
+            new PortfolioChangedError(
+              'Prices or sizes moved more than 0.5% since the preview. Review the updated orders and confirm again.',
+            ),
+          )
+        : Promise.resolve(receipt('executed', proposal.requestId));
+    });
+
+    fireEvent.click(await openProposal());
+
+    expect(
+      await screen.findByText(/Not booked: Prices or sizes moved more than 0.5%/),
+    ).toBeVisible();
+    expect(await screen.findByText('$50,500.00')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /simulate on paper desk/i }));
+    expect(await screen.findByText(/Booked 2 orders in one transaction/)).toBeVisible();
+
+    const bookings = execute.mock.calls.map(([p]) => p).filter((p) => !p.dryRun);
+    // Each Confirm sends the plan on screen, under the proposal's one request ID.
+    expect(bookings.map((p) => p.expected?.[0])).toEqual([
+      { ticker: 'BTC', price: 50_000, quantity: 0.04987531 },
+      { ticker: 'BTC', price: 50_500, quantity: 0.04987531 },
+    ]);
+    expect(bookings[1]?.requestId).toBe(bookings[0]?.requestId);
+  });
+
+  it('recovers a lost booking by its request ID after the page reloads', async () => {
+    execute.mockImplementation((proposal) =>
+      proposal.dryRun && bookingCalls().length === 0
+        ? Promise.resolve(receipt('planned', proposal.requestId))
+        : Promise.reject(new Error('Failed to fetch')),
+    );
+    fireEvent.click(await openProposal());
+    expect(await screen.findByText(/Couldn't reach the server to check/)).toBeVisible();
+    const [lost] = bookingCalls();
+
+    // The page reloads, and the server is reachable again: the booking had committed.
+    cleanup();
+    execute.mockReset();
+    execute.mockImplementation((proposal) =>
+      Promise.resolve({ ...receipt('executed', proposal.requestId), replayed: true }),
+    );
+    render(<RoboAdvisor assets={assets} />);
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Your earlier Quant Analyzer request booked 2 orders',
+        { description: `Receipt ${lost?.slice(0, 8)}: $4,999.99 spent from Paper Cash.` },
+      ),
+    );
+    expect(execute.mock.calls.map(([p]) => [p.requestId, p.dryRun])).toEqual([[lost, true]]);
+    await waitFor(() => expect(store.replacePaperLedger).toHaveBeenCalled());
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('settles a lost booking when the dialog is closed and reopened', async () => {
+    execute.mockImplementation((proposal) =>
+      proposal.dryRun && bookingCalls().length === 0
+        ? Promise.resolve(receipt('planned', proposal.requestId))
+        : Promise.reject(new Error('Failed to fetch')),
+    );
+    fireEvent.click(await openProposal());
+    expect(await screen.findByText(/Couldn't reach the server to check/)).toBeVisible();
+    const [lost] = bookingCalls();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // Back online, and the booking never reached the server.
+    execute.mockImplementation((proposal) =>
+      Promise.resolve(receipt('planned', proposal.requestId)),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        'An earlier Quant Analyzer request was not booked',
+        expect.anything(),
+      ),
+    );
+    expect(execute.mock.calls.some(([p]) => p.requestId === lost && p.dryRun)).toBe(true);
+    expect(bookingCalls()).toEqual([lost]);
+    expect(localStorage.length).toBe(0);
   });
 });

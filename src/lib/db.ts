@@ -180,6 +180,14 @@ export class PortfolioRejectedError extends Error {
   }
 }
 
+/** Refused because the orders moved past the tolerance since the preview: re-preview, then confirm again. */
+export class PortfolioChangedError extends PortfolioRejectedError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PortfolioChangedError';
+  }
+}
+
 // A SQLSTATE or PostgREST code means Postgres answered; anything else (a
 // dropped connection, a gateway timeout) leaves the outcome unknown.
 const SERVER_ERROR_CODE = /^([0-9A-Z]{5}|PGRST\d+)$/;
@@ -188,8 +196,10 @@ const SERVER_ERROR_CODE = /^([0-9A-Z]{5}|PGRST\d+)$/;
  * Prices a proposal (`dryRun`) or books all of it in one transaction. A retry
  * with the same requestId never books twice: it returns the first receipt, and
  * a dry run with an executed requestId does too, which is how a caller
- * reconciles a response it lost. Throws PortfolioRejectedError when the server
- * refused, and a plain Error when the outcome is unknown.
+ * reconciles a response it lost. A booking given the previewed `expected`
+ * orders books them or nothing (PortfolioChangedError when they moved). Throws
+ * PortfolioRejectedError when the server refused, and a plain Error when the
+ * outcome is unknown.
  */
 export async function executePaperPortfolio(proposal: {
   requestId: string;
@@ -197,6 +207,7 @@ export async function executePaperPortfolio(proposal: {
   budget: number;
   holdings: PortfolioHolding[];
   dryRun: boolean;
+  expected?: Pick<PortfolioOrder, 'ticker' | 'price' | 'quantity'>[];
 }): Promise<PortfolioReceipt> {
   const { data, error } = await supabase.rpc('execute_paper_portfolio', {
     request_id: proposal.requestId,
@@ -204,8 +215,10 @@ export async function executePaperPortfolio(proposal: {
     budget: proposal.budget,
     holdings: proposal.holdings as unknown as Json,
     dry_run: proposal.dryRun,
+    ...(proposal.expected ? { expected: proposal.expected as unknown as Json } : {}),
   });
   if (error) {
+    if (error.code === 'PT409') throw new PortfolioChangedError(error.message);
     throw SERVER_ERROR_CODE.test(error.code)
       ? new PortfolioRejectedError(error.message)
       : new Error(error.message);

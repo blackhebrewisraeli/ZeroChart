@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { toast } from 'sonner';
 import { FEE_RATE } from '@/components/TradeTicket';
-import type { Asset } from '@/lib/assets';
+import { formatPrice, type Asset } from '@/lib/assets';
 import {
   executePaperPortfolio,
   loadPaperTransactions,
+  PortfolioChangedError,
   PortfolioRejectedError,
   type PortfolioHolding,
   type PortfolioReceipt,
@@ -14,6 +15,90 @@ import type { Allocation, RiskProfile } from '@/lib/portfolioBuilder';
 import { usePortfolio } from '@/lib/portfolioStore';
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** A booking without `dryRun`: enough to ask the server about it again. */
+type BookingRequest = Pick<
+  Parameters<typeof executePaperPortfolio>[0],
+  'requestId' | 'riskProfile' | 'budget' | 'holdings'
+>;
+
+// Bookings still waiting on an answer, per user. Kept in localStorage so a
+// closed dialog or a reloaded page can still settle them by request ID.
+const UNSETTLED_KEY = 'zerochart:unsettled-portfolio-requests:';
+// Requests this page is waiting on right now, across remounts of the dialog.
+const inFlight = new Set<string>();
+
+function unsettled(user: string): BookingRequest[] {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(UNSETTLED_KEY + user) ?? '[]');
+    return Array.isArray(stored) ? (stored as BookingRequest[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setUnsettled(user: string, requests: BookingRequest[]) {
+  try {
+    if (requests.length > 0) localStorage.setItem(UNSETTLED_KEY + user, JSON.stringify(requests));
+    else localStorage.removeItem(UNSETTLED_KEY + user);
+  } catch {
+    // No storage: recovery then lasts only as long as the dialog stays open.
+  }
+}
+
+const remember = (user: string, request: BookingRequest) =>
+  setUnsettled(user, [
+    ...unsettled(user).filter((r) => r.requestId !== request.requestId),
+    request,
+  ]);
+const settled = (user: string, requestId: string) =>
+  setUnsettled(
+    user,
+    unsettled(user).filter((r) => r.requestId !== requestId),
+  );
+
+const notBooked = () =>
+  toast.info('An earlier Quant Analyzer request was not booked', {
+    description: 'The server has no record of it, so no Paper Cash was spent.',
+  });
+
+/**
+ * Settles a booking that a closed dialog or a reloaded page left unanswered. A
+ * dry run under its request ID returns the receipt when it committed, waiting
+ * on the account lock first if it is still committing; it never books.
+ */
+async function recover(
+  user: string,
+  request: BookingRequest,
+  replacePaperLedger: ReturnType<typeof usePortfolio>['replacePaperLedger'],
+) {
+  inFlight.add(request.requestId);
+  try {
+    const found = await executePaperPortfolio({ ...request, dryRun: true });
+    settled(user, request.requestId);
+    if (found.status !== 'executed') {
+      notBooked();
+      return;
+    }
+    const count = found.orders.length;
+    toast.success(
+      `Your earlier Quant Analyzer request booked ${count} ${count === 1 ? 'order' : 'orders'}`,
+      {
+        description: `Receipt ${found.request_id.slice(0, 8)}: ${formatPrice(found.spent)} spent from Paper Cash.`,
+      },
+    );
+    replacePaperLedger(await loadPaperTransactions(user));
+  } catch (error) {
+    // The replay check runs before any validation, so a refusal means no batch has this ID.
+    if (error instanceof PortfolioRejectedError) {
+      settled(user, request.requestId);
+      notBooked();
+    }
+    // Otherwise the server is still unreachable: it stays stored for the next check.
+  } finally {
+    inFlight.delete(request.requestId);
+  }
+}
 
 /**
  * Where booking the shown proposal stands. `uncertain` means the request may
@@ -130,6 +215,8 @@ export function useProposalExecution({
   const [serverPlan, setServerPlan] = useState<PortfolioReceipt | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [execution, setExecution] = useState<Execution>({ state: 'idle' });
+  // Bumped to price the same proposal again after Confirm found it had moved.
+  const [repriced, setRepriced] = useState(0);
   const executingRef = useRef(false);
 
   // A new proposal starts clean: new request ID, no plan, nothing booked.
@@ -165,7 +252,18 @@ export function useProposalExecution({
     return () => {
       live = false;
     };
-  }, [phase, result, budget, riskProfile, userId, requestId]);
+  }, [phase, result, budget, riskProfile, userId, requestId, repriced]);
+
+  // The first render and every new proposal settle any booking an earlier
+  // dialog or page left unanswered, by that booking's own request ID.
+  useEffect(() => {
+    if (userId === null) return;
+    for (const request of unsettled(userId)) {
+      if (request.requestId !== requestId && !inFlight.has(request.requestId)) {
+        void recover(userId, request, replacePaperLedger);
+      }
+    }
+  }, [userId, requestId, replacePaperLedger]);
 
   const guest = useMemo(() => {
     if (userId !== null || !result || result.length === 0) return null;
@@ -183,6 +281,7 @@ export function useProposalExecution({
   const busy = execution.state === 'pending' || execution.state === 'uncertain';
 
   async function settle(receipt: PortfolioReceipt, account: string) {
+    settled(account, receipt.request_id);
     setExecution({ state: 'completed', receipt });
     try {
       replacePaperLedger(await loadPaperTransactions(account));
@@ -192,20 +291,14 @@ export function useProposalExecution({
   }
 
   /** After a lost response: asks the server whether this request ID booked. */
-  async function reconcile(account: string) {
-    if (!result) return;
+  async function reconcile(account: string, request: BookingRequest) {
     setExecution({ state: 'uncertain', checking: true });
     try {
-      const found = await executePaperPortfolio({
-        requestId,
-        riskProfile,
-        budget,
-        holdings: toHoldings(result),
-        dryRun: true,
-      });
+      const found = await executePaperPortfolio({ ...request, dryRun: true });
       if (found.status === 'executed') {
         await settle(found, account);
       } else {
+        settled(account, request.requestId);
         setExecution({
           state: 'failed',
           reason:
@@ -213,11 +306,12 @@ export function useProposalExecution({
         });
       }
     } catch (error) {
-      setExecution(
-        error instanceof PortfolioRejectedError
-          ? { state: 'failed', reason: error.message }
-          : { state: 'uncertain', checking: false },
-      );
+      if (error instanceof PortfolioRejectedError) {
+        settled(account, request.requestId);
+        setExecution({ state: 'failed', reason: error.message });
+      } else {
+        setExecution({ state: 'uncertain', checking: false });
+      }
     }
   }
 
@@ -269,22 +363,38 @@ export function useProposalExecution({
         return;
       }
       if (!serverPlan) return;
+      const request = { requestId, riskProfile, budget, holdings: toHoldings(result) };
+      // Stored before sending, so a lost answer stays recoverable after this dialog.
+      remember(userId, request);
+      inFlight.add(requestId);
       setExecution({ state: 'pending' });
       try {
         const receipt = await executePaperPortfolio({
-          requestId,
-          riskProfile,
-          budget,
-          holdings: toHoldings(result),
+          ...request,
           dryRun: false,
+          // Book what the preview showed, or nothing.
+          expected: serverPlan.orders.map(({ ticker, price, quantity }) => ({
+            ticker,
+            price,
+            quantity,
+          })),
         });
         await settle(receipt, userId);
       } catch (error) {
-        if (error instanceof PortfolioRejectedError) {
+        if (error instanceof PortfolioChangedError) {
+          // Nothing booked: show the plan as it prices now and wait for a fresh Confirm.
+          settled(userId, requestId);
+          setServerPlan(null);
+          setRepriced((n) => n + 1);
+          setExecution({ state: 'failed', reason: error.message });
+        } else if (error instanceof PortfolioRejectedError) {
+          settled(userId, requestId);
           setExecution({ state: 'failed', reason: error.message });
         } else {
-          await reconcile(userId);
+          await reconcile(userId, request);
         }
+      } finally {
+        inFlight.delete(requestId);
       }
     } finally {
       executingRef.current = false;
@@ -292,8 +402,9 @@ export function useProposalExecution({
   }
 
   const checkAgain =
-    userId !== null && execution.state === 'uncertain' && !execution.checking
-      ? () => void reconcile(userId)
+    userId !== null && result && execution.state === 'uncertain' && !execution.checking
+      ? () =>
+          void reconcile(userId, { requestId, riskProfile, budget, holdings: toHoldings(result) })
       : null;
   return { plan, planError, execution, busy, confirm, checkAgain };
 }

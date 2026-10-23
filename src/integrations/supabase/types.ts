@@ -315,6 +315,7 @@ export type Database = {
         Args: {
           budget: number;
           dry_run?: boolean;
+          expected?: Json;
           holdings: Json;
           request_id: string;
           risk_profile: string;

@@ -281,8 +281,10 @@ export function RoboAdvisor({
     setOpen(true);
   }
 
+  // Stays open while a booking is out: its answer belongs to the proposal on screen.
+  const booking = proposal.execution.state === 'pending';
   const closeModal = useCallback(() => {
-    if (closingRef.current) return;
+    if (closingRef.current || booking) return;
     closingRef.current = true;
     setClosing(true);
     closeTimer.current = window.setTimeout(() => {
@@ -291,7 +293,7 @@ export function RoboAdvisor({
       closingRef.current = false;
       triggerRef.current?.focus();
     }, CLOSE_MS);
-  }, []);
+  }, [booking]);
 
   useEffect(
     () => () => {

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(35);
+select plan(42);
 
 insert into auth.users (id)
 values
@@ -32,11 +32,12 @@ create function pg_temp.invest(
   profile text,
   budget numeric,
   holdings text,
-  dry boolean default false
+  dry boolean default false,
+  expected text default null
 ) returns jsonb language sql as $$
-  select public.execute_paper_portfolio(request, profile, budget, holdings::jsonb, dry);
+  select public.execute_paper_portfolio(request, profile, budget, holdings::jsonb, dry, expected::jsonb);
 $$;
-grant execute on function pg_temp.sign_in(text), pg_temp.invest(uuid, text, numeric, text, boolean)
+grant execute on function pg_temp.sign_in(text), pg_temp.invest(uuid, text, numeric, text, boolean, text)
   to authenticated, anon;
 
 set local role authenticated;
@@ -202,6 +203,40 @@ from (
       'Unknown risk profile reckless', 'an unknown profile rejects')
 ) as rejected (profile, budget, holdings, code, message, description);
 
+-- ===== Confirm books the previewed orders or nothing =====
+-- SOL prices at 100 for 10 units (its ATR cap) under a $2,500 allocation.
+select throws_ok(
+  format(
+    'select pg_temp.invest(%L, %L, %s, %L, false, %L)',
+    '20000000-0000-4000-8000-000000000006', 'moderate', 10000,
+    '[{"ticker": "SOL", "amount": 2500, "score": 70}]', moved.expected
+  ),
+  'PT409',
+  'Prices or sizes moved more than 0.5% since the preview. Review the updated orders and confirm again.',
+  moved.description
+)
+from (
+  values
+    ('[{"ticker": "SOL", "price": 100.6, "quantity": 10}]', 'a price 0.6% off the preview refuses the booking'),
+    ('[{"ticker": "SOL", "price": 100, "quantity": 10.1}]', 'units 1% off the preview refuse the booking'),
+    ('[]', 'an order the preview didn''t show refuses the booking'),
+    ('[{"ticker": "SOL", "price": 100}]', 'a previewed order without units refuses the booking')
+) as moved (expected, description);
+select is(
+  (select count(*)::integer from public.paper_order_batches where id = '20000000-0000-4000-8000-000000000006')
+    + (select count(*)::integer from public.paper_transactions where batch_id = '20000000-0000-4000-8000-000000000006'),
+  0,
+  'a refused booking leaves no batch and no fills'
+);
+select is(
+  pg_temp.invest(
+    '20000000-0000-4000-8000-000000000006', 'moderate', 10000, '[{"ticker": "sol", "amount": 2500, "score": 70}]',
+    false, '[{"ticker": "sol", "price": 100.4, "quantity": 9.96}]'
+  ) ->> 'status',
+  'executed',
+  'within 0.5% of the preview on price and units, the booking goes through'
+);
+
 -- ===== Total-portfolio risk cap =====
 select pg_temp.sign_in('00000000-0000-4000-8000-000000000022');
 select throws_ok(
@@ -261,8 +296,13 @@ select throws_ok(
 
 reset role;
 select ok(
-  not has_function_privilege('anon', 'public.execute_paper_portfolio(uuid, text, numeric, jsonb, boolean)', 'execute'),
+  not has_function_privilege('anon', 'public.execute_paper_portfolio(uuid, text, numeric, jsonb, boolean, jsonb)', 'execute'),
   'anon cannot call the portfolio RPC'
+);
+select is(
+  to_regprocedure('public.execute_paper_portfolio(uuid, text, numeric, jsonb, boolean)'),
+  null,
+  'no five-argument overload is left to make a call ambiguous'
 );
 
 select * from finish();

@@ -32,7 +32,8 @@ vi.mock('@/lib/db', async (importOriginal) => ({
   executePaperPortfolio: vi.fn(),
   loadPaperTransactions: vi.fn(async () => []),
 }));
-vi.mock('@/lib/roboAdvisor', () => ({
+vi.mock('@/lib/roboAdvisor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/roboAdvisor')>()),
   buildQuantPortfolio: vi.fn(async () => [
     { ticker: 'BTC', weight: 0.25, allocatedAmount: 2500, score: 82, suggestedShares: 0.05 },
     { ticker: 'ETH', weight: 0.25, allocatedAmount: 2500, score: 75, suggestedShares: 1 },

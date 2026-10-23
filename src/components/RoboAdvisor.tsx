@@ -16,13 +16,18 @@ import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { useAuth } from '@/lib/authStore';
 import { recordHeavyAction } from '@/lib/adManager';
-import { buildQuantPortfolio } from '@/lib/roboAdvisor';
+import {
+  buildQuantPortfolio,
+  RISK_PROFILE_POLICIES,
+  type PortfolioBuildDiagnostics,
+} from '@/lib/roboAdvisor';
 import { formatShares } from '@/lib/risk';
 import { MIN_CANDLES, REGIME_LABELS } from '@/lib/canonicalModel';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useProposalExecution } from '@/hooks/useProposalExecution';
 import { cn, closeOnBackdrop } from '@/lib/utils';
+import { containDialogTab } from '@/lib/dialogFocus';
 
 const RISK_OPTIONS: {
   id: RiskProfile;
@@ -254,8 +259,10 @@ export function RoboAdvisor({
   const [monthly, setMonthly] = useState(250);
   const [error, setError] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<PortfolioBuildDiagnostics | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
@@ -277,6 +284,7 @@ export function RoboAdvisor({
     setPhase('config');
     setResult(null);
     setRejectedTickers(new Set());
+    setDiagnostics(null);
     setError(null);
     setOpen(true);
   }
@@ -317,6 +325,7 @@ export function RoboAdvisor({
       // A nested Radix layer (e.g. PricingModal) that handled this Escape has
       // already called preventDefault — let it close alone.
       if (e.key === 'Escape' && !e.defaultPrevented) closeModal();
+      containDialogTab(e, dialogRef.current);
     }
     window.addEventListener('keydown', onKey);
     const focusTimer = window.setTimeout(() => {
@@ -357,6 +366,7 @@ export function RoboAdvisor({
       const allocation = await buildQuantPortfolio({
         preferences: { totalCapital: value, riskProfile },
         availableAssets: assets,
+        onDiagnostics: setDiagnostics,
       });
       setResult(allocation);
       setPhase('results');
@@ -377,6 +387,7 @@ export function RoboAdvisor({
         preferences: { totalCapital: total, riskProfile },
         availableAssets: assets,
         excludeTickers: nextRejected,
+        onDiagnostics: setDiagnostics,
       });
       setResult(allocation);
     } finally {
@@ -390,6 +401,15 @@ export function RoboAdvisor({
   }
 
   const activeRisk = RISK_OPTIONS.find((r) => r.id === riskProfile);
+  const activePolicy = RISK_PROFILE_POLICIES[riskProfile];
+  const allNetworkFailed =
+    diagnostics !== null &&
+    diagnostics.totalCandidates > 0 &&
+    diagnostics.networkFailures === diagnostics.totalCandidates;
+  const allInsufficient =
+    diagnostics !== null &&
+    diagnostics.totalCandidates > 0 &&
+    diagnostics.insufficientData === diagnostics.totalCandidates;
 
   const canSwapMore =
     result != null &&
@@ -421,6 +441,7 @@ export function RoboAdvisor({
             onClick={closeOnBackdrop(closeModal)}
           >
             <dialog
+              ref={dialogRef}
               open
               className={cn('robo-panel', closing && 'is-closing')}
               aria-modal="true"
@@ -453,7 +474,7 @@ export function RoboAdvisor({
                   <div className="robo-body">
                     <div className="robo-field">
                       <label htmlFor="robo-amount" className="robo-label">
-                        Investment amount
+                        Paper Cash to allocate
                       </label>
                       <div className={cn('robo-amount-field', error && 'robo-amount-invalid')}>
                         <span className="robo-currency">$</span>
@@ -475,7 +496,7 @@ export function RoboAdvisor({
                         />
                       </div>
                       <p id="robo-amount-hint" className="robo-hint">
-                        Multi-factor scored on RSI, MACD momentum, and ATR volatility
+                        Uses simulated Paper Cash. Signal Score is a model score, not a probability.
                       </p>
                       {error && (
                         <p className="robo-error" role="alert">
@@ -486,7 +507,7 @@ export function RoboAdvisor({
 
                     <div className="robo-field">
                       <label htmlFor="robo-monthly" className="robo-label">
-                        Monthly deposit (optional)
+                        Hypothetical monthly deposit (optional)
                       </label>
                       <div className="robo-amount-field">
                         <span className="robo-currency">$</span>
@@ -576,10 +597,9 @@ export function RoboAdvisor({
 
                         <div className="robo-projection">
                           <div className="robo-projection-head">
-                            <span className="robo-projection-title">Growth Projection</span>
+                            <span className="robo-projection-title">Illustrative scenario</span>
                             <span className="robo-projection-rate">
-                              {(ANNUAL_RETURN_BY_RISK[riskProfile] * 100).toFixed(0)}% assumed
-                              return
+                              {(ANNUAL_RETURN_BY_RISK[riskProfile] * 100).toFixed(0)}% annual input
                             </span>
                           </div>
                           <div className="robo-projection-grid">
@@ -618,8 +638,8 @@ export function RoboAdvisor({
                           </div>
                           <p className="robo-projection-note">
                             {monthly > 0
-                              ? `With ${formatPrice(monthly)} deposited monthly, compounding at the profile's assumed rate.`
-                              : 'Add a monthly deposit to see your long-term compounding potential.'}
+                              ? `With ${formatPrice(monthly)} added monthly. Mathematical scenario only — not a forecast or validated performance.`
+                              : 'Mathematical scenario only — not a forecast or validated performance.'}
                           </p>
                         </div>
 
@@ -771,26 +791,94 @@ export function RoboAdvisor({
                     ) : (
                       <div className="robo-empty">
                         <Shield size={28} />
-                        <h3>No qualifying assets</h3>
+                        <h3>
+                          {allNetworkFailed
+                            ? 'Market history unavailable'
+                            : allInsufficient
+                              ? 'Not enough market history'
+                              : 'No qualifying assets'}
+                        </h3>
                         <p>
-                          No asset in your watchlist has both a Signal Score that clears this
-                          profile's minimum and the {MIN_CANDLES} daily candles the engine needs to
-                          score it. Assets without enough data are skipped, never guessed, and your
-                          Paper Cash stays as it is. Check back later.
+                          {allNetworkFailed
+                            ? 'The analyzer could not load candle history, so it did not evaluate eligibility or create a proposal.'
+                            : allInsufficient
+                              ? `The engine needs ${MIN_CANDLES} daily candles per asset. It skips assets without enough history instead of guessing a score.`
+                              : `No asset met the ${activeRisk?.label ?? riskProfile} profile requirements in this analysis. This can be a normal result; ZeroChart does not lower the rules just to create a proposal.`}
+                        </p>
+                        <dl className="robo-empty-facts">
+                          <div>
+                            <dt>Selected profile</dt>
+                            <dd>{activeRisk?.label ?? riskProfile}</dd>
+                          </div>
+                          <div>
+                            <dt>Minimum model score</dt>
+                            <dd>{activePolicy.minimumScore} / 100</dd>
+                          </div>
+                          <div>
+                            <dt>History required</dt>
+                            <dd>{MIN_CANDLES} daily candles</dd>
+                          </div>
+                        </dl>
+                        {(activePolicy.excludeHighVolatility ||
+                          activePolicy.requirePositiveMomentum) && (
+                          <p className="robo-empty-rule">
+                            {activePolicy.excludeHighVolatility
+                              ? 'This profile also excludes high-volatility regimes.'
+                              : 'This profile also requires positive momentum.'}
+                          </p>
+                        )}
+                        {diagnostics && diagnostics.networkFailures > 0 && !allNetworkFailed && (
+                          <p className="robo-empty-rule">
+                            {diagnostics.networkFailures} of {diagnostics.totalCandidates} assets
+                            could not be checked because market history failed to load.
+                          </p>
+                        )}
+                        <p className="robo-empty-balance">
+                          Nothing was booked. Your Paper Cash is unchanged.
                         </p>
                       </div>
                     )}
                   </div>
 
-                  <ProposalFooter
-                    proposal={proposal}
-                    onAdjust={() => {
-                      setPhase('config');
-                      setError(null);
-                    }}
-                    onDone={closeModal}
-                    onViewLedger={viewLedger}
-                  />
+                  {result && result.length > 0 ? (
+                    <ProposalFooter
+                      proposal={proposal}
+                      onAdjust={() => {
+                        setPhase('config');
+                        setError(null);
+                      }}
+                      onDone={closeModal}
+                      onViewLedger={viewLedger}
+                    />
+                  ) : (
+                    <footer className="robo-footer robo-empty-actions">
+                      <button
+                        type="button"
+                        className="robo-back"
+                        onClick={() => {
+                          setPhase('config');
+                          setError(null);
+                        }}
+                      >
+                        <ArrowLeft size={16} /> Review configuration
+                      </button>
+                      <button
+                        type="button"
+                        className="robo-back"
+                        disabled={building}
+                        onClick={() => void handleSubmit()}
+                      >
+                        <RefreshCw size={14} /> {building ? 'Retrying…' : 'Retry analysis'}
+                      </button>
+                      <button
+                        type="button"
+                        className="robo-submit robo-submit-invest"
+                        onClick={viewLedger}
+                      >
+                        Open Paper Desk <ArrowRight size={16} />
+                      </button>
+                    </footer>
+                  )}
                 </>
               )}
             </dialog>

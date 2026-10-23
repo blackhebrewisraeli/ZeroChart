@@ -410,7 +410,13 @@ function MarketsSection({
   return (
     <section className="markets" data-tour="markets" aria-label="Markets">
       <div className="markets-head">
-        <h2 className="markets-title">Markets</h2>
+        <div>
+          <h2 className="markets-title">Markets</h2>
+          <p className="markets-score-help">
+            Signal Score is a 0–100 model score from RSI, MACD and ATR — not a probability or a
+            performance forecast.
+          </p>
+        </div>
         <div className="markets-head-actions">
           <span className="markets-count font-mono">
             {rows.length} ASSET{rows.length === 1 ? '' : 'S'}

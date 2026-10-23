@@ -31,26 +31,30 @@ vi.mock('@/lib/portfolioAccounting', async (importOriginal) => {
 
 // The results phase is the unit under test — stub the quant pipeline so the
 // test proves the UI surfaces the Multi-Factor Score and the ATR sizing.
-vi.mock('@/lib/roboAdvisor', () => ({
-  buildQuantPortfolio: vi.fn(async () => [
-    {
-      ticker: 'BTC',
-      weight: 0.6,
-      allocatedAmount: 6000,
-      score: 92,
-      suggestedShares: 0.05,
-      regime: 'TRENDING',
-      rationale: 'Bullish momentum (+0.8%) + calm volatility (1.2%) · Trending regime',
-      components: {
-        rsiScore: 80,
-        momentumScore: 100,
-        volatilityScore: 94,
-        weights: { rsi: 0.3, momentum: 0.5, volatility: 0.2 },
+vi.mock('@/lib/roboAdvisor', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/roboAdvisor')>();
+  return {
+    ...actual,
+    buildQuantPortfolio: vi.fn(async () => [
+      {
+        ticker: 'BTC',
+        weight: 0.6,
+        allocatedAmount: 6000,
+        score: 92,
+        suggestedShares: 0.05,
+        regime: 'TRENDING',
+        rationale: 'Bullish momentum (+0.8%) + calm volatility (1.2%) · Trending regime',
+        components: {
+          rsiScore: 80,
+          momentumScore: 100,
+          volatilityScore: 94,
+          weights: { rsi: 0.3, momentum: 0.5, volatility: 0.2 },
+        },
       },
-    },
-    { ticker: 'ETH', weight: 0.4, allocatedAmount: 4000, score: 78, suggestedShares: 0.5 },
-  ]),
-}));
+      { ticker: 'ETH', weight: 0.4, allocatedAmount: 4000, score: 78, suggestedShares: 0.5 },
+    ]),
+  };
+});
 
 function makeAsset(ticker: string, name: string, price: number): Asset {
   return {
@@ -209,7 +213,7 @@ describe('RoboAdvisor invest', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
     const dialog = await screen.findByRole('dialog');
-    const amount = within(dialog).getByRole('textbox', { name: /investment amount/i });
+    const amount = within(dialog).getByRole('textbox', { name: /paper cash to allocate/i });
     fireEvent.change(amount, { target: { value: '200000' } });
     fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
 
@@ -219,6 +223,69 @@ describe('RoboAdvisor invest', () => {
 });
 
 describe('RoboAdvisor results', () => {
+  it('explains a legitimate no-eligibility result without changing the selected profile', async () => {
+    vi.mocked(buildQuantPortfolio).mockImplementationOnce(async (options) => {
+      options.onDiagnostics?.({
+        totalCandidates: 2,
+        eligible: 0,
+        insufficientData: 0,
+        networkFailures: 0,
+        belowMinimumScore: 2,
+        highVolatility: 0,
+        nonPositiveMomentum: 0,
+      });
+      return [];
+    });
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
+
+    expect(await within(dialog).findByText('No qualifying assets')).toBeVisible();
+    expect(within(dialog).getByText('Moderate')).toBeVisible();
+    expect(within(dialog).getByText('60 / 100')).toBeVisible();
+    expect(within(dialog).getByText(/This can be a normal result/)).toBeVisible();
+    expect(within(dialog).getByText(/Paper Cash is unchanged/)).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: /review configuration/i }));
+    expect(within(dialog).getByRole('radio', { name: /Moderate/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
+  it('separates a candle-history network failure from no qualifying assets', async () => {
+    vi.mocked(buildQuantPortfolio).mockImplementationOnce(async (options) => {
+      options.onDiagnostics?.({
+        totalCandidates: 2,
+        eligible: 0,
+        insufficientData: 0,
+        networkFailures: 2,
+        belowMinimumScore: 0,
+        highVolatility: 0,
+        nonPositiveMomentum: 0,
+      });
+      return [];
+    });
+    render(
+      <PortfolioProvider>
+        <RoboAdvisor assets={assets} />
+      </PortfolioProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /build portfolio/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /build portfolio/i }));
+
+    expect(await within(dialog).findByText('Market history unavailable')).toBeVisible();
+    expect(within(dialog).queryByText('No qualifying assets')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: /retry analysis/i })).toBeEnabled();
+  });
+
   it('surfaces the Multi-Factor Score and ATR suggested position size', async () => {
     render(
       <PortfolioProvider>

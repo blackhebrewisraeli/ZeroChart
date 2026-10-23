@@ -334,7 +334,8 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
           </span>
           <h2 className="portfolio-title">Paper Desk</h2>
           <p className="portfolio-subtitle">
-            Act on tactical signals with simulated fills at the live price. Paper cash only.
+            Act on tactical signals with simulated fills at the live price. Paper Cash, open
+            positions, and the complete Trade Ledger stay together on this page.
           </p>
         </div>
         <PaperAccountControls />

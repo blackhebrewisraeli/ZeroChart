@@ -184,6 +184,41 @@ describe('buildQuantPortfolio', () => {
     expect(deps.fetchCandles).toHaveBeenCalledTimes(4);
   });
 
+  it('reports isolated eligibility, missing-data, and network outcomes', async () => {
+    const strong = makeCandles(200);
+    const weak = makeCandles(200, 0.5, 0.1);
+    const onDiagnostics = vi.fn();
+
+    await buildQuantPortfolio(
+      {
+        preferences: { totalCapital: 10000, riskProfile: 'moderate' },
+        availableAssets: [
+          makeAsset('STRONG'),
+          makeAsset('WEAK'),
+          makeAsset('SHORT'),
+          makeAsset('DOWN'),
+        ],
+        onDiagnostics,
+      },
+      depsFor({
+        STRONG: strong,
+        WEAK: weak,
+        SHORT: makeCandles(MIN_CANDLES - 1),
+        DOWN: new Error('network down'),
+      }),
+    );
+
+    expect(onDiagnostics).toHaveBeenCalledWith({
+      totalCandidates: 4,
+      eligible: 1,
+      insufficientData: 1,
+      networkFailures: 1,
+      belowMinimumScore: 1,
+      highVolatility: 0,
+      nonPositiveMomentum: 0,
+    });
+  });
+
   it('returns no portfolio when no asset has enough data', async () => {
     const deps = depsFor({ ETH: makeCandles(10) });
     const result = await buildQuantPortfolio(

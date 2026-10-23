@@ -82,7 +82,9 @@ export function contractGaps(
       const matches = overloads.filter((fn) => accepts(fn, sent));
       const [fn] = matches;
       if (!fn) {
-        gaps.push(`${call}: no function accepts these arguments (PGRST202)`);
+        gaps.push(
+          `${call}: no function accepts these arguments (PGRST202), or none that anon or authenticated may execute`,
+        );
       } else if (matches.length > 1) {
         gaps.push(
           `${call}: ${matches.length} overloads accept it, so PostgREST can't choose one (PGRST203)`,

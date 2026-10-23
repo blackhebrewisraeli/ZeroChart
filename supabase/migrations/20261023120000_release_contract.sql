@@ -9,10 +9,13 @@
 -- current deployment live, unless every migration is applied and every RPC
 -- still accepts the frontend's arguments for the roles that call it.
 --
--- Read-only, and it answers only about the versions and names it is given.
--- SECURITY DEFINER only to read supabase_migrations, which anon can't; anon
--- may call it because the build holds the publishable key, never the service
--- role.
+-- Read-only, and it answers only about the versions and names it is given:
+-- migration versions are public in the repo, and it describes only functions
+-- anon or authenticated may execute, which any client can already probe
+-- through /rest/v1/rpc. Service-role-only and hand-made private functions read
+-- as absent. SECURITY DEFINER only to read supabase_migrations, which anon
+-- can't; anon may call it because the build holds the publishable key, never
+-- the service role.
 create function public.release_contract(migrations text[], functions text[])
 returns jsonb
 language sql
@@ -46,6 +49,8 @@ as $$
       from pg_catalog.pg_proc p
       where p.pronamespace = 'public'::regnamespace
         and p.proname = any(functions)
+        and (has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute'))
     ), '[]')
   )
 $$;

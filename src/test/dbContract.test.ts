@@ -60,7 +60,7 @@ describe('contractGaps', () => {
 
   it('blocks the 2026-10-23 release: Confirm sends `expected`, the database has five arguments', () => {
     expect(gapsWith([fiveArgPortfolio, ...others])).toEqual([
-      'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run, expected): no function accepts these arguments (PGRST202)',
+      'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run, expected): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
     ]);
   });
 
@@ -73,7 +73,7 @@ describe('contractGaps', () => {
   it('blocks making an argument required that previews leave out', () => {
     const required = { ...portfolio, defaults: 0 };
     expect(gapsWith([required, ...others])).toEqual([
-      'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run): no function accepts these arguments (PGRST202)',
+      'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
     ]);
   });
 

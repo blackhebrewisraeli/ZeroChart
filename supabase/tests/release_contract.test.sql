@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(6);
+select plan(7);
 
 -- The build holds only the publishable key.
 select ok(
@@ -40,6 +40,12 @@ select is(
   jsonb_array_length(public.release_contract('{}', '{}') -> 'functions'),
   0,
   'it reports nothing about functions it was not asked about'
+);
+
+select is(
+  public.release_contract('{}', array['ingest_tradingview_signal']) -> 'functions',
+  '[]'::jsonb,
+  'a function only service_role may execute reads as absent'
 );
 
 reset role;

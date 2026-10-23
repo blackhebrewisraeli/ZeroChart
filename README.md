@@ -222,6 +222,8 @@ npx tsc --noEmit && npm run build && npm run lint && npm test
 
 The finance core (indicators, multi-factor scoring, position sizing, accounting, backtesting, alert evaluation, webhook payload parsing) is pure and unit-tested.
 
+Vercel production builds also check that the production database has every migration and RPC the frontend needs, and fail before going live if it doesn't. See [Releasing database changes](./docs/RELEASE.md).
+
 ## Documentation
 
 | Document                                             | What's inside                                                                                                  |
@@ -231,6 +233,7 @@ The finance core (indicators, multi-factor scoring, position sizing, accounting,
 | [Roadmap](./docs/roadmap.md)                         | Completed launch milestones                                                                                    |
 | [Engineering audit](./docs/engineering-audit.md)     | Milestone 0 findings register and remediation log                                                              |
 | [Supabase connection](./docs/CONNECTION.md)          | Data contract for the `assets_status` market table                                                             |
+| [Releasing database changes](./docs/RELEASE.md)      | Release order for migrations, the production build's database gate, rollback                                   |
 | [Agent conventions](./docs/AGENTS.md)                | Architecture rules for coding agents working in this repo                                                      |
 | [Contributing](./CONTRIBUTING.md)                    | Dev setup, coding standards, and the pull request process                                                      |
 

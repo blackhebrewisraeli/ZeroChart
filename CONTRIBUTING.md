@@ -55,6 +55,7 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 2. Write commit subjects in the imperative and describe the behavior change, for example `Keep resolved signals out of an in-flight backlog snapshot`.
 3. Open the PR against `main` and complete the checklist in the [pull request template](./.github/pull_request_template.md).
 4. CI must pass before merge.
+5. A PR with migrations: apply them to production before you merge, as [docs/RELEASE.md](./docs/RELEASE.md) describes. Otherwise the production build refuses to go live.
 
 ## License
 

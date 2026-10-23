@@ -18,6 +18,31 @@ const SPRING = { type: 'spring' as const, stiffness: 320, damping: 30 };
 
 type Side = 'buy' | 'sell';
 
+/** What a USD amount buys or sells at `price`: units, the 0.25% fee, and the cash it moves. */
+function orderEstimate(amount: number, price: number | null | undefined, side: Side) {
+  if (!(Number.isFinite(amount) && amount > 0 && price != null && price > 0)) {
+    return { canSubmit: false, estimatedQty: 0, fee: 0, total: 0 };
+  }
+  const fee = amount * FEE_RATE;
+  return {
+    canSubmit: true,
+    estimatedQty: amount / price,
+    fee,
+    total: side === 'buy' ? amount + fee : amount - fee,
+  };
+}
+
+/** What the ticket's fill does, by the ledger it books to (none: a mock). */
+function ticketFootnote(portfolioType: PortfolioType | undefined): string {
+  if (portfolioType === undefined) {
+    return 'Mock execution — no real funds move. Slippage controls ship with the broker integration.';
+  }
+  if (portfolioType === 'real_tracking') {
+    return 'Recorded in your Live Tracking ledger and cash at the live price. ZeroChart places no real orders — log trades you made at your broker.';
+  }
+  return `Simulated fill at the live price, recorded in your ${LEDGER_NAMES[portfolioType]} ledger. No real funds move.`;
+}
+
 export function TradeTicket({
   asset,
   variant = 'compact',
@@ -26,7 +51,7 @@ export function TradeTicket({
   initialSide = 'buy',
   initialAmount,
   label,
-}: {
+}: Readonly<{
   asset: Asset;
   variant?: 'hero' | 'compact';
   /** Ledger that records fills (the active one). Omitted: mock execution only. */
@@ -38,7 +63,7 @@ export function TradeTicket({
   initialAmount?: number;
   /** Compact trigger text; defaults to "Trade". */
   label?: string;
-}) {
+}>) {
   const { executeBuy, executeSell, executePaperTrade, portfolios } = usePortfolio();
   const recordsFills = portfolioType !== undefined;
   const isPaper = portfolioType === 'paper_trading';
@@ -59,14 +84,10 @@ export function TradeTicket({
   const assetClass = getAssetClass(asset.ticker);
 
   const numericAmount = Number(amount);
-  const canSubmit =
-    Number.isFinite(numericAmount) && numericAmount > 0 && price != null && price > 0;
-  const estimatedQty = canSubmit ? numericAmount / price : 0;
-  const fee = canSubmit ? numericAmount * FEE_RATE : 0;
-  const total = canSubmit ? numericAmount + (side === 'buy' ? fee : -fee) : 0;
+  const { canSubmit, estimatedQty, fee, total } = orderEstimate(numericAmount, price, side);
   // Paper entries must clear the portfolio risk manager first.
   const entry =
-    isPaper && side === 'buy' && canSubmit
+    isPaper && side === 'buy' && canSubmit && price != null
       ? paperRisk.checkBuy(asset.ticker, { shares: estimatedQty, price, fee })
       : null;
   const rejection = entry?.ok === false ? entry.reason : null;
@@ -155,7 +176,7 @@ export function TradeTicket({
   }
 
   async function handleSubmit() {
-    if (!canSubmit || booking || rejection) return;
+    if (!canSubmit || price == null || booking || rejection) return;
     if (recordsFills) {
       const shares = fillShares(portfolioType, price);
       const result =
@@ -254,7 +275,7 @@ export function TradeTicket({
                   <p className="ticket-name">{asset.name || 'Asset'}</p>
 
                   <div className="ticket-body">
-                    <div className="ticket-side" role="group" aria-label="Order side">
+                    <fieldset className="ticket-side" aria-label="Order side">
                       <button
                         type="button"
                         aria-pressed={side === 'buy'}
@@ -271,7 +292,7 @@ export function TradeTicket({
                       >
                         Sell
                       </button>
-                    </div>
+                    </fieldset>
 
                     <div className="ticket-field">
                       <label className="ticket-label" htmlFor="ticket-amount">
@@ -334,13 +355,7 @@ export function TradeTicket({
                       </p>
                     )}
 
-                    <p className="ticket-footnote">
-                      {!recordsFills
-                        ? 'Mock execution — no real funds move. Slippage controls ship with the broker integration.'
-                        : portfolioType === 'real_tracking'
-                          ? 'Recorded in your Live Tracking ledger and cash at the live price. ZeroChart places no real orders — log trades you made at your broker.'
-                          : `Simulated fill at the live price, recorded in your ${LEDGER_NAMES[portfolioType]} ledger. No real funds move.`}
-                    </p>
+                    <p className="ticket-footnote">{ticketFootnote(portfolioType)}</p>
                   </div>
                 </motion.aside>
               </motion.div>

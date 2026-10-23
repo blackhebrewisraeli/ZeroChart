@@ -9,6 +9,8 @@ import type { Position } from '@/lib/portfolioAccounting';
  * Portfolio never calls this — its trades come from `rebalance.ts`.
  */
 
+const TYPE_ORDER = { SELL: 0, BUY: 1 } as const;
+
 export interface TacticalSignal {
   type: 'BUY' | 'SELL';
   ticker: string;
@@ -26,6 +28,26 @@ export type SignalFeedItem =
 
 const SELL_BELOW = 50;
 const BUY_AT = 85;
+
+/** The quote's time in ms, or null when the feed gave none. */
+function quotedAt(updatedAt: string | null | undefined): number | null {
+  const time = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+  return Number.isFinite(time) ? time : null;
+}
+
+/** SELL a weak holding, BUY a strong asset not held, else no signal. */
+function signalFor(
+  asset: Asset,
+  isHeld: boolean,
+  result: CanonicalResult | undefined,
+): TacticalSignal | null {
+  if (result?.status !== 'OK') return null;
+  const { signal_score: score, regime, rationale } = result;
+  const base = { ticker: asset.ticker, score, regime, rationale, asOf: quotedAt(asset.updated_at) };
+  if (isHeld && score < SELL_BELOW) return { type: 'SELL', ...base };
+  if (!isHeld && score >= BUY_AT) return { type: 'BUY', ...base };
+  return null;
+}
 
 /**
  * - SELL: a held asset whose canonical score is below 50.
@@ -49,19 +71,12 @@ export function generateTacticalSignals(
     seen.add(ticker);
     const isHeld = held.has(ticker);
     if (!isHeld && availableCash <= 0) continue;
-    const result = scores.get(asset.ticker);
-    if (result?.status !== 'OK') continue;
-    const { signal_score: score, regime, rationale } = result;
-    const updatedAt = asset.updated_at ? Date.parse(asset.updated_at) : Number.NaN;
-    const asOf = Number.isFinite(updatedAt) ? updatedAt : null;
-    const base = { ticker: asset.ticker, score, regime, rationale, asOf };
-    if (isHeld && score < SELL_BELOW) signals.push({ type: 'SELL', ...base });
-    else if (!isHeld && score >= BUY_AT) signals.push({ type: 'BUY', ...base });
+    const signal = signalFor(asset, isHeld, scores.get(asset.ticker));
+    if (signal) signals.push(signal);
   }
 
-  return signals.sort((a, b) =>
-    a.type === b.type ? b.score - a.score : a.type === 'SELL' ? -1 : 1,
-  );
+  // SELLs first (they protect what is held), then the strongest score.
+  return signals.sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || b.score - a.score);
 }
 
 /**

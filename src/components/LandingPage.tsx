@@ -74,10 +74,10 @@ function BrandMark() {
 export function LandingPage({
   onSignIn,
   onGetStarted,
-}: {
+}: Readonly<{
   onSignIn: () => void;
   onGetStarted: () => void;
-}) {
+}>) {
   return (
     <div className="landing">
       <header className="landing-header">
@@ -102,7 +102,7 @@ export function LandingPage({
               <Sparkles size={14} /> Quantitative research and paper trading environment
             </span>
             <h1 className="landing-headline">
-              Understand, backtest, and simulate
+              {'Understand, backtest, and simulate'}
               <span className="landing-headline-accent"> multifactor signals.</span>
             </h1>
             <p className="landing-subheadline">

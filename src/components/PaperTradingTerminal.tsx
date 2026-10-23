@@ -45,25 +45,31 @@ import { cn } from '@/lib/utils';
 const SIZE_STEP = 0.25;
 const LEDGER_FILENAME = 'zerochart-ledger-paper.csv';
 
+/** "+$12.00 · +3.40%": the dollar P&L and its return on what the position cost. */
+function pnlLabel(pnl: number, costBasis: number): string {
+  const returnPercent = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  return `${formatPnl(pnl)} · ${formatSignedPercent(returnPercent)}`;
+}
+
 function Stat({
   label,
   value,
   sub,
   tone,
   primary = false,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   sub: string;
   tone?: 'pnl-up' | 'pnl-down' | undefined;
   primary?: boolean;
-}) {
+}>) {
   return (
-    <div role="group" aria-label={label} className={cn('paper-stat', primary && 'is-primary')}>
+    <fieldset aria-label={label} className={cn('paper-stat', primary && 'is-primary')}>
       <span className="paper-stat-label">{label}</span>
       <span className={cn('paper-stat-value', tone)}>{value}</span>
       <span className={cn('paper-stat-sub', tone)}>{sub}</span>
-    </div>
+    </fieldset>
   );
 }
 
@@ -74,7 +80,7 @@ function PositionRow({
   onResize,
   onClose,
   addRejection,
-}: {
+}: Readonly<{
   position: Position;
   asset: Asset | undefined;
   onSelect: (ticker: string) => void;
@@ -82,7 +88,7 @@ function PositionRow({
   onClose: (position: Position, price: number) => void;
   /** Why the risk manager refuses a +25% add at `price`, or null. */
   addRejection: (position: Position, price: number) => string | null;
-}) {
+}>) {
   const price = asset?.current_price;
   const hasPrice = typeof price === 'number' && Number.isFinite(price) && price > 0;
   const priceFlash = usePriceFlash(hasPrice ? price : null);
@@ -109,9 +115,7 @@ function PositionRow({
       <td className={priceFlash}>{hasPrice ? formatPrice(price) : '—'}</td>
       <td>{hasPrice ? formatPrice(price * position.shares) : '—'}</td>
       <td className={pnl === null ? undefined : pnlTone(pnl)}>
-        {pnl === null
-          ? '—'
-          : `${formatPnl(pnl)} · ${formatSignedPercent(costBasis > 0 ? (pnl / costBasis) * 100 : 0)}`}
+        {pnl === null ? '—' : pnlLabel(pnl, costBasis)}
       </td>
       <td>
         <span className="paper-row-actions">
@@ -232,7 +236,7 @@ function PaperAccountControls() {
  * `paper_trading` ledger only. Every fill here is a simulated tactical trade;
  * the Core Simulation and Live Tracking ledgers never see it.
  */
-export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }) {
+export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: Asset[] }>) {
   const { portfolios, executePaperTrade } = usePortfolio();
   const risk = usePaperRisk();
   const { triggered } = useAlerts();
@@ -432,15 +436,16 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
               </button>
             </div>
             <div className="analytics-workspace-panel">
-              {tab === 'ledger' ? (
+              {tab === 'ledger' && (
                 <TradeLedger
                   embedded
                   title="Paper Trade Ledger"
                   transactions={paper.transactions}
                   filename={LEDGER_FILENAME}
                 />
-              ) : openCount > 0 ? (
-                <div className="ledger-scroll" role="region" aria-label="Open positions">
+              )}
+              {tab !== 'ledger' && openCount > 0 && (
+                <section className="ledger-scroll" aria-label="Open positions">
                   <table className="ledger-table paper-positions">
                     <thead>
                       <tr>
@@ -469,8 +474,9 @@ export function PaperTradingTerminal({ assets: baseAssets }: { assets: Asset[] }
                       ))}
                     </tbody>
                   </table>
-                </div>
-              ) : (
+                </section>
+              )}
+              {tab !== 'ledger' && openCount === 0 && (
                 <div className="holdings-empty">
                   <Activity size={26} />
                   <span className="holdings-empty-title">No open paper positions</span>

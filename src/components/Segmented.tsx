@@ -16,13 +16,13 @@ export function Segmented<T extends string>({
   onChange,
   ariaLabel,
   className,
-}: {
+}: Readonly<{
   value: T;
   options: SegmentOption<T>[];
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
-}) {
+}>) {
   const activeIndex = Math.max(
     options.findIndex((option) => option.value === value),
     0,

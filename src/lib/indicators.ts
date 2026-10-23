@@ -45,7 +45,7 @@ export function rsi(values: number[], period = 14): Float64Array {
   // Wilder smoothing for the remaining bars.
   for (let i = period + 1; i < prices.length; i += 1) {
     const change = prices[i]! - prices[i - 1]!;
-    const gain = change > 0 ? change : 0;
+    const gain = change > 0 ? change : 0; // NOSONAR(S7766): Math.max lets a NaN change poison the average
     const loss = change < 0 ? -change : 0;
     avgGain = (avgGain * (period - 1) + gain) / period;
     avgLoss = (avgLoss * (period - 1) + loss) / period;

@@ -451,7 +451,7 @@ interface PortfolioStore {
 
 const PortfolioContext = createContext<PortfolioStore | null>(null);
 
-export function PortfolioProvider({ children }: { children: ReactNode }) {
+export function PortfolioProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [scope, setScope] = useState<ScopedPortfolioState>(() => ({
     userId: null,
     ...readScopeState(null),

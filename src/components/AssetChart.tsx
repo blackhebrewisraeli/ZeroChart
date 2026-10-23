@@ -35,12 +35,12 @@ export function AssetChart({
   ticker,
   quantHeight = 276,
   actions,
-}: {
+}: Readonly<{
   ticker: string;
   quantHeight?: number;
   /** Extra controls shown beside the chart-mode toggle. */
   actions?: ReactNode;
-}) {
+}>) {
   const isCrypto = isBinanceCrypto(ticker);
   // Our own candles are crypto-only, so other assets open on TradingView.
   const [chartMode, setChartMode] = useState<ChartMode>(isCrypto ? 'quant' : 'tradingview');
@@ -87,6 +87,31 @@ export function AssetChart({
     [candles],
   );
 
+  let chart: ReactNode;
+  if (chartMode === 'tradingview') {
+    chart = <TradingViewWidget symbol={toTradingViewSymbol(ticker)} />;
+  } else if (!isCrypto) {
+    chart = (
+      <div className="asset-chart-fallback">
+        <LineChart size={22} />
+        <span>
+          Quant charts are available for crypto assets. Switch to TradingView Pro for live charts.
+        </span>
+      </div>
+    );
+  } else if (status === 'loading') {
+    chart = <div className="asset-chart-fallback">Loading historical data…</div>;
+  } else if (status === 'error') {
+    chart = (
+      <div className="asset-chart-fallback">
+        <LineChart size={22} />
+        <span>Couldn't load chart data. Please try again.</span>
+      </div>
+    );
+  } else {
+    chart = <CandlestickChart data={candleData} height={quantHeight} indicators={indicators} />;
+  }
+
   return (
     <>
       <div className="chart-mode-bar">
@@ -100,7 +125,7 @@ export function AssetChart({
       </div>
 
       {chartMode === 'quant' && isCrypto && status === 'success' && (
-        <div className="indicator-toggles" role="group" aria-label="Technical indicators">
+        <fieldset className="indicator-toggles" aria-label="Technical indicators">
           {INDICATOR_OPTIONS.map((option) => (
             <button
               key={option.key}
@@ -114,33 +139,14 @@ export function AssetChart({
               {option.label}
             </button>
           ))}
-        </div>
+        </fieldset>
       )}
 
       <section
         className={cn('asset-details-chart', chartMode === 'tradingview' && 'is-tradingview')}
         aria-label={`${ticker} historical chart`}
       >
-        {chartMode === 'tradingview' ? (
-          <TradingViewWidget symbol={toTradingViewSymbol(ticker)} />
-        ) : !isCrypto ? (
-          <div className="asset-chart-fallback">
-            <LineChart size={22} />
-            <span>
-              Quant charts are available for crypto assets. Switch to TradingView Pro for live
-              charts.
-            </span>
-          </div>
-        ) : status === 'loading' ? (
-          <div className="asset-chart-fallback">Loading historical data…</div>
-        ) : status === 'error' ? (
-          <div className="asset-chart-fallback">
-            <LineChart size={22} />
-            <span>Couldn't load chart data. Please try again.</span>
-          </div>
-        ) : (
-          <CandlestickChart data={candleData} height={quantHeight} indicators={indicators} />
-        )}
+        {chart}
       </section>
 
       <p className="asset-chart-source">

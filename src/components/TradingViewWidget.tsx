@@ -18,7 +18,7 @@ const PALETTE = {
  * interval selector), re-mounted whenever the symbol or app theme changes.
  * Fills its parent, which must have a defined height.
  */
-export function TradingViewWidget({ symbol }: { symbol: string }) {
+export function TradingViewWidget({ symbol }: Readonly<{ symbol: string }>) {
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === 'light' ? 'light' : 'dark';
   const hostRef = useRef<HTMLDivElement>(null);

@@ -10,6 +10,8 @@ const CLOSE_MS = 260;
 
 type AuthMode = 'signin' | 'signup';
 
+const SUBMIT_LABEL: Record<AuthMode, string> = { signin: 'Sign In', signup: 'Create Account' };
+
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -188,7 +190,7 @@ export function AuthModal({
           </button>
         </header>
 
-        <div className="auth-mode" role="group" aria-label="Authentication mode">
+        <fieldset className="auth-mode" aria-label="Authentication mode">
           <button
             type="button"
             className={cn('auth-mode-btn', mode === 'signin' && 'is-active')}
@@ -211,7 +213,7 @@ export function AuthModal({
           >
             Sign Up
           </button>
-        </div>
+        </fieldset>
 
         <div className="oauth-buttons">
           <button
@@ -282,7 +284,7 @@ export function AuthModal({
             </p>
           )}
           <button type="submit" className="auth-submit" disabled={submitting}>
-            {submitting ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+            {submitting ? 'Please wait…' : SUBMIT_LABEL[mode]}
           </button>
         </div>
       </motion.form>

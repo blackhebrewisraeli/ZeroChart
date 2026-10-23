@@ -8,7 +8,7 @@ import { TradeTicket } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 
-function FeedTime({ at }: { at: number | null }) {
+function FeedTime({ at }: Readonly<{ at: number | null }>) {
   if (at === null) return null;
   return (
     <time className="suggestion-time" dateTime={new Date(at).toISOString()}>
@@ -33,11 +33,11 @@ export function TacticalSignals({
   assets,
   onSelect,
   selectedTicker,
-}: {
+}: Readonly<{
   assets: Asset[];
   onSelect?: (ticker: string) => void;
   selectedTicker?: string | undefined;
-}) {
+}>) {
   const { portfolios } = usePortfolio();
   const { triggered } = useAlerts();
   const ledger = portfolios.paper_trading;

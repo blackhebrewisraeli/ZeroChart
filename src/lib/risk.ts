@@ -22,12 +22,11 @@ export const DAILY_PERIODS_PER_YEAR = 365;
  * in the 0–1 range (0.25 = a 25% drop from the highest peak). Non-finite
  * samples are skipped; a rising or single-point curve reports 0.
  */
-export function maxDrawdown(values: ArrayLike<number>): number {
+export function maxDrawdown(values: Iterable<number>): number {
   let peak = Number.NEGATIVE_INFINITY;
   let worst = 0;
-  for (let i = 0; i < values.length; i += 1) {
-    const value = values[i];
-    if (value === undefined || !Number.isFinite(value)) continue;
+  for (const value of values) {
+    if (!Number.isFinite(value)) continue;
     if (value > peak) peak = value;
     if (peak <= 0) continue;
     const drop = (peak - value) / peak;
@@ -269,7 +268,9 @@ export function checkNewEntry(
 /** Formats a share quantity for display, trimming to sensible precision. */
 export function formatShares(shares: number): string {
   if (!Number.isFinite(shares) || shares <= 0) return '—';
-  const decimals = shares >= 100 ? 1 : shares >= 1 ? 2 : 4;
+  let decimals = 4;
+  if (shares >= 100) decimals = 1;
+  else if (shares >= 1) decimals = 2;
   return Number(shares.toFixed(decimals)).toLocaleString('en-US', {
     maximumFractionDigits: 4,
   });

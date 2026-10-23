@@ -51,10 +51,10 @@ const TRADFI_BROKERS: BrokerOption[] = [
 export function BrokerModal({
   asset,
   variant = 'row',
-}: {
+}: Readonly<{
   asset: Asset;
   variant?: 'hero' | 'row';
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
@@ -138,9 +138,9 @@ export function BrokerModal({
             className={cn('broker-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}
           >
-            <div
+            <dialog
+              open
               className={cn('broker-sheet', closing && 'is-closing')}
-              role="dialog"
               aria-modal="true"
               aria-label={`Trade ${asset.ticker}`}
             >
@@ -189,7 +189,7 @@ export function BrokerModal({
                 Fees are indicative and may vary by region. ZeroChart may earn a referral
                 commission.
               </footer>
-            </div>
+            </dialog>
           </div>,
           document.body,
         )}

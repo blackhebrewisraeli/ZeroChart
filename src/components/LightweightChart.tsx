@@ -108,11 +108,11 @@ export function CandlestickChart({
   data,
   height = 276,
   indicators = {},
-}: {
+}: Readonly<{
   data: CandlePoint[];
   height?: number;
   indicators?: IndicatorToggles;
-}) {
+}>) {
   const mainContainerRef = useRef<HTMLDivElement | null>(null);
   const rsiContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -311,12 +311,12 @@ export function ValueAreaChart({
   data,
   compareData,
   height = 300,
-}: {
+}: Readonly<{
   data: ValuePoint[];
   /** Optional dashed overlay, e.g. a buy-and-hold benchmark. */
   compareData?: ValuePoint[];
   height?: number;
-}) {
+}>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Area'> | null>(null);

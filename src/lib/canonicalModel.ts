@@ -147,7 +147,7 @@ function clamp(value: number, min: number, max: number): number {
 /** Piecewise-linear interpolation through ascending `[x, y]` control points. */
 function interpolate(x: number, points: ReadonlyArray<readonly [number, number]>): number {
   const first = points[0];
-  const last = points[points.length - 1];
+  const last = points.at(-1);
   if (first === undefined || last === undefined) return 0;
   if (x <= first[0]) return first[1];
   if (x >= last[0]) return last[1];
@@ -205,22 +205,29 @@ function signedPercent(fraction: number): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 }
 
+function momentumBias(momentumPercent: number): string {
+  if (momentumPercent >= FLAT_MOMENTUM) return 'Bullish';
+  if (momentumPercent <= -FLAT_MOMENTUM) return 'Bearish';
+  return 'Flat';
+}
+
+function volatilityTone(volatilityPercent: number): string {
+  if (volatilityPercent < CALM_VOLATILITY) return 'calm';
+  if (volatilityPercent < REGIME_HIGH_VOLATILITY) return 'elevated';
+  return 'high';
+}
+
+function rsiZone(rsiValue: number): string {
+  if (rsiValue <= RSI_OVERSOLD) return 'oversold';
+  if (rsiValue >= RSI_OVERBOUGHT) return 'overbought';
+  return 'neutral';
+}
+
 function buildRationale(inputs: FactorInputs, regime: MarketRegime): string {
   const { rsi: rsiValue, momentumPercent, volatilityPercent } = inputs;
-  const bias =
-    momentumPercent >= FLAT_MOMENTUM
-      ? 'Bullish'
-      : momentumPercent <= -FLAT_MOMENTUM
-        ? 'Bearish'
-        : 'Flat';
-  const tone =
-    volatilityPercent < CALM_VOLATILITY
-      ? 'calm'
-      : volatilityPercent < REGIME_HIGH_VOLATILITY
-        ? 'elevated'
-        : 'high';
-  const zone =
-    rsiValue <= RSI_OVERSOLD ? 'oversold' : rsiValue >= RSI_OVERBOUGHT ? 'overbought' : 'neutral';
+  const bias = momentumBias(momentumPercent);
+  const tone = volatilityTone(volatilityPercent);
+  const zone = rsiZone(rsiValue);
   return (
     `${bias} momentum (${signedPercent(momentumPercent)}) + ` +
     `${tone} volatility (${(volatilityPercent * 100).toFixed(1)}%) + ` +

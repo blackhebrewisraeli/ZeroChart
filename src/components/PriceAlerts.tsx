@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
  * synced to `user_alerts`. Notifications come exclusively from the engine's
  * toast channel — this panel only renders the list and creation form.
  */
-export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | null }) {
+export function PriceAlerts({ assets, user }: Readonly<{ assets: Asset[]; user: User | null }>) {
   const { alerts, sync, createAlert, deleteAlert } = useAlertController(user);
 
   const tradableAssets = useMemo(
@@ -100,7 +100,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
 
           <div className="price-alerts-field">
             <span className="price-alerts-label">Condition</span>
-            <div className="price-alerts-condition" role="group" aria-label="Alert condition">
+            <fieldset className="price-alerts-condition" aria-label="Alert condition">
               <button
                 type="button"
                 className={cn('price-alerts-condition-btn', condition === 'above' && 'is-active')}
@@ -117,7 +117,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
               >
                 Fall below
               </button>
-            </div>
+            </fieldset>
           </div>
 
           <label className="price-alerts-field">
@@ -148,11 +148,11 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
       )}
 
       <div className="price-alerts-list">
-        {sync.status === 'loading' ? (
-          <div className="price-alerts-empty">Loading alerts…</div>
-        ) : alerts.length === 0 ? (
+        {sync.status === 'loading' && <div className="price-alerts-empty">Loading alerts…</div>}
+        {sync.status !== 'loading' && alerts.length === 0 && (
           <div className="price-alerts-empty">No active alerts yet.</div>
-        ) : (
+        )}
+        {sync.status !== 'loading' &&
           alerts.map((alert) => (
             <div key={alert.id} className="price-alert-item">
               <span className="price-alert-ticker">{toDisplayTicker(alert.ticker)}</span>
@@ -179,8 +179,7 @@ export function PriceAlerts({ assets, user }: { assets: Asset[]; user: User | nu
                 <Trash2 size={14} />
               </button>
             </div>
-          ))
-        )}
+          ))}
       </div>
     </div>
   );

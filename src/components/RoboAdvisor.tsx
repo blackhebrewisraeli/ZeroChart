@@ -11,7 +11,7 @@ import {
   Shield,
   X,
 } from 'lucide-react';
-import { formatPrice, type Asset } from '@/lib/assets';
+import { formatPrice, scoreTone, type Asset } from '@/lib/assets';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { useAuth } from '@/lib/authStore';
@@ -65,11 +65,6 @@ const FACTOR_CHIPS = [
 
 function formatWeight(weight: number) {
   return `${(weight * 100).toFixed(1)}%`;
-}
-
-function scoreTone(score: number | null) {
-  if (score === null) return '';
-  return score > 85 ? 'score-high' : score >= 70 ? 'score-mid' : 'score-low';
 }
 
 type Proposal = ReturnType<typeof useProposalExecution>;
@@ -241,7 +236,10 @@ function ProposalFooter({
   );
 }
 
-export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: () => void }) {
+export function RoboAdvisor({
+  assets,
+  onInvest,
+}: Readonly<{ assets: Asset[]; onInvest?: () => void }>) {
   const { isPro } = useAuth();
   const [open, setOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -420,9 +418,9 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
             className={cn('robo-overlay', closing && 'is-closing')}
             onClick={closeOnBackdrop(closeModal)}
           >
-            <div
+            <dialog
+              open
               className={cn('robo-panel', closing && 'is-closing')}
-              role="dialog"
               aria-modal="true"
               aria-labelledby="robo-title"
             >
@@ -793,7 +791,7 @@ export function RoboAdvisor({ assets, onInvest }: { assets: Asset[]; onInvest?: 
                   />
                 </>
               )}
-            </div>
+            </dialog>
           </div>,
           document.body,
         )}

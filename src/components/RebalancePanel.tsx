@@ -16,13 +16,20 @@ const BAND_POINTS = REBALANCE_BAND * 100;
  * Core Portfolio rebalancing (M2-T2): target weights in, drift and the trades
  * that restore them out. Passive — no quant signal reaches this panel.
  */
+/** An action cell with no trade to place: why not, or a dash when none is due. */
+function idleActionLabel(hasTrade: boolean, breached: boolean, priced: boolean): string {
+  if (hasTrade) return 'Needs cash';
+  if (breached && !priced) return 'No live price';
+  return '—';
+}
+
 export function RebalancePanel({
   portfolioType,
   assets,
-}: {
+}: Readonly<{
   portfolioType: PortfolioType;
   assets: Asset[];
-}) {
+}>) {
   const { portfolios, setTargetAllocations } = usePortfolio();
   const portfolio = portfolios[portfolioType];
   const targets = portfolio.targetAllocations ?? {};
@@ -48,8 +55,10 @@ export function RebalancePanel({
   function startEditing() {
     // Existing targets, or today's holdings weights (cash aside) as the starting point.
     const holdingsValue = plan.rows.reduce((sum, row) => sum + row.value, 0);
-    const start = (row: (typeof plan.rows)[number]) =>
-      hasTargets ? row.targetWeight : holdingsValue > 0 ? row.value / holdingsValue : 0;
+    const start = (row: (typeof plan.rows)[number]) => {
+      if (hasTargets) return row.targetWeight;
+      return holdingsValue > 0 ? row.value / holdingsValue : 0;
+    };
     setDraft(
       Object.fromEntries(plan.rows.map((row) => [row.ticker, (start(row) * 100).toFixed(1)])),
     );
@@ -182,12 +191,8 @@ export function RebalancePanel({
                         initialAmount={amount}
                         label={`${trade.side === 'buy' ? 'Buy' : 'Sell'} ${formatPrice(amount)}`}
                       />
-                    ) : trade ? (
-                      'Needs cash'
-                    ) : plan.breached && !row.priced ? (
-                      'No live price'
                     ) : (
-                      '—'
+                      idleActionLabel(trade !== undefined, plan.breached, row.priced)
                     )}
                   </td>
                 </tr>

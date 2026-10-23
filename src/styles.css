@@ -999,8 +999,9 @@ body {
   *,
   *::before,
   *::after {
-    animation: none !important;
-    transition: none !important;
+    /* The reduced-motion reset must beat every component rule; !important is the only way. */
+    animation: none !important; /* NOSONAR(S9423) */
+    transition: none !important; /* NOSONAR(S9423) */
   }
 }
 
@@ -3026,6 +3027,7 @@ body {
 }
 .paper-side .suggestion-card {
   flex-wrap: wrap;
+  cursor: pointer;
 }
 .paper-side .suggestion-card .suggestion-body {
   flex-basis: calc(100% - 58px);
@@ -3067,11 +3069,6 @@ button.paper-ticker:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-.paper-close {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
 }
 .paper-size {
   display: inline-grid;
@@ -3141,10 +3138,10 @@ button.paper-ticker:hover {
   outline: 2px solid var(--brand-blue);
   outline-offset: -2px;
 }
-.paper-side .suggestion-card {
-  cursor: pointer;
-}
 .paper-close {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
   border: 1px solid color-mix(in oklch, var(--destructive) 45%, transparent);
   border-radius: 8px;
   background: color-mix(in oklch, var(--destructive) 8%, transparent);
@@ -6991,7 +6988,8 @@ button.paper-ticker:hover {
   height: 36px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  /* Opaque 4% white over the modal's #0f0f12, so contrast checks see the real surface. */
+  background: #19191c;
   color: oklch(0.75 0.015 250);
   cursor: pointer;
   transition:
@@ -7001,7 +6999,7 @@ button.paper-ticker:hover {
 }
 .pricing-close:hover {
   color: white;
-  background: rgba(255, 255, 255, 0.08);
+  background: #222225;
 }
 .pricing-close:active {
   transform: scale(0.94);

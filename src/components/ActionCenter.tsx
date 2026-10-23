@@ -196,6 +196,9 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         })
       : null;
   const rejection = entry?.ok === false ? entry.reason : null;
+  const provenanceComplete = Boolean(
+    signal.exchange && signal.timeframe && signal.bar_time && signal.model_version,
+  );
 
   return (
     <section
@@ -208,7 +211,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
       </p>
       <dl className="action-center-facts">
         <div>
-          <dt>Signal Score</dt>
+          <dt>Model Signal Score</dt>
           <dd>{signal.signal_score} / 100</dd>
         </div>
         <div>
@@ -223,11 +226,23 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         )}
         {signal.stop_loss !== null && (
           <div>
-            <dt>Stop Loss</dt>
+            <dt>Planned stop</dt>
             <dd>{formatPrice(Number(signal.stop_loss))}</dd>
           </div>
         )}
       </dl>
+      <p className="action-center-context">
+        TradingView alert · simulated execution only. The model score is not a probability.
+        {signal.stop_loss !== null && ' Planned stops do not create automatic stop orders.'}
+      </p>
+      <p
+        className={cn('action-center-source', !provenanceComplete && 'is-incomplete')}
+        role={provenanceComplete ? undefined : 'note'}
+      >
+        {provenanceComplete
+          ? `Source: ${signal.exchange} · ${signal.timeframe} · model ${signal.model_version}`
+          : 'Source details are incomplete. Verify this alert in TradingView before simulating it.'}
+      </p>
       <div className="action-center-actions">
         <button
           type="button"

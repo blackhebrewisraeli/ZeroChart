@@ -177,6 +177,30 @@ describe('Action Center', () => {
     db.status = 'SUBSCRIBED';
     db.holdStatus = false;
   });
+
+  it('warns when a TradingView signal lacks strategy provenance', async () => {
+    db.pending = [signal()];
+    renderSignedIn();
+
+    expect(
+      await screen.findByText(/Source details are incomplete.*Verify this alert in TradingView/),
+    ).toBeVisible();
+  });
+
+  it('shows complete TradingView strategy provenance when supplied', async () => {
+    db.pending = [
+      signal({
+        exchange: 'BINANCE',
+        timeframe: '1D',
+        bar_time: '2026-10-20T12:00:00Z',
+        model_version: '1.0.0',
+      }),
+    ];
+    renderSignedIn();
+
+    expect(await screen.findByText('Source: BINANCE · 1D · model 1.0.0')).toBeVisible();
+    expect(screen.queryByText(/Source details are incomplete/)).toBeNull();
+  });
   afterEach(cleanup);
 
   it('subscribes to the user’s signals and shows a realtime BUY as one big card', async () => {

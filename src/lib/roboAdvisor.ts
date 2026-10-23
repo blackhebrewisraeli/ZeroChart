@@ -69,6 +69,18 @@ export interface QuantDeps {
   fetchCandles: (ticker: string) => Promise<readonly EngineCandle[]>;
 }
 
+export interface PortfolioBuildDiagnostics {
+  totalCandidates: number;
+  eligible: number;
+  insufficientData: number;
+  networkFailures: number;
+  belowMinimumScore: number;
+  highVolatility: number;
+  nonPositiveMomentum: number;
+}
+
+type ScoreAttempt = { result: CanonicalResult; networkFailed: boolean };
+
 /**
  * 200 daily candles from Binance: well past MIN_CANDLES, and long enough for
  * the Wilder/EMA smoothers to converge on TradingView's full-history values.
@@ -82,17 +94,23 @@ const defaultDeps: QuantDeps = {
  * The canonical engine result for one ticker: its candles, scored in the
  * finance Web Worker. Never rejects — a failed fetch simply has no candles.
  */
+async function scoreTickerAttempt(
+  ticker: string,
+  deps: QuantDeps = defaultDeps,
+): Promise<ScoreAttempt> {
+  try {
+    const candles = await deps.fetchCandles(ticker);
+    return { result: await evaluateCandlesAsync(candles), networkFailed: false };
+  } catch {
+    return { result: await evaluateCandlesAsync([]), networkFailed: true };
+  }
+}
+
 export async function scoreTicker(
   ticker: string,
   deps: QuantDeps = defaultDeps,
 ): Promise<CanonicalResult> {
-  let candles: readonly EngineCandle[] = [];
-  try {
-    candles = await deps.fetchCandles(ticker);
-  } catch {
-    // Fall through: zero candles is INSUFFICIENT_DATA, never a guessed score.
-  }
-  return evaluateCandlesAsync(candles);
+  return (await scoreTickerAttempt(ticker, deps)).result;
 }
 
 /** A valid positive live price for the asset, if the provider gave us one. */
@@ -114,35 +132,74 @@ export async function buildQuantPortfolio(
     preferences: PortfolioPreferences;
     availableAssets: Asset[];
     excludeTickers?: ReadonlySet<string>;
+    /** Reports why candidates were skipped without changing allocation rules. */
+    onDiagnostics?: (diagnostics: PortfolioBuildDiagnostics) => void;
   },
   deps: QuantDeps = defaultDeps,
 ): Promise<Allocation[]> {
-  const { preferences, availableAssets, excludeTickers = new Set<string>() } = options;
+  const {
+    preferences,
+    availableAssets,
+    excludeTickers = new Set<string>(),
+    onDiagnostics,
+  } = options;
 
   const candidates = availableAssets.filter((asset) => !excludeTickers.has(asset.ticker));
-  if (candidates.length === 0) return [];
+  const diagnostics: PortfolioBuildDiagnostics = {
+    totalCandidates: candidates.length,
+    eligible: 0,
+    insufficientData: 0,
+    networkFailures: 0,
+    belowMinimumScore: 0,
+    highVolatility: 0,
+    nonPositiveMomentum: 0,
+  };
+  if (candidates.length === 0) {
+    onDiagnostics?.(diagnostics);
+    return [];
+  }
 
   const scored = await Promise.all(
     candidates.map(async (asset) => ({
       asset,
-      result: await scoreTicker(asset.ticker, deps),
+      ...(await scoreTickerAttempt(asset.ticker, deps)),
     })),
   );
+  const policy = RISK_PROFILE_POLICIES[preferences.riskProfile];
   const qualified = scored
-    .flatMap(({ asset, result }) =>
-      result.status === 'OK' && qualifiesForRiskProfile(preferences.riskProfile, result)
-        ? [{ asset, result }]
-        : [],
-    )
+    .flatMap(({ asset, result, networkFailed }) => {
+      if (networkFailed) {
+        diagnostics.networkFailures += 1;
+        return [];
+      }
+      if (result.status !== 'OK') {
+        diagnostics.insufficientData += 1;
+        return [];
+      }
+      if (policy.excludeHighVolatility && result.regime === 'HIGH_VOLATILITY') {
+        diagnostics.highVolatility += 1;
+        return [];
+      }
+      if (result.signal_score < policy.minimumScore) {
+        diagnostics.belowMinimumScore += 1;
+        return [];
+      }
+      if (policy.requirePositiveMomentum && result.components.momentumScore <= 50) {
+        diagnostics.nonPositiveMomentum += 1;
+        return [];
+      }
+      diagnostics.eligible += 1;
+      return [{ asset, result }];
+    })
     .sort((a, b) => b.result.signal_score - a.result.signal_score)
     .slice(0, ASSET_COUNT_BY_RISK[preferences.riskProfile]);
+
+  onDiagnostics?.(diagnostics);
 
   if (qualified.length === 0) return [];
 
   const totalScore = qualified.reduce((sum, item) => sum + item.result.signal_score, 0);
   const capital = preferences.totalCapital;
-  const policy = RISK_PROFILE_POLICIES[preferences.riskProfile];
-
   return qualified.map(({ asset, result }) => {
     const { signal_score: score, components, regime, rationale, atr } = result;
     const weight = Math.min(score / totalScore, policy.maxAllocation);

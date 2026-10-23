@@ -90,7 +90,7 @@ describe('AssetDetailsModal chart mode', () => {
     expect(screen.queryByTestId('quant-chart')).not.toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Technical indicators' })).not.toBeInTheDocument();
     expect(screen.getByTestId('tradingview-placeholder')).toHaveTextContent('BINANCE:BTCUSDT');
-    expect(screen.getByText('Quant Signal Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('Model Signal Score')).toBeInTheDocument();
     expect(await screen.findByText(/ATR position size/)).toBeInTheDocument();
     // The placeholder never loads TradingView's script under test.
     expect(document.querySelector('script[src*="tradingview"]')).toBeNull();

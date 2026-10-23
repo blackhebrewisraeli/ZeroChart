@@ -13,6 +13,7 @@ import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { getBrokerUrl } from '@/lib/tradeRouter';
 import { useAuth } from '@/lib/authStore';
 import { cn, closeOnBackdrop } from '@/lib/utils';
+import { containDialogTab } from '@/lib/dialogFocus';
 
 const CLOSE_MS = 260;
 
@@ -122,6 +123,8 @@ export function AssetDetailsModal({
   const closingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const assetClass = getAssetClass(asset.ticker);
 
   const close = useCallback(() => {
@@ -139,11 +142,13 @@ export function AssetDetailsModal({
   );
 
   useEffect(() => {
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previous;
+      returnFocusRef.current?.focus();
     };
   }, []);
 
@@ -152,6 +157,7 @@ export function AssetDetailsModal({
       // A nested Radix layer (e.g. PricingModal) that handled this Escape has
       // already called preventDefault — let it close alone.
       if (e.key === 'Escape' && !e.defaultPrevented) close();
+      containDialogTab(e, dialogRef.current);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -169,6 +175,7 @@ export function AssetDetailsModal({
           onClick={closeOnBackdrop(close)}
         >
           <dialog
+            ref={dialogRef}
             open
             className={cn('asset-details-sheet', closing && 'is-closing')}
             aria-modal="true"
@@ -224,8 +231,12 @@ export function AssetDetailsModal({
             <section className="quant-breakdown" aria-labelledby="quant-breakdown-title">
               <div className="quant-breakdown-head">
                 <h4 id="quant-breakdown-title" className="quant-breakdown-title">
-                  Quant Signal Breakdown
+                  Model Signal Score
                 </h4>
+                <p className="quant-breakdown-note">
+                  A 0–100 ranking from RSI, MACD and ATR. It is not a probability or return
+                  forecast.
+                </p>
               </div>
               <div className="pro-feature-gate asset-quant-gate">
                 <div

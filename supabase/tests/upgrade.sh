@@ -76,7 +76,7 @@ check "a signal left pending by the old release is not executable" \
   "$(grep -o 'Only verified strategy signals can be executed' <<<"$executed")" \
   'Only verified strategy signals can be executed'
 check "the unverified legacy signal stays pending without a fill" \
-  "$(sql "select status || '/' || count(*) from public.trading_signals s left join public.paper_transactions p on p.signal_id = s.id where s.event_id = 'upgrade-pending' group by status")" \
+  "$(sql "select status || '/' || count(p.signal_id) from public.trading_signals s left join public.paper_transactions p on p.signal_id = s.id where s.event_id = 'upgrade-pending' group by status")" \
   'PENDING/0'
 
 sql "delete from auth.users where id = '$USER_ID'; delete from public.assets_status where ticker = 'UPGRADECOIN';" >/dev/null

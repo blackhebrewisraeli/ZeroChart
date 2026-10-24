@@ -38,8 +38,10 @@ sql "
 insert into auth.users (id) values ('$USER_ID');
 insert into public.assets_status (ticker, current_price, updated_at, atr_14, analytics_updated_at)
 values ('RACE', 100, now(), 1, now());
-insert into public.trading_signals (id, user_id, ticker, action, signal_score, quantity, price, event_id)
-values ('$SIGNAL_ID', '$USER_ID', 'RACE', 'BUY', 90, 10, 100, 'race');
+insert into public.trading_signals
+  (id, user_id, ticker, action, signal_score, quantity, price, event_id, signal_kind, exchange, timeframe, bar_time, model_version)
+values
+  ('$SIGNAL_ID', '$USER_ID', 'RACE', 'BUY', 90, 10, 100, 'race', 'strategy', 'TEST', '1D', now(), '1.0.0');
 "
 
 # 1. Two clicks on one signal: the second waits for the first, then finds it executed.

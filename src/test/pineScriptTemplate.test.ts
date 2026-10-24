@@ -156,6 +156,7 @@ describe('buildPineScript', () => {
         ok: true,
         signal: {
           ticker: 'BTCUSDT',
+          signal_kind: 'strategy',
           action,
           signal_score: 85,
           price: 50_000.5,

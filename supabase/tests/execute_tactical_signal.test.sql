@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(21);
 
 insert into auth.users (id)
 values
@@ -13,15 +13,17 @@ insert into public.assets_status (ticker, current_price, updated_at)
 values ('AAPL', 100, now()), ('STALECOIN', 10, now() - interval '3 hours');
 
 insert into public.trading_signals
-  (id, user_id, ticker, action, signal_score, quantity, price, event_id)
+  (id, user_id, ticker, action, signal_score, quantity, price, event_id, signal_kind, exchange, timeframe, bar_time, model_version)
 values
-  ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 10, 100, 'atomic-success'),
-  ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 2000, 100, 'insufficient-cash'),
-  ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'bad-price'),
-  ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'AAPL', 'SELL', 20, 100, 100, 'insufficient-shares'),
-  ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'NOPRICE', 'BUY', 85, 1, 100, 'missing-price'),
-  ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'STALECOIN', 'BUY', 85, 1, 10, 'stale-price'),
-  ('10000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000002', 'AAPL', 'BUY', 85, 1, 100, 'other-account');
+  ('10000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 10, 100, 'atomic-success', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 2000, 100, 'insufficient-cash', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'bad-price', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000001', 'AAPL', 'SELL', 20, 100, 100, 'insufficient-shares', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000001', 'NOPRICE', 'BUY', 85, 1, 100, 'missing-price', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'STALECOIN', 'BUY', 85, 1, 10, 'stale-price', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000002', 'AAPL', 'BUY', 85, 1, 100, 'other-account', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'transport-test', 'transport_test', null, null, null, null),
+  ('10000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'legacy', null, 'NYSE', '1D', now(), '1.0.0');
 
 set local role authenticated;
 select set_config(
@@ -49,6 +51,41 @@ select is(
   ),
   'EXECUTED',
   'the successful signal is marked executed'
+);
+
+select throws_ok(
+  $$select public.execute_tactical_signal(
+    '10000000-0000-4000-8000-000000000008',
+    '00000000-0000-4000-8000-000000000001',
+    100
+  )$$,
+  '23514',
+  'Only verified strategy signals can be executed',
+  'transport-test signals cannot execute'
+);
+
+select throws_ok(
+  $$select public.execute_tactical_signal(
+    '10000000-0000-4000-8000-000000000009',
+    '00000000-0000-4000-8000-000000000001',
+    100
+  )$$,
+  '23514',
+  'Only verified strategy signals can be executed',
+  'legacy unverified signals cannot execute'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.paper_transactions
+    where signal_id in (
+      '10000000-0000-4000-8000-000000000008',
+      '10000000-0000-4000-8000-000000000009'
+    )
+  ),
+  0,
+  'rejected classifications create no fills'
 );
 
 select is(

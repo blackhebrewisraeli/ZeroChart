@@ -175,6 +175,7 @@ export type Database = {
           price: number | null;
           quantity: number;
           signal_score: number;
+          signal_kind: string | null;
           status: string;
           stop_loss: number | null;
           ticker: string;
@@ -192,6 +193,7 @@ export type Database = {
           price?: number | null;
           quantity: number;
           signal_score: number;
+          signal_kind?: string | null;
           status?: string;
           stop_loss?: number | null;
           ticker: string;
@@ -209,6 +211,7 @@ export type Database = {
           price?: number | null;
           quantity?: number;
           signal_score?: number;
+          signal_kind?: string | null;
           status?: string;
           stop_loss?: number | null;
           ticker?: string;

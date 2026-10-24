@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { loadPaperTransactions } from '@/lib/db';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
+const isStrategy = (signal: Signal) => signal.signal_kind === 'strategy';
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -67,7 +68,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           setPending((list) => {
             const rest = list.filter((s) => s.id !== row.id);
             // A PENDING event can arrive after this tab already resolved the row.
-            return row.status === 'PENDING' && !resolved.current.has(row.id)
+            return row.status === 'PENDING' && isStrategy(row) && !resolved.current.has(row.id)
               ? [row, ...rest]
               : rest;
           });
@@ -87,7 +88,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           .order('created_at', { ascending: false })
           .then(({ data }) => {
             if (!live || !data) return;
-            setPending((list) => appendNew(list, data, resolved.current));
+            setPending((list) => appendNew(list, data.filter(isStrategy), resolved.current));
           });
       });
     return () => {
@@ -199,6 +200,11 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const provenanceComplete = Boolean(
     signal.exchange && signal.timeframe && signal.bar_time && signal.model_version,
   );
+  const executionBlocked =
+    rejection ??
+    (!provenanceComplete || signal.model_version !== '1.0.0'
+      ? 'Verified strategy provenance is required before execution.'
+      : null);
 
   return (
     <section
@@ -247,8 +253,8 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         <button
           type="button"
           className="action-center-execute"
-          disabled={busy || rejection !== null}
-          aria-describedby={rejection ? 'action-center-rejection' : undefined}
+          disabled={busy || executionBlocked !== null}
+          aria-describedby={executionBlocked ? 'action-center-rejection' : undefined}
           onClick={() => void execute(signal)}
         >
           Execute Trade (Paper)
@@ -262,9 +268,9 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           Dismiss
         </button>
       </div>
-      {rejection && (
+      {executionBlocked && (
         <p id="action-center-rejection" className="action-center-rejection">
-          {rejection}
+          {executionBlocked}
         </p>
       )}
       {pending.length > 1 && (

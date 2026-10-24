@@ -7,6 +7,7 @@ import {
 } from '../../supabase/functions/tv-webhook/payload';
 
 const valid = {
+  signal_kind: 'strategy',
   ticker: 'BTCUSDT',
   action: 'SELL',
   signal_score: 5,
@@ -19,6 +20,7 @@ describe('tv-webhook payload', () => {
   it('normalises a TradingView alert body', () => {
     expect(
       parseSignal({
+        signal_kind: 'strategy',
         secret_token: 'tok',
         ticker: 'binance:btcusdt',
         action: 'buy',
@@ -31,6 +33,7 @@ describe('tv-webhook payload', () => {
     ).toEqual({
       ok: true,
       signal: {
+        signal_kind: 'strategy',
         ticker: 'BTCUSDT',
         action: 'BUY',
         signal_score: 85,
@@ -54,6 +57,7 @@ describe('tv-webhook payload', () => {
       }),
     ).toMatchObject({
       signal: {
+        signal_kind: 'strategy',
         exchange: 'BINANCE',
         timeframe: '60',
         bar_time: '2026-10-21T23:00:00.000Z',
@@ -64,9 +68,9 @@ describe('tv-webhook payload', () => {
     expect(parseSignal({ ...valid, bar_time: '2026-10-21T23:00:00Z' })).toMatchObject({
       signal: { bar_time: '2026-10-21T23:00:00.000Z' },
     });
-    // Alerts made before these fields existed still parse, without them.
-    const legacy = parseSignal(valid);
-    expect(legacy.ok && Object.keys(legacy.signal)).not.toContain('timeframe');
+    expect(parseSignal({ ...valid, signal_kind: 'transport_test' })).toMatchObject({
+      signal: { signal_kind: 'transport_test' },
+    });
   });
 
   it('keys an alert without event_id to its minute, so a re-send dedupes', () => {
@@ -81,6 +85,7 @@ describe('tv-webhook payload', () => {
   it.each([
     [null, 'Body must be a JSON object'],
     [{ ...valid, ticker: 'BTC USDT' }, 'ticker is invalid'],
+    [{ ...valid, signal_kind: undefined }, 'signal_kind must be strategy or transport_test'],
     [{ ...valid, action: 'HOLD' }, 'action must be BUY or SELL'],
     [{ ...valid, signal_score: '' }, 'signal_score must be 0-100'],
     [{ ...valid, signal_score: 101 }, 'signal_score must be 0-100'],

@@ -4,6 +4,7 @@ import { sha256Hex } from '../../supabase/functions/tv-webhook/payload';
 
 const alert = {
   secret_token: 'tok-secret',
+  signal_kind: 'strategy',
   ticker: 'BTCUSD',
   action: 'SELL',
   signal_score: 57,

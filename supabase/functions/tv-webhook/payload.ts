@@ -2,6 +2,7 @@
 // vitest covers it from src/test.
 
 export interface SignalInsert {
+  signal_kind: 'strategy' | 'transport_test';
   ticker: string;
   action: 'BUY' | 'SELL';
   signal_score: number;
@@ -113,6 +114,10 @@ export function parseSignal(body: unknown, now = new Date()): ParsedSignal {
     return { ok: false, error: 'Body must be a JSON object' };
   }
   const fields = body as Record<string, unknown>;
+  const signalKind = fields['signal_kind'];
+  if (signalKind !== 'strategy' && signalKind !== 'transport_test') {
+    return { ok: false, error: 'signal_kind must be strategy or transport_test' };
+  }
   // {{ticker}} is bare ("BTCUSDT"); "{{exchange}}:{{ticker}}" is accepted too.
   const ticker = upper(fields['ticker']).replace(/^[A-Z0-9_]+:/, '');
   if (!TICKER.test(ticker)) return { ok: false, error: 'ticker is invalid' };
@@ -141,6 +146,7 @@ export function parseSignal(body: unknown, now = new Date()): ParsedSignal {
   return {
     ok: true,
     signal: {
+      signal_kind: signalKind,
       ticker,
       action,
       signal_score: Math.round(score),

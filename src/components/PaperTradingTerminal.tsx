@@ -20,6 +20,7 @@ import {
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
 import { formatShares, MAX_PORTFOLIO_RISK_PERCENT } from '@/lib/risk';
 import { ActionCenter } from '@/components/ActionCenter';
+import { SignalDiagnostics } from '@/components/SignalDiagnostics';
 import { AssetChart } from '@/components/AssetChart';
 import { AssetIcon } from '@/components/AssetIcon';
 import { TacticalSignals } from '@/components/TacticalSignals';
@@ -342,6 +343,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
       </header>
 
       <ActionCenter assets={assets} />
+      <SignalDiagnostics />
 
       <section className="paper-pnl" aria-label="Paper telemetry">
         <Stat

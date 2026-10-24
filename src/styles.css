@@ -3086,6 +3086,62 @@ body {
     monospace;
   color: var(--muted-foreground);
 }
+.signal-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.signal-diagnostics-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--muted-foreground);
+}
+.signal-diagnostics-head h3,
+.signal-diagnostics-head p {
+  margin: 0;
+}
+.signal-diagnostics-head h3 {
+  color: var(--foreground);
+  font-size: 15px;
+}
+.signal-diagnostics-head p {
+  margin-top: 3px;
+  font-size: 12px;
+}
+.signal-diagnostics-list {
+  display: grid;
+  gap: 8px;
+}
+.signal-diagnostics-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.signal-diagnostics-row strong,
+.signal-diagnostics-row span {
+  display: block;
+}
+.signal-diagnostics-row strong {
+  font-size: 13px;
+}
+.signal-diagnostics-row div span {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.signal-diagnostics-status {
+  flex: 0 0 auto;
+  color: var(--accent-amber);
+  font: 600 11px 'JetBrains Mono', monospace;
+}
 @media (max-width: 500px) {
   .action-center-actions {
     grid-template-columns: 1fr;

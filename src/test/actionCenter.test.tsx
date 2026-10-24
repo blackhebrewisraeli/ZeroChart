@@ -142,6 +142,11 @@ function signal(overrides: Record<string, unknown> = {}) {
     price: 49_000,
     stop_loss: 48_000,
     event_id: '2026-10-20T12:00:00Z',
+    signal_kind: 'strategy',
+    exchange: 'BINANCE',
+    timeframe: '1D',
+    bar_time: '2026-10-20T12:00:00Z',
+    model_version: '1.0.0',
     status: 'PENDING',
     created_at: '2026-10-20T12:00:00.000Z',
     ...overrides,
@@ -179,7 +184,7 @@ describe('Action Center', () => {
   });
 
   it('warns when a TradingView signal lacks strategy provenance', async () => {
-    db.pending = [signal()];
+    db.pending = [signal({ exchange: null, timeframe: null, bar_time: null, model_version: null })];
     renderSignedIn();
 
     expect(

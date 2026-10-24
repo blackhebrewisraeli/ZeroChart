@@ -5,6 +5,7 @@
 
 -- Where the alert came from. Null on alerts set up before these fields existed.
 alter table public.trading_signals
+  add column if not exists signal_kind text,
   add column if not exists exchange text,
   add column if not exists timeframe text,
   add column if not exists bar_time timestamptz,
@@ -33,9 +34,13 @@ begin
   if signal is null then
     return 'authorized';
   end if;
+  if signal ->> 'signal_kind' not in ('strategy', 'transport_test') then
+    raise exception 'signal_kind must be strategy or transport_test' using errcode = 'check_violation';
+  end if;
 
   insert into public.trading_signals (
     user_id,
+    signal_kind,
     ticker,
     action,
     signal_score,
@@ -49,6 +54,7 @@ begin
     model_version
   ) values (
     owner,
+    signal ->> 'signal_kind',
     signal ->> 'ticker',
     signal ->> 'action',
     (signal ->> 'signal_score')::integer,

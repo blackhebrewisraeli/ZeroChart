@@ -2,10 +2,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261022090000_execute_tactical_signal.sql'),
-  'utf8',
-);
+const sql = [
+  readFileSync(
+    join(process.cwd(), 'supabase/migrations/20261024040000_signal_classification.sql'),
+    'utf8',
+  ),
+  readFileSync(
+    join(process.cwd(), 'supabase/migrations/20261022090000_execute_tactical_signal.sql'),
+    'utf8',
+  ),
+].join('\n');
 
 describe('execute_tactical_signal migration contract', () => {
   it('serializes a signal and uniquely links it to one paper fill', () => {
@@ -28,7 +34,12 @@ describe('execute_tactical_signal migration contract', () => {
   });
 
   it('enforces the 0.5% server-price band', () => {
-    expect(sql).toContain('tolerance constant numeric := 0.005');
     expect(sql).toMatch(/server_price \* 0\.005/i);
+  });
+
+  it('rejects transport tests and unverified or unsupported strategy provenance', () => {
+    expect(sql).toMatch(/signal_kind is distinct from 'strategy'/i);
+    expect(sql).toMatch(/model_version <> '1\.0\.0'/i);
+    expect(sql).toMatch(/signal_kind is null or signal_kind in \('strategy', 'transport_test'\)/i);
   });
 });

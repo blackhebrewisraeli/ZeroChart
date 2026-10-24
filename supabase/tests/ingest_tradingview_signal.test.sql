@@ -14,6 +14,7 @@ values (
 create temporary table delivery as
 select jsonb_build_object(
   'ticker', 'BTCUSD',
+  'signal_kind', 'strategy',
   'action', 'SELL',
   'signal_score', 57,
   'price', 84000,
@@ -60,7 +61,7 @@ select is(
 );
 select results_eq(
   $$
-    select user_id, status, exchange, timeframe, bar_time, model_version
+    select user_id, status, signal_kind, exchange, timeframe, bar_time, model_version
     from public.trading_signals
     where event_id = '2026-10-22T00:00:22Z'
   $$,
@@ -68,6 +69,7 @@ select results_eq(
     values (
       '00000000-0000-4000-8000-000000000011'::uuid,
       'PENDING'::text,
+      'strategy'::text,
       'BINANCE'::text,
       '60'::text,
       '2026-10-21T23:00:00Z'::timestamptz,

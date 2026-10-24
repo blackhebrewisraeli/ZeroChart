@@ -241,6 +241,216 @@ function ProposalFooter({
   );
 }
 
+function AllocationList({
+  result,
+  assetByTicker,
+  proposal,
+  isPro,
+  canSwapMore,
+  onSwap,
+  onUpgrade,
+}: Readonly<{
+  result: Allocation[];
+  assetByTicker: Map<string, Asset>;
+  proposal: Proposal;
+  isPro: boolean;
+  canSwapMore: boolean;
+  onSwap: (ticker: string) => void;
+  onUpgrade: () => void;
+}>) {
+  return (
+    <ul className="robo-allocation-list">
+      {result.map((allocation, index) => {
+        const asset = assetByTicker.get(allocation.ticker);
+        const score = allocation.score ?? null;
+        // Once priced, the size is what the order books, so the row
+        // and the orders table never show two quantities.
+        const shares =
+          proposal.plan?.orders.find((order) => order.ticker === allocation.ticker.toUpperCase())
+            ?.quantity ??
+          allocation.suggestedShares ??
+          null;
+        const hasInsights = Boolean(
+          allocation.regime || allocation.rationale || allocation.components,
+        );
+
+        return (
+          <li
+            key={allocation.ticker}
+            className="robo-allocation"
+            style={{ animationDelay: `${index * 55}ms` }}
+          >
+            <span className="robo-rank">{index + 1}</span>
+            <div className="robo-asset">
+              <div className="robo-asset-row">
+                <span className="robo-ticker">{allocation.ticker}</span>
+                <span
+                  className={cn('robo-score', scoreTone(score))}
+                  title="Multi-Factor Score — RSI · MACD · ATR"
+                >
+                  {score ?? '—'}
+                </span>
+              </div>
+              <span className="robo-name">{asset?.name ?? 'Asset'}</span>
+              {hasInsights && (
+                <div className="pro-feature-gate robo-quant-gate">
+                  <div
+                    className={cn('pro-feature-content', !isPro && 'is-locked')}
+                    aria-hidden={!isPro}
+                  >
+                    {allocation.regime && (
+                      <div className="robo-insight-badges">
+                        <span
+                          className="regime-badge"
+                          data-regime={allocation.regime}
+                          title="Detected market regime"
+                        >
+                          {REGIME_LABELS[allocation.regime]}
+                        </span>
+                      </div>
+                    )}
+                    {allocation.rationale && (
+                      <p className="robo-rationale">{allocation.rationale}</p>
+                    )}
+                    {allocation.components && (
+                      <span className="robo-factors">
+                        {FACTOR_CHIPS.map((factor) => {
+                          const value = allocation.components?.[factor.score];
+                          const weight = allocation.components?.weights[factor.weight] ?? 0;
+                          return (
+                            <span
+                              key={factor.label}
+                              title={`${factor.name} sub-score · ${Math.round(weight * 100)}% weight`}
+                            >
+                              {factor.label} <b>{value === undefined ? '—' : Math.round(value)}</b>
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  {!isPro && (
+                    <button
+                      type="button"
+                      className="pro-feature-unlock robo-quant-unlock"
+                      onClick={onUpgrade}
+                    >
+                      <LockKeyhole size={13} /> Upgrade to unlock Quant Insights
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="robo-metrics">
+              <span className="robo-weight">{formatWeight(allocation.weight)}</span>
+              <span className="robo-alloc-amount">{formatPrice(allocation.allocatedAmount)}</span>
+              <span
+                className="robo-size"
+                title="Suggested position size — risks up to 2% of total capital on a 2×ATR(14) stop, capped at this holding's allocation"
+              >
+                <span className="robo-size-label">Suggested size</span>
+                <span className="robo-size-value">
+                  {shares !== null ? `${formatShares(shares)} shares` : '—'}
+                </span>
+              </span>
+            </div>
+            <div className="robo-actions">
+              <button
+                type="button"
+                className="robo-swap"
+                onClick={() => onSwap(allocation.ticker)}
+                disabled={!canSwapMore || proposal.busy || proposal.execution.state === 'completed'}
+                aria-label={`Swap ${allocation.ticker} for the next best asset`}
+                title={
+                  canSwapMore
+                    ? 'Replace with the next best asset'
+                    : 'No more replacements available'
+                }
+              >
+                <RefreshCw size={14} />
+                <span className="robo-swap-label">Swap</span>
+              </button>
+            </div>
+            <div className="robo-bar-track" aria-hidden="true">
+              <div
+                className="robo-bar"
+                style={{
+                  width: `${allocation.weight * 100}%`,
+                  animationDelay: `${index * 55 + 150}ms`,
+                }}
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function EmptyPortfolioState({
+  diagnostics,
+  riskProfile,
+  riskLabel,
+}: Readonly<{
+  diagnostics: PortfolioBuildDiagnostics | null;
+  riskProfile: RiskProfile;
+  riskLabel: string;
+}>) {
+  const policy = RISK_PROFILE_POLICIES[riskProfile];
+  const hasCandidates = diagnostics !== null && diagnostics.totalCandidates > 0;
+  const allNetworkFailed =
+    hasCandidates && diagnostics.networkFailures === diagnostics.totalCandidates;
+  const allInsufficient =
+    hasCandidates && diagnostics.insufficientData === diagnostics.totalCandidates;
+
+  let heading = 'No qualifying assets';
+  let explanation = `No asset met the ${riskLabel} profile requirements in this analysis. This can be a normal result; ZeroChart does not lower the rules just to create a proposal.`;
+  if (allNetworkFailed) {
+    heading = 'Market history unavailable';
+    explanation =
+      'The analyzer could not load candle history, so it did not evaluate eligibility or create a proposal.';
+  } else if (allInsufficient) {
+    heading = 'Not enough market history';
+    explanation = `The engine needs ${MIN_CANDLES} daily candles per asset. It skips assets without enough history instead of guessing a score.`;
+  }
+
+  return (
+    <div className="robo-empty">
+      <Shield size={28} />
+      <h3>{heading}</h3>
+      <p>{explanation}</p>
+      <dl className="robo-empty-facts">
+        <div>
+          <dt>Selected profile</dt>
+          <dd>{riskLabel}</dd>
+        </div>
+        <div>
+          <dt>Minimum model score</dt>
+          <dd>{policy.minimumScore} / 100</dd>
+        </div>
+        <div>
+          <dt>History required</dt>
+          <dd>{MIN_CANDLES} daily candles</dd>
+        </div>
+      </dl>
+      {(policy.excludeHighVolatility || policy.requirePositiveMomentum) && (
+        <p className="robo-empty-rule">
+          {policy.excludeHighVolatility
+            ? 'This profile also excludes high-volatility regimes.'
+            : 'This profile also requires positive momentum.'}
+        </p>
+      )}
+      {diagnostics && diagnostics.networkFailures > 0 && !allNetworkFailed && (
+        <p className="robo-empty-rule">
+          {diagnostics.networkFailures} of {diagnostics.totalCandidates} assets could not be checked
+          because market history failed to load.
+        </p>
+      )}
+      <p className="robo-empty-balance">Nothing was booked. Your Paper Cash is unchanged.</p>
+    </div>
+  );
+}
+
 export function RoboAdvisor({
   assets,
   onInvest,
@@ -401,16 +611,6 @@ export function RoboAdvisor({
   }
 
   const activeRisk = RISK_OPTIONS.find((r) => r.id === riskProfile);
-  const activePolicy = RISK_PROFILE_POLICIES[riskProfile];
-  const allNetworkFailed =
-    diagnostics !== null &&
-    diagnostics.totalCandidates > 0 &&
-    diagnostics.networkFailures === diagnostics.totalCandidates;
-  const allInsufficient =
-    diagnostics !== null &&
-    diagnostics.totalCandidates > 0 &&
-    diagnostics.insufficientData === diagnostics.totalCandidates;
-
   const canSwapMore =
     result != null &&
     assets.some(
@@ -649,194 +849,24 @@ export function RoboAdvisor({
                           size risks up to 2% of capital at a 2×ATR stop, capped at the allocation ·
                           Swap any holding to replace it
                         </p>
-                        <ul className="robo-allocation-list">
-                          {result.map((allocation, index) => {
-                            const asset = assetByTicker.get(allocation.ticker);
-                            const score = allocation.score ?? null;
-                            // Once priced, the size is what the order books, so the row
-                            // and the orders table never show two quantities.
-                            const shares =
-                              proposal.plan?.orders.find(
-                                (order) => order.ticker === allocation.ticker.toUpperCase(),
-                              )?.quantity ??
-                              allocation.suggestedShares ??
-                              null;
-                            return (
-                              <li
-                                key={allocation.ticker}
-                                className="robo-allocation"
-                                style={{ animationDelay: `${index * 55}ms` }}
-                              >
-                                <span className="robo-rank">{index + 1}</span>
-                                <div className="robo-asset">
-                                  <div className="robo-asset-row">
-                                    <span className="robo-ticker">{allocation.ticker}</span>
-                                    <span
-                                      className={cn('robo-score', scoreTone(score))}
-                                      title="Multi-Factor Score — RSI · MACD · ATR"
-                                    >
-                                      {score ?? '—'}
-                                    </span>
-                                  </div>
-                                  <span className="robo-name">{asset?.name ?? 'Asset'}</span>
-                                  {(allocation.regime ||
-                                    allocation.rationale ||
-                                    allocation.components) && (
-                                    <div className="pro-feature-gate robo-quant-gate">
-                                      <div
-                                        className={cn('pro-feature-content', !isPro && 'is-locked')}
-                                        aria-hidden={!isPro}
-                                      >
-                                        {allocation.regime && (
-                                          <div className="robo-insight-badges">
-                                            <span
-                                              className="regime-badge"
-                                              data-regime={allocation.regime}
-                                              title="Detected market regime"
-                                            >
-                                              {REGIME_LABELS[allocation.regime]}
-                                            </span>
-                                          </div>
-                                        )}
-                                        {allocation.rationale && (
-                                          <p className="robo-rationale">{allocation.rationale}</p>
-                                        )}
-                                        {allocation.components && (
-                                          <span className="robo-factors">
-                                            {FACTOR_CHIPS.map((factor) => {
-                                              const value = allocation.components?.[factor.score];
-                                              const weight =
-                                                allocation.components?.weights[factor.weight] ?? 0;
-                                              return (
-                                                <span
-                                                  key={factor.label}
-                                                  title={`${factor.name} sub-score · ${Math.round(weight * 100)}% weight`}
-                                                >
-                                                  {factor.label}{' '}
-                                                  <b>
-                                                    {value === undefined ? '—' : Math.round(value)}
-                                                  </b>
-                                                </span>
-                                              );
-                                            })}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {!isPro && (
-                                        <button
-                                          type="button"
-                                          className="pro-feature-unlock robo-quant-unlock"
-                                          onClick={() => setPricingOpen(true)}
-                                        >
-                                          <LockKeyhole size={13} /> Upgrade to unlock Quant Insights
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="robo-metrics">
-                                  <span className="robo-weight">
-                                    {formatWeight(allocation.weight)}
-                                  </span>
-                                  <span className="robo-alloc-amount">
-                                    {formatPrice(allocation.allocatedAmount)}
-                                  </span>
-                                  <span
-                                    className="robo-size"
-                                    title="Suggested position size — risks up to 2% of total capital on a 2×ATR(14) stop, capped at this holding's allocation"
-                                  >
-                                    <span className="robo-size-label">Suggested size</span>
-                                    <span className="robo-size-value">
-                                      {shares !== null ? `${formatShares(shares)} shares` : '—'}
-                                    </span>
-                                  </span>
-                                </div>
-                                <div className="robo-actions">
-                                  <button
-                                    type="button"
-                                    className="robo-swap"
-                                    onClick={() => handleSwap(allocation.ticker)}
-                                    disabled={
-                                      !canSwapMore ||
-                                      proposal.busy ||
-                                      proposal.execution.state === 'completed'
-                                    }
-                                    aria-label={`Swap ${allocation.ticker} for the next best asset`}
-                                    title={
-                                      canSwapMore
-                                        ? 'Replace with the next best asset'
-                                        : 'No more replacements available'
-                                    }
-                                  >
-                                    <RefreshCw size={14} />
-                                    <span className="robo-swap-label">Swap</span>
-                                  </button>
-                                </div>
-                                <div className="robo-bar-track" aria-hidden="true">
-                                  <div
-                                    className="robo-bar"
-                                    style={{
-                                      width: `${allocation.weight * 100}%`,
-                                      animationDelay: `${index * 55 + 150}ms`,
-                                    }}
-                                  />
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
+                        <AllocationList
+                          result={result}
+                          assetByTicker={assetByTicker}
+                          proposal={proposal}
+                          isPro={isPro}
+                          canSwapMore={canSwapMore}
+                          onSwap={(ticker) => void handleSwap(ticker)}
+                          onUpgrade={() => setPricingOpen(true)}
+                        />
 
                         <ProposalOrders proposal={proposal} />
                       </>
                     ) : (
-                      <div className="robo-empty">
-                        <Shield size={28} />
-                        <h3>
-                          {allNetworkFailed
-                            ? 'Market history unavailable'
-                            : allInsufficient
-                              ? 'Not enough market history'
-                              : 'No qualifying assets'}
-                        </h3>
-                        <p>
-                          {allNetworkFailed
-                            ? 'The analyzer could not load candle history, so it did not evaluate eligibility or create a proposal.'
-                            : allInsufficient
-                              ? `The engine needs ${MIN_CANDLES} daily candles per asset. It skips assets without enough history instead of guessing a score.`
-                              : `No asset met the ${activeRisk?.label ?? riskProfile} profile requirements in this analysis. This can be a normal result; ZeroChart does not lower the rules just to create a proposal.`}
-                        </p>
-                        <dl className="robo-empty-facts">
-                          <div>
-                            <dt>Selected profile</dt>
-                            <dd>{activeRisk?.label ?? riskProfile}</dd>
-                          </div>
-                          <div>
-                            <dt>Minimum model score</dt>
-                            <dd>{activePolicy.minimumScore} / 100</dd>
-                          </div>
-                          <div>
-                            <dt>History required</dt>
-                            <dd>{MIN_CANDLES} daily candles</dd>
-                          </div>
-                        </dl>
-                        {(activePolicy.excludeHighVolatility ||
-                          activePolicy.requirePositiveMomentum) && (
-                          <p className="robo-empty-rule">
-                            {activePolicy.excludeHighVolatility
-                              ? 'This profile also excludes high-volatility regimes.'
-                              : 'This profile also requires positive momentum.'}
-                          </p>
-                        )}
-                        {diagnostics && diagnostics.networkFailures > 0 && !allNetworkFailed && (
-                          <p className="robo-empty-rule">
-                            {diagnostics.networkFailures} of {diagnostics.totalCandidates} assets
-                            could not be checked because market history failed to load.
-                          </p>
-                        )}
-                        <p className="robo-empty-balance">
-                          Nothing was booked. Your Paper Cash is unchanged.
-                        </p>
-                      </div>
+                      <EmptyPortfolioState
+                        diagnostics={diagnostics}
+                        riskProfile={riskProfile}
+                        riskLabel={activeRisk?.label ?? riskProfile}
+                      />
                     )}
                   </div>
 

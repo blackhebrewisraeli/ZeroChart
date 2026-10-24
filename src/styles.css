@@ -1002,16 +1002,6 @@ body {
     font-size: 11.5px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    /* The reduced-motion reset must beat every component rule; !important is the only way. */
-    animation: none !important; /* NOSONAR(S9423) */
-    transition: none !important; /* NOSONAR(S9423) */
-  }
-}
-
 /* ===== Robo-Advisor ===== */
 .robo-trigger {
   display: inline-flex;
@@ -8222,10 +8212,11 @@ button.paper-ticker:hover {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .shared-route-spinner {
-    animation-duration: 1.8s;
-  }
-  .shared-portfolio-cta {
-    transition: none;
+  *,
+  *::before,
+  *::after {
+    /* The reduced-motion reset must follow component motion rules in the cascade. */
+    animation: none !important; /* NOSONAR(S9423) */
+    transition: none !important; /* NOSONAR(S9423) */
   }
 }

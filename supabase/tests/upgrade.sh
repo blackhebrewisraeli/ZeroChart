@@ -62,7 +62,7 @@ check "the new account book replays the old ledger" \
 check "an existing token still authenticates the webhook" \
   "$(sql "select public.ingest_tradingview_signal(encode(sha256(convert_to('tok-upgrade', 'UTF8')), 'hex'), null)")" \
   authorized
-executed=$(psql "$DB" -X -q -At 2>&1 <<SQL
+executed=$(psql "$DB" -X -q -At 2>&1 <<SQL || true
 begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '$USER_ID', true);
@@ -72,7 +72,12 @@ select action || ' ' || quantity from public.execute_tactical_signal(
 commit;
 SQL
 )
-check "a signal left pending by the old release still executes" "$(tail -1 <<<"$executed")" 'SELL 6'
+check "a signal left pending by the old release is not executable" \
+  "$(grep -o 'Only verified strategy signals can be executed' <<<"$executed")" \
+  'Only verified strategy signals can be executed'
+check "the unverified legacy signal stays pending without a fill" \
+  "$(sql "select status || '/' || count(*) from public.trading_signals s left join public.paper_transactions p on p.signal_id = s.id where s.event_id = 'upgrade-pending' group by status")" \
+  'PENDING/0'
 
 sql "delete from auth.users where id = '$USER_ID'; delete from public.assets_status where ticker = 'UPGRADECOIN';" >/dev/null
 exit "$failures"

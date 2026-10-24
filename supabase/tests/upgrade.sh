@@ -18,12 +18,16 @@ fi
 BASE_REF="${1:?base git ref, e.g. origin/main}"
 DB="${2:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
 WORKDIR=(${SUPABASE_WORKDIR:+--workdir "$SUPABASE_WORKDIR"})
+BASE_WORKDIR=$(mktemp -d)
 USER_ID=00000000-0000-4000-8000-0000000000e1
 failures=0
+cleanup_base() { rm -rf "$BASE_WORKDIR"; }
+trap cleanup_base EXIT
 
 base=$(git ls-tree --name-only "$BASE_REF" supabase/migrations/ | sed -En 's#.*/([0-9]{14})_.*#\1#p' | tail -1)
 echo "# base $BASE_REF is at migration $base"
-supabase db reset "${WORKDIR[@]}" --local --version "$base" >/dev/null
+git archive "$BASE_REF" supabase | tar -x -C "$BASE_WORKDIR"
+supabase db reset --workdir "$BASE_WORKDIR" --local --version "$base" >/dev/null
 
 sql() {
   local query=$1
@@ -62,6 +66,16 @@ check "the new account book replays the old ledger" \
 check "an existing token still authenticates the webhook" \
   "$(sql "select public.ingest_tradingview_signal(encode(sha256(convert_to('tok-upgrade', 'UTF8')), 'hex'), null)")" \
   authorized
+rejected=$(psql "$DB" -X -q -At 2>&1 <<SQL || true
+select public.ingest_tradingview_signal(
+  encode(sha256(convert_to('tok-upgrade', 'UTF8')), 'hex'),
+  '{"ticker":"UPGRADECOIN","action":"BUY","signal_score":90,"price":200,"quantity":1,"event_id":"upgrade-missing-kind"}'::jsonb
+);
+SQL
+)
+check "a missing signal_kind is rejected after upgrade" \
+  "$(grep -o 'signal_kind must be strategy or transport_test' <<<"$rejected")" \
+  'signal_kind must be strategy or transport_test'
 executed=$(psql "$DB" -X -q -At 2>&1 <<SQL || true
 begin;
 set local role authenticated;

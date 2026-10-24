@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(12);
 
 insert into auth.users (id) values ('00000000-0000-4000-8000-000000000011');
 insert into public.signal_webhook_tokens (user_id, token_hash)
@@ -40,6 +40,33 @@ select is(
   public.ingest_tradingview_signal((select token_hash from delivery), null),
   'authorized',
   'a null signal only authenticates'
+);
+select throws_ok(
+  $$select public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal - 'signal_kind' || '{"event_id": "missing-kind"}' from delivery)
+  )$$,
+  '23514',
+  'signal_kind must be strategy or transport_test',
+  'a missing signal_kind is rejected'
+);
+select throws_ok(
+  $$select public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"signal_kind": null, "event_id": "null-kind"}' from delivery)
+  )$$,
+  '23514',
+  'signal_kind must be strategy or transport_test',
+  'a null signal_kind is rejected'
+);
+select throws_ok(
+  $$select public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"signal_kind": "legacy", "event_id": "unsupported-kind"}' from delivery)
+  )$$,
+  '23514',
+  'signal_kind must be strategy or transport_test',
+  'an unsupported signal_kind is rejected'
 );
 select is(
   public.ingest_tradingview_signal((select token_hash from delivery), (select signal from delivery)),

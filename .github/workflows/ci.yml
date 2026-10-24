@@ -87,12 +87,13 @@ jobs:
       - name: Concurrent sessions
         run: supabase/tests/concurrency.sh
 
-      # Production already holds the base commit's schema and real rows, so the
-      # new migrations must also apply on top of that, not only from scratch.
-      - name: Upgrade from the base commit
-        run: supabase/tests/upgrade.sh "$BASE_SHA"
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      # Production already holds the pre-signal-classification schema and real
+      # rows, so rebuild the base commit's actual migration files before
+      # applying this branch's migrations, not only from scratch.
+      - name: Upgrade from the pre-#79 database
+        run: |
+          PRE_SIGNAL_BASE="$(git log --format=%H --reverse --all -- supabase/migrations/20261024040000_signal_classification.sql | head -1)^"
+          supabase/tests/upgrade.sh "$PRE_SIGNAL_BASE"
 
       - name: SQL tests on the upgraded database
         run: supabase test db

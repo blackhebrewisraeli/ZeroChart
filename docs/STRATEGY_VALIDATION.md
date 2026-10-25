@@ -86,6 +86,22 @@ The manifest's missing-data policy fails a slot if any asset fetch fails or supp
 
 No scheduler is installed. Evidence collection only continues when the owner invokes `campaign-run` after each slot. A local scheduler may later invoke that exact command shortly after `06:30Z`, but it should be configured separately and must retain the same manifest and store.
 
+## Private Decisions & Evidence viewer
+
+Generate a local standalone report for a recorded campaign:
+
+```bash
+npm run evaluate -- decisions-report private-2026q4-002
+```
+
+Generate the clearly labeled synthetic multi-asset demonstration:
+
+```bash
+npm run evaluate -- decisions-demo
+```
+
+Both commands write only to the ignored `.zerochart-reports/` directory by default. See [DECISIONS_EVIDENCE.md](DECISIONS_EVIDENCE.md) for the evidence labels, privacy warning, exact options, and owner checklist.
+
 ## Synthetic demonstration
 
 `docs/strategy-validation-fixture.json` is a clearly labeled synthetic fixture. Its candles are invented for deterministic replay and must not be interpreted as market history or prospective evidence.

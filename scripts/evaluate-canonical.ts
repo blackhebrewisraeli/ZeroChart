@@ -43,6 +43,11 @@ import {
   reproduceCampaignRun,
   runDueCampaign,
 } from './observationCampaign';
+import {
+  buildCampaignReportModel,
+  buildSyntheticReportModel,
+  writeDecisionsReport,
+} from './decisionsReport';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -53,7 +58,9 @@ const USAGE = `Usage:
   npm run evaluate -- campaign-init CAMPAIGN_ID --start ISO --end ISO [--store DIR]
   npm run evaluate -- campaign-run CAMPAIGN_ID [--store DIR]
   npm run evaluate -- campaign-report CAMPAIGN_ID [--store DIR]
-  npm run evaluate -- campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]`;
+  npm run evaluate -- campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
+  npm run evaluate -- decisions-report CAMPAIGN_ID [--store DIR] [--output FILE]
+  npm run evaluate -- decisions-demo [--output FILE]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -326,6 +333,27 @@ const commandHandlers: Record<string, CommandHandler> = {
     );
     printJson(result);
     if (result.status === 'MISMATCH') process.exitCode = 1;
+  },
+  'decisions-report': async (value, args) => {
+    const campaignId = requiredValue('decisions-report', value);
+    const output = safeCliPath(
+      option(args, '--output') ?? `.zerochart-reports/${campaignId}.html`,
+      '--output',
+    );
+    const model = await buildCampaignReportModel(
+      campaignId,
+      storePath(args, '.zerochart-campaigns'),
+    );
+    printJson({ output: await writeDecisionsReport(model, output), errors: model.errors });
+    if (model.errors.length) process.exitCode = 1;
+  },
+  'decisions-demo': async (value, args) => {
+    const allArgs = [value, ...args].filter((item): item is string => Boolean(item));
+    const output = safeCliPath(
+      option(allArgs, '--output') ?? '.zerochart-reports/synthetic-demo.html',
+      '--output',
+    );
+    printJson({ output: await writeDecisionsReport(buildSyntheticReportModel(), output) });
   },
 };
 

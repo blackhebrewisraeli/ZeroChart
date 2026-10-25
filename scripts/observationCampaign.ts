@@ -433,3 +433,22 @@ export async function campaignReport(campaignId: string, store: string, now = ne
     performanceMetrics: 'not measurable: no complete executable entry/exit strategy contract',
   };
 }
+
+export async function loadCampaignEvidence(campaignId: string, store: string, now = new Date()) {
+  const report = await campaignReport(campaignId, store, now);
+  const root = campaignRoot(store, campaignId);
+  const observations = await Promise.all(
+    report.attempts
+      .filter(
+        (attempt): attempt is CampaignAttempt & { runKey: string } =>
+          attempt.status === 'COMPLETED' && Boolean(attempt.runKey),
+      )
+      .map(async (attempt) => ({
+        slot: attempt.slot,
+        observedAt: attempt.observedAt,
+        attemptNumber: attempt.attemptNumber,
+        run: (await loadEvaluationRun(attempt.runKey, join(root, CAMPAIGN_STORE))).run,
+      })),
+  );
+  return { report, observations };
+}

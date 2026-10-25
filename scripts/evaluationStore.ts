@@ -65,9 +65,17 @@ function pathsFor(store: string, runKey: string, configurationId: string) {
   }
   return {
     root,
-    run: join(root, 'runs', `${encodeURIComponent(runKey)}.json`),
-    contract: join(root, 'contracts', `${encodeURIComponent(configurationId)}.json`),
+    run: `runs/${encodeURIComponent(runKey)}.json`,
+    contract: `contracts/${encodeURIComponent(configurationId)}.json`,
   };
+}
+
+function safeStoragePath(root: string, relativePath: string): string {
+  const absolutePath = resolve(root, relativePath);
+  if (!absolutePath.startsWith(`${root}/`) || relativePath.includes('\0')) {
+    throw new EvaluationStoreError(`Invalid storage path: ${relativePath}`);
+  }
+  return absolutePath;
 }
 
 async function readExisting(path: string): Promise<string | null> {
@@ -79,16 +87,12 @@ async function readExisting(path: string): Promise<string | null> {
   }
 }
 
-function validatedStoragePath(path: string): string {
-  const absolutePath = resolve(path);
-  if (absolutePath !== path || path.includes('\0')) {
-    throw new EvaluationStoreError(`Invalid storage path: ${path}`);
-  }
-  return absolutePath;
-}
-
-async function atomicCreateOrVerify(path: string, content: string): Promise<void> {
-  const safePath = validatedStoragePath(path);
+async function atomicCreateOrVerify(
+  root: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  const safePath = safeStoragePath(root, relativePath);
   await mkdir(resolve(safePath, '..'), { recursive: true });
   const temporary = `${safePath}.tmp-${process.pid}-${randomUUID()}`;
   try {
@@ -118,8 +122,8 @@ export async function saveEvaluationRun(run: EvaluationRun, store: string): Prom
     contract: run.configuration,
     run,
   };
-  await atomicCreateOrVerify(paths.contract, contract);
-  await atomicCreateOrVerify(paths.run, `${JSON.stringify(stored, null, 2)}\n`);
+  await atomicCreateOrVerify(paths.root, paths.contract, contract);
+  await atomicCreateOrVerify(paths.root, paths.run, `${JSON.stringify(stored, null, 2)}\n`);
 }
 
 async function assertNoIncompleteArtifacts(root: string): Promise<void> {
@@ -142,7 +146,7 @@ export async function loadEvaluationRun(
 ): Promise<StoredEvaluationRun> {
   const paths = pathsFor(store, runKey, 'unused');
   await assertNoIncompleteArtifacts(paths.root);
-  const content = await readExisting(paths.run);
+  const content = await readExisting(safeStoragePath(paths.root, paths.run));
   if (!content) throw new EvaluationStoreError(`No saved evaluation run for ${runKey}`);
   let stored: StoredEvaluationRun;
   try {
@@ -161,7 +165,10 @@ export async function loadEvaluationRun(
     );
   }
   assertConfigurationIntegrity(stored.contract);
-  const contractPath = pathsFor(store, runKey, stored.contract.configurationId).contract;
+  const contractPath = safeStoragePath(
+    paths.root,
+    pathsFor(store, runKey, stored.contract.configurationId).contract,
+  );
   const contractContent = await readExisting(contractPath);
   let persistedContract: unknown;
   try {

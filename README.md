@@ -226,16 +226,17 @@ Vercel production builds also check that the production database has every migra
 
 ## Documentation
 
-| Document                                             | What's inside                                                                                                  |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [Hybrid architecture](./docs/hybrid-architecture.md) | Target architecture, reusable engine inventory, and the path from JSONB snapshots to a normalized domain model |
-| [Hybrid roadmap](./docs/hybrid-roadmap.md)           | Milestone 1 and 2 plans, execution checkpoints, and open questions                                             |
-| [Roadmap](./docs/roadmap.md)                         | Completed launch milestones                                                                                    |
-| [Engineering audit](./docs/engineering-audit.md)     | Milestone 0 findings register and remediation log                                                              |
-| [Supabase connection](./docs/CONNECTION.md)          | Data contract for the `assets_status` market table                                                             |
-| [Releasing database changes](./docs/RELEASE.md)      | Release order for migrations, the production build's database gate, rollback                                   |
-| [Agent conventions](./docs/AGENTS.md)                | Architecture rules for coding agents working in this repo                                                      |
-| [Contributing](./CONTRIBUTING.md)                    | Dev setup, coding standards, and the pull request process                                                      |
+| Document                                                 | What's inside                                                                                                  |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [Hybrid architecture](./docs/hybrid-architecture.md)     | Target architecture, reusable engine inventory, and the path from JSONB snapshots to a normalized domain model |
+| [Hybrid roadmap](./docs/hybrid-roadmap.md)               | Milestone 1 and 2 plans, execution checkpoints, and open questions                                             |
+| [Roadmap](./docs/roadmap.md)                             | Completed launch milestones                                                                                    |
+| [Engineering audit](./docs/engineering-audit.md)         | Milestone 0 findings register and remediation log                                                              |
+| [Strategy validation lab](./docs/STRATEGY_VALIDATION.md) | Private, browser-independent decision replay and observation contract                                          |
+| [Supabase connection](./docs/CONNECTION.md)              | Data contract for the `assets_status` market table                                                             |
+| [Releasing database changes](./docs/RELEASE.md)          | Release order for migrations, the production build's database gate, rollback                                   |
+| [Agent conventions](./docs/AGENTS.md)                    | Architecture rules for coding agents working in this repo                                                      |
+| [Contributing](./CONTRIBUTING.md)                        | Dev setup, coding standards, and the pull request process                                                      |
 
 ## Contributing
 

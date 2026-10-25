@@ -37,7 +37,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "evaluate": "tsx scripts/evaluate-canonical.ts"
   },
   "overrides": {
     "rolldown": "1.2.1"
@@ -94,6 +95,7 @@
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
+    "tsx": "^4.20.3",
     "vite": "8.1.5",
     "vitest": "^4.1.10"
   }

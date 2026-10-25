@@ -4,65 +4,13 @@ import type { CanonicalResult, EngineCandle } from '@/lib/canonicalModel';
 import { evaluateCandlesAsync } from '@/lib/financeClient';
 import { recommendPositionSize } from '@/lib/risk';
 import {
-  ASSET_COUNT_BY_RISK,
+  allocateScoreCandidates,
+  RISK_PROFILE_POLICIES,
+  selectPortfolioCandidates,
   type Allocation,
   type PortfolioPreferences,
-  type RiskProfile,
 } from '@/lib/portfolioBuilder';
-
-/**
- * Hard limits per risk profile. maxAllocation is a share of the proposal
- * budget. execute_paper_portfolio enforces the same numbers on the server
- * (paper_risk_policy, src/test/paperRiskPolicy.test.ts keeps them in step).
- * minimumScore is inclusive; 60 is the model's own BUY band (the Pine HUD reads
- * score >= 60 as BUY), so the gentler profiles never buy a weak score just
- * because it is above 0.
- */
-export const RISK_PROFILE_POLICIES = {
-  conservative: {
-    maxAllocation: 0.1,
-    excludeHighVolatility: true,
-    minimumScore: 60,
-    requirePositiveMomentum: false,
-  },
-  moderate: {
-    maxAllocation: 0.25,
-    excludeHighVolatility: false,
-    minimumScore: 60,
-    requirePositiveMomentum: false,
-  },
-  aggressive: {
-    maxAllocation: 0.5,
-    excludeHighVolatility: false,
-    minimumScore: 71,
-    requirePositiveMomentum: true,
-  },
-} as const satisfies Record<
-  RiskProfile,
-  {
-    maxAllocation: number;
-    excludeHighVolatility: boolean;
-    minimumScore: number;
-    requirePositiveMomentum: boolean;
-  }
->;
-
-type RiskPolicyCandidate = Pick<CanonicalResult & { status: 'OK' }, 'signal_score' | 'regime'> & {
-  components: { momentumScore: number };
-};
-
-/** Hard eligibility gate for each portfolio risk profile. */
-export function qualifiesForRiskProfile(
-  profile: RiskProfile,
-  candidate: RiskPolicyCandidate,
-): boolean {
-  const policy = RISK_PROFILE_POLICIES[profile];
-  if (policy.excludeHighVolatility && candidate.regime === 'HIGH_VOLATILITY') return false;
-  if (candidate.signal_score < policy.minimumScore) return false;
-  // The canonical momentum score is 50 at zero momentum and monotonic around it.
-  if (policy.requirePositiveMomentum && candidate.components.momentumScore <= 50) return false;
-  return true;
-}
+export { qualifiesForRiskProfile, RISK_PROFILE_POLICIES } from '@/lib/portfolioBuilder';
 
 export interface QuantDeps {
   /** Daily OHLC candles, oldest first; `[]` when the ticker has no candle source. */
@@ -166,44 +114,56 @@ export async function buildQuantPortfolio(
     })),
   );
   const policy = RISK_PROFILE_POLICIES[preferences.riskProfile];
-  const qualified = scored
-    .flatMap(({ asset, result, networkFailed }) => {
-      if (networkFailed) {
-        diagnostics.networkFailures += 1;
-        return [];
-      }
-      if (result.status !== 'OK') {
-        diagnostics.insufficientData += 1;
-        return [];
-      }
-      if (policy.excludeHighVolatility && result.regime === 'HIGH_VOLATILITY') {
-        diagnostics.highVolatility += 1;
-        return [];
-      }
-      if (result.signal_score < policy.minimumScore) {
-        diagnostics.belowMinimumScore += 1;
-        return [];
-      }
-      if (policy.requirePositiveMomentum && result.components.momentumScore <= 50) {
-        diagnostics.nonPositiveMomentum += 1;
-        return [];
-      }
-      diagnostics.eligible += 1;
-      return [{ asset, result }];
-    })
-    .sort((a, b) => b.result.signal_score - a.result.signal_score)
-    .slice(0, ASSET_COUNT_BY_RISK[preferences.riskProfile]);
+  const qualified = scored.flatMap(({ asset, result, networkFailed }) => {
+    if (networkFailed) {
+      diagnostics.networkFailures += 1;
+      return [];
+    }
+    if (result.status !== 'OK') {
+      diagnostics.insufficientData += 1;
+      return [];
+    }
+    if (policy.excludeHighVolatility && result.regime === 'HIGH_VOLATILITY') {
+      diagnostics.highVolatility += 1;
+      return [];
+    }
+    if (result.signal_score < policy.minimumScore) {
+      diagnostics.belowMinimumScore += 1;
+      return [];
+    }
+    if (policy.requirePositiveMomentum && result.components.momentumScore <= 50) {
+      diagnostics.nonPositiveMomentum += 1;
+      return [];
+    }
+    diagnostics.eligible += 1;
+    return [{ asset, result }];
+  });
+  const selected = selectPortfolioCandidates(
+    qualified.map(({ asset, result }) => ({
+      ticker: asset.ticker,
+      score: result.signal_score,
+      asset,
+      result,
+    })),
+    preferences.riskProfile,
+  );
 
   onDiagnostics?.(diagnostics);
 
-  if (qualified.length === 0) return [];
+  if (selected.length === 0) return [];
 
-  const totalScore = qualified.reduce((sum, item) => sum + item.result.signal_score, 0);
-  const capital = preferences.totalCapital;
-  return qualified.map(({ asset, result }) => {
+  const allocations = new Map(
+    allocateScoreCandidates(
+      selected.map(({ ticker, score }) => ({ ticker, score })),
+      preferences.riskProfile,
+      preferences.totalCapital,
+    ).map((allocation) => [allocation.ticker, allocation]),
+  );
+  return selected.map(({ asset, result }) => {
     const { signal_score: score, components, regime, rationale, atr } = result;
-    const weight = Math.min(score / totalScore, policy.maxAllocation);
-    const allocatedAmount = Number((capital * weight).toFixed(2));
+    const allocation = allocations.get(asset.ticker);
+    if (!allocation) throw new Error(`Missing allocation for selected asset ${asset.ticker}`);
+    const { weight, allocatedAmount } = allocation;
     // Live price when the provider has one, else the last candle close. The
     // suggested size is bounded by this asset's allocation so the risk model
     // can never recommend a notional worth more than the budget (or,
@@ -211,7 +171,12 @@ export async function buildQuantPortfolio(
     const price = validPrice(asset) ?? result.close;
     const sizing =
       atr > 0
-        ? recommendPositionSize({ capital, price, atr, allocatedCapital: allocatedAmount })
+        ? recommendPositionSize({
+            capital: preferences.totalCapital,
+            price,
+            atr,
+            allocatedCapital: allocatedAmount,
+          })
         : null;
     return {
       ticker: asset.ticker,

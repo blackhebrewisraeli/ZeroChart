@@ -1,23 +1,27 @@
 import '@testing-library/jest-dom/vitest';
 
-Object.defineProperty(window, 'scrollTo', {
-  writable: true,
-  value: () => {},
-});
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'scrollTo', {
+    writable: true,
+    value: () => {},
+  });
+}
 
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => {},
-  }),
-});
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => {},
+    }),
+  });
+}
 
 // Node's experimental `localStorage` global can shadow jsdom's Storage inside
 // the vitest worker, leaving `localStorage.getItem` undefined. Supabase Auth
@@ -42,13 +46,15 @@ const memoryStorage: Storage = (() => {
   };
 })();
 
-Object.defineProperty(window, 'localStorage', {
-  configurable: true,
-  writable: true,
-  value: memoryStorage,
-});
-Object.defineProperty(globalThis, 'localStorage', {
-  configurable: true,
-  writable: true,
-  value: memoryStorage,
-});
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: memoryStorage,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: memoryStorage,
+  });
+}

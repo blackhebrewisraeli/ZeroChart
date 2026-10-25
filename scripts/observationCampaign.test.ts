@@ -35,7 +35,7 @@ async function createCampaign(store: string, start = slot): Promise<void> {
     end: slot,
     repositoryCommit: commit,
     store,
-    now: new Date('2026-10-24T12:00:00.000Z'),
+    now: new Date(Date.parse(start) - day),
   });
 }
 
@@ -51,6 +51,20 @@ describe('prospective observation campaign', () => {
         store,
       }),
     ).rejects.toThrow('06:30:00Z');
+  });
+
+  it('rejects a backdated campaign start', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
+    await expect(
+      initializeCampaign({
+        campaignId,
+        start: slot,
+        end: slot,
+        repositoryCommit: commit,
+        store,
+        now,
+      }),
+    ).rejects.toThrow('cannot be backdated');
   });
 
   it('preserves failures, retries the slot, and never duplicates its success', async () => {

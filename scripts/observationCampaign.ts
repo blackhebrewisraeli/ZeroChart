@@ -119,13 +119,19 @@ export async function initializeCampaign(input: {
   const start = assertSlotBoundary(input.start, 'Campaign start');
   const end = assertSlotBoundary(input.end, 'Campaign end');
   if (Date.parse(start) > Date.parse(end)) throw new Error('Campaign start must not exceed end');
+  const createdAt = input.now ?? new Date();
+  if (Date.parse(start) <= createdAt.getTime()) {
+    throw new Error(
+      'Campaign start must be a future slot; prospective evidence cannot be backdated',
+    );
+  }
   if (!/^[0-9a-f]{40}$/.test(input.repositoryCommit)) {
     throw new Error('Repository commit must be a full 40-character Git SHA');
   }
   const manifest: CampaignManifest = {
     schemaVersion: '1',
     campaignId: input.campaignId,
-    createdAt: (input.now ?? new Date()).toISOString(),
+    createdAt: createdAt.toISOString(),
     evidenceType: 'prospective-live',
     repositoryCommit: input.repositoryCommit,
     source: 'binance-rest',

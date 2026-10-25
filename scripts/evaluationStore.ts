@@ -79,18 +79,27 @@ async function readExisting(path: string): Promise<string | null> {
   }
 }
 
+function validatedStoragePath(path: string): string {
+  const absolutePath = resolve(path);
+  if (absolutePath !== path || path.includes('\0')) {
+    throw new EvaluationStoreError(`Invalid storage path: ${path}`);
+  }
+  return absolutePath;
+}
+
 async function atomicCreateOrVerify(path: string, content: string): Promise<void> {
-  await mkdir(resolve(path, '..'), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const safePath = validatedStoragePath(path);
+  await mkdir(resolve(safePath, '..'), { recursive: true });
+  const temporary = `${safePath}.tmp-${process.pid}-${randomUUID()}`;
   try {
     await writeFile(temporary, content, { flag: 'wx' });
     try {
-      await link(temporary, path);
+      await link(temporary, safePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const existing = await readFile(path, 'utf8');
+      const existing = await readFile(safePath, 'utf8');
       if (existing !== content) {
-        throw new EvaluationConflictError(`Conflicting retry for ${path}`);
+        throw new EvaluationConflictError(`Conflicting retry for ${safePath}`);
       }
     }
   } finally {

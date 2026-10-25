@@ -9,7 +9,6 @@ import {
   selectPortfolioCandidates,
   type Allocation,
   type PortfolioPreferences,
-  type RiskProfile,
 } from '@/lib/portfolioBuilder';
 export { qualifiesForRiskProfile, RISK_PROFILE_POLICIES } from '@/lib/portfolioBuilder';
 

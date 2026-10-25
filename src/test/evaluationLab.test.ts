@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DAILY_TIMEFRAME,
   EVALUATION_STRATEGY_VERSION,
+  assertSupportedEvaluationVersion,
   evaluateInput,
   type EvaluationConfig,
   type EvaluationCandle,
@@ -26,6 +27,26 @@ function candles(count: number, offset = 0): EvaluationCandle[] {
   });
 }
 
+function scoredCandles(count: number, mode: 'strong' | 'weak'): EvaluationCandle[] {
+  const pivot = Math.floor(count * 0.75);
+  return Array.from({ length: count }, (_, index) => {
+    const timestamp = evaluationTime - (count - index) * day;
+    const close =
+      mode === 'strong'
+        ? index < pivot
+          ? 150 - index * 1.2
+          : 96 + (index - pivot) * 0.8
+        : 100 + Math.sin(index / 2) * 3;
+    return {
+      timestamp,
+      closeTime: timestamp + day,
+      high: close + 1,
+      low: close - 1,
+      close,
+    };
+  });
+}
+
 function config(): EvaluationConfig {
   return {
     strategyVersion: EVALUATION_STRATEGY_VERSION,
@@ -41,6 +62,24 @@ function config(): EvaluationConfig {
     benchmark: 'not_applicable_without_executable_exits',
     assumptions: [],
     limitations: [],
+    modelParameters: {
+      rsiPeriod: 14,
+      macdFast: 12,
+      macdSlow: 26,
+      macdSignal: 9,
+      atrPeriod: 14,
+      minimumCandles: MIN_CANDLES,
+    },
+    eligibility: {
+      minimumScore: 60,
+      excludeHighVolatility: false,
+      requirePositiveMomentum: false,
+    },
+    allocation: {
+      maxAllocation: 0.25,
+      maxHoldings: 5,
+      method: 'score_proportional',
+    },
     configurationId: 'fixture-config-v1',
   };
 }
@@ -102,9 +141,9 @@ describe('evaluation lab', () => {
     };
     const run = evaluateInput(input, config());
     expect(run.decisions.map((decision) => decision.status)).toEqual([
-      'STALE_DATA',
-      'INSUFFICIENT_HISTORY',
       'DATA_UNAVAILABLE',
+      'INSUFFICIENT_HISTORY',
+      'STALE_DATA',
     ]);
   });
 
@@ -158,8 +197,57 @@ describe('evaluation lab', () => {
       ],
     };
     const run = evaluateInput(input, config());
-    expect(run.decisions[0]?.proposedAction).toMatch(/PROPOSE_ALLOCATION|REJECT/);
+    expect(run.decisions[0]?.proposedAction).toMatch(/PROPOSE_ALLOCATION|NO_PROPOSAL|REJECT/);
     expect(run.decisions[0]).not.toHaveProperty('fill');
     expect(run.decisions[0]).not.toHaveProperty('transaction');
+  });
+
+  it('separates eligible assets from holdings-limit selection', () => {
+    const limitedConfig = {
+      ...config(),
+      eligibility: { ...config().eligibility, minimumScore: 0 },
+      allocation: { ...config().allocation, maxHoldings: 1 },
+    };
+    const run = evaluateInput(
+      {
+        evaluationTime,
+        assets: [
+          {
+            ticker: 'STRONG',
+            source: 'fixture',
+            timeframe: DAILY_TIMEFRAME,
+            candles: scoredCandles(40, 'strong'),
+          },
+          {
+            ticker: 'WEAK',
+            source: 'fixture',
+            timeframe: DAILY_TIMEFRAME,
+            candles: scoredCandles(40, 'weak'),
+          },
+        ],
+      },
+      limitedConfig,
+    );
+    expect(run.coverage.eligible).toBe(2);
+    expect(run.coverage.selected).toBe(1);
+    expect(run.coverage.qualifiedNotSelected).toBe(1);
+    expect(run.decisions.find((decision) => decision.asset === 'STRONG')).toMatchObject({
+      selectionStatus: 'SELECTED',
+      proposedAction: 'PROPOSE_ALLOCATION',
+    });
+    expect(run.decisions.find((decision) => decision.asset === 'WEAK')).toMatchObject({
+      selectionStatus: 'QUALIFIED_NOT_SELECTED',
+      proposedAction: 'NO_PROPOSAL',
+      allocatedAmount: 0,
+    });
+  });
+
+  it('rejects unsupported historical versions explicitly', () => {
+    expect(() =>
+      assertSupportedEvaluationVersion({
+        ...config(),
+        strategyVersion: 'legacy-v0',
+      }),
+    ).toThrow('Unsupported historical evaluation version');
   });
 });

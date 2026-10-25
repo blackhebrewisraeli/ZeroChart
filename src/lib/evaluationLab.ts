@@ -1,17 +1,28 @@
 import {
   CANONICAL_MODEL_VERSION,
+  ATR_PERIOD,
+  MACD_FAST,
+  MACD_SIGNAL,
+  MACD_SLOW,
   MIN_CANDLES,
+  RSI_PERIOD,
   type CanonicalScore,
   type EngineCandle,
   evaluateCandles,
 } from '@/lib/canonicalModel';
-import { ASSET_COUNT_BY_RISK, type RiskProfile } from '@/lib/portfolioBuilder';
-import { RISK_PROFILE_POLICIES, qualifiesForRiskProfile } from '@/lib/roboAdvisor';
+import {
+  allocateScoreCandidates,
+  selectPortfolioCandidates,
+  type RiskProfile,
+} from '@/lib/portfolioBuilder';
 
 export const EVALUATION_STRATEGY_VERSION = 'canonical-portfolio-v1';
 export const DAILY_TIMEFRAME = '1d';
 export const DEFAULT_MAX_DATA_AGE_MS = 48 * 60 * 60 * 1000;
 export const DEFAULT_TOTAL_CAPITAL = 100_000;
+export const EVALUATION_SCHEMA_VERSION = '1';
+export const SUPPORTED_STRATEGY_VERSIONS = [EVALUATION_STRATEGY_VERSION] as const;
+export const SUPPORTED_MODEL_VERSIONS = [CANONICAL_MODEL_VERSION] as const;
 
 export type DecisionStatus =
   | 'ELIGIBLE'
@@ -23,7 +34,7 @@ export type DecisionStatus =
   | 'HIGH_VOLATILITY'
   | 'NON_POSITIVE_MOMENTUM';
 
-export type ProposedAction = 'PROPOSE_ALLOCATION' | 'REJECT';
+export type ProposedAction = 'PROPOSE_ALLOCATION' | 'NO_PROPOSAL' | 'REJECT';
 
 export interface EvaluationConfig {
   strategyVersion: string;
@@ -42,6 +53,24 @@ export interface EvaluationConfig {
   benchmark: 'not_applicable_without_executable_exits';
   assumptions: readonly string[];
   limitations: readonly string[];
+  modelParameters: {
+    rsiPeriod: number;
+    macdFast: number;
+    macdSlow: number;
+    macdSignal: number;
+    atrPeriod: number;
+    minimumCandles: number;
+  };
+  eligibility: {
+    minimumScore: number;
+    excludeHighVolatility: boolean;
+    requirePositiveMomentum: boolean;
+  };
+  allocation: {
+    maxAllocation: number;
+    maxHoldings: number;
+    method: 'score_proportional';
+  };
   configurationId: string;
 }
 
@@ -81,6 +110,7 @@ export interface DecisionSnapshot {
   inputReference: string;
   inputSnapshot: readonly EvaluationCandle[];
   status: DecisionStatus;
+  selectionStatus: 'SELECTED' | 'QUALIFIED_NOT_SELECTED' | 'NOT_ELIGIBLE';
   rejectionReasons: readonly RejectionReason[];
   proposedAction: ProposedAction;
   score: number | null;
@@ -95,14 +125,24 @@ export interface DecisionSnapshot {
 }
 
 export interface EvaluationRun {
+  schemaVersion: typeof EVALUATION_SCHEMA_VERSION;
+  runKey: string;
   evaluationTime: number;
+  input: EvaluationInput;
+  inputHash: string;
   configuration: EvaluationConfig;
   decisions: readonly DecisionSnapshot[];
   coverage: {
     assets: number;
     eligible: number;
+    selected: number;
+    qualifiedNotSelected: number;
     rejected: number;
     rejectionReasons: Readonly<Record<DecisionStatus, number>>;
+  };
+  observationPeriod: {
+    start: number | null;
+    end: number | null;
   };
 }
 
@@ -146,6 +186,7 @@ function emptyDecision(
     inputReference: inputReference(asset, candles),
     inputSnapshot: candles,
     status,
+    selectionStatus: 'NOT_ELIGIBLE',
     rejectionReasons: [rejection(status, detail)],
     proposedAction: 'REJECT',
     score: null,
@@ -168,19 +209,18 @@ function scoredDecision(
   result: CanonicalScore,
 ): DecisionSnapshot {
   const reasons: RejectionReason[] = [];
-  const policy = RISK_PROFILE_POLICIES[config.riskProfile];
-  if (policy.excludeHighVolatility && result.regime === 'HIGH_VOLATILITY') {
+  if (config.eligibility.excludeHighVolatility && result.regime === 'HIGH_VOLATILITY') {
     reasons.push(rejection('HIGH_VOLATILITY', 'Risk profile excludes high-volatility regimes.'));
   }
-  if (result.signal_score < policy.minimumScore) {
+  if (result.signal_score < config.eligibility.minimumScore) {
     reasons.push(
       rejection(
         'BELOW_MINIMUM_SCORE',
-        `Score ${result.signal_score} is below the ${policy.minimumScore} minimum.`,
+        `Score ${result.signal_score} is below the ${config.eligibility.minimumScore} minimum.`,
       ),
     );
   }
-  if (policy.requirePositiveMomentum && result.components.momentumScore <= 50) {
+  if (config.eligibility.requirePositiveMomentum && result.components.momentumScore <= 50) {
     reasons.push(
       rejection('NON_POSITIVE_MOMENTUM', 'Aggressive profile requires positive momentum.'),
     );
@@ -199,8 +239,9 @@ function scoredDecision(
     inputReference: inputReference(asset, candles),
     inputSnapshot: candles,
     status,
+    selectionStatus: 'NOT_ELIGIBLE',
     rejectionReasons: reasons,
-    proposedAction: status === 'ELIGIBLE' ? 'PROPOSE_ALLOCATION' : 'REJECT',
+    proposedAction: 'NO_PROPOSAL',
     score: result.signal_score,
     scoreComponents: result.components,
     regime: result.regime,
@@ -222,9 +263,41 @@ export function createEvaluationConfig(
   };
 }
 
-export function evaluateInput(input: EvaluationInput, config: EvaluationConfig): EvaluationRun {
-  const decisions = input.assets.map((asset) => {
-    const closed = closedCandles(asset.candles, input.evaluationTime);
+export function normalizeEvaluationInput(input: EvaluationInput): EvaluationInput {
+  return {
+    evaluationTime: input.evaluationTime,
+    assets: [...input.assets]
+      .sort((a, b) => a.ticker.localeCompare(b.ticker))
+      .map((asset) => ({
+        ...asset,
+        candles: [...asset.candles].sort((a, b) => a.closeTime - b.closeTime),
+      })),
+  };
+}
+
+export function assertSupportedEvaluationVersion(config: EvaluationConfig): void {
+  if (
+    !SUPPORTED_MODEL_VERSIONS.includes(
+      config.modelVersion as (typeof SUPPORTED_MODEL_VERSIONS)[number],
+    ) ||
+    !SUPPORTED_STRATEGY_VERSIONS.includes(
+      config.strategyVersion as (typeof SUPPORTED_STRATEGY_VERSIONS)[number],
+    )
+  ) {
+    throw new Error(
+      `Unsupported historical evaluation version: ${config.strategyVersion}/${config.modelVersion}`,
+    );
+  }
+}
+
+export function evaluateInput(
+  input: EvaluationInput,
+  config: EvaluationConfig,
+  inputHash = 'unhashed-input',
+): EvaluationRun {
+  const normalizedInput = normalizeEvaluationInput(input);
+  const decisions = normalizedInput.assets.map((asset) => {
+    const closed = closedCandles(asset.candles, normalizedInput.evaluationTime);
     if (asset.error) {
       return emptyDecision(
         asset,
@@ -246,7 +319,7 @@ export function evaluateInput(input: EvaluationInput, config: EvaluationConfig):
       );
     }
     const dataAsOf = closed.at(-1)?.closeTime ?? input.evaluationTime;
-    if (input.evaluationTime - dataAsOf > config.maxDataAgeMs) {
+    if (normalizedInput.evaluationTime - dataAsOf > config.maxDataAgeMs) {
       return emptyDecision(
         asset,
         input,
@@ -279,20 +352,35 @@ export function evaluateInput(input: EvaluationInput, config: EvaluationConfig):
         );
   });
 
-  const eligible = decisions
-    .filter((decision) => decision.status === 'ELIGIBLE')
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-    .slice(0, ASSET_COUNT_BY_RISK[config.riskProfile]);
-  const totalScore = eligible.reduce((sum, decision) => sum + (decision.score ?? 0), 0);
-  const policy = RISK_PROFILE_POLICIES[config.riskProfile];
+  const qualified = decisions.filter((decision) => decision.status === 'ELIGIBLE');
+  const selected = selectPortfolioCandidates(
+    qualified.map((decision) => ({
+      ticker: decision.asset,
+      score: decision.score ?? 0,
+    })),
+    config.riskProfile,
+    config.allocation.maxHoldings,
+  );
+  const allocations = new Map(
+    allocateScoreCandidates(
+      selected,
+      config.riskProfile,
+      config.totalCapital,
+      config.allocation.maxAllocation,
+    ).map((allocation) => [allocation.ticker, allocation]),
+  );
   const allocated = decisions.map((decision) => {
-    const selected = eligible.some((candidate) => candidate.asset === decision.asset);
-    if (!selected || totalScore <= 0) return decision;
-    const allocationWeight = Math.min((decision.score ?? 0) / totalScore, policy.maxAllocation);
+    if (decision.status !== 'ELIGIBLE') return decision;
+    const allocation = allocations.get(decision.asset);
+    if (!allocation) {
+      return { ...decision, selectionStatus: 'QUALIFIED_NOT_SELECTED' as const };
+    }
     return {
       ...decision,
-      allocationWeight,
-      allocatedAmount: Number((config.totalCapital * allocationWeight).toFixed(2)),
+      selectionStatus: 'SELECTED' as const,
+      proposedAction: 'PROPOSE_ALLOCATION' as const,
+      allocationWeight: allocation.weight,
+      allocatedAmount: allocation.allocatedAmount,
     };
   });
 
@@ -315,19 +403,35 @@ export function evaluateInput(input: EvaluationInput, config: EvaluationConfig):
     ]),
   ) as Record<DecisionStatus, number>;
   const eligibleCount = allocated.filter((decision) => decision.status === 'ELIGIBLE').length;
+  const selectedCount = allocated.filter(
+    (decision) => decision.selectionStatus === 'SELECTED',
+  ).length;
+  const qualifiedNotSelected = allocated.filter(
+    (decision) => decision.selectionStatus === 'QUALIFIED_NOT_SELECTED',
+  ).length;
+  const periodValues = normalizedInput.assets.flatMap((asset) =>
+    asset.candles
+      .filter((candle) => candle.closeTime <= input.evaluationTime)
+      .flatMap((candle) => [candle.timestamp, candle.closeTime]),
+  );
+  const periodStart = periodValues.length > 0 ? Math.min(...periodValues) : null;
+  const periodEnd = periodValues.length > 0 ? Math.max(...periodValues) : null;
   return {
-    evaluationTime: input.evaluationTime,
+    schemaVersion: EVALUATION_SCHEMA_VERSION,
+    runKey: `${normalizedInput.evaluationTime}:${config.configurationId}`,
+    evaluationTime: normalizedInput.evaluationTime,
+    input: normalizedInput,
+    inputHash,
     configuration: config,
     decisions: allocated,
     coverage: {
       assets: allocated.length,
       eligible: eligibleCount,
+      selected: selectedCount,
+      qualifiedNotSelected,
       rejected: allocated.length - eligibleCount,
       rejectionReasons,
     },
+    observationPeriod: { start: periodStart, end: periodEnd },
   };
-}
-
-export function isRiskProfileCandidate(result: CanonicalScore, profile: RiskProfile): boolean {
-  return qualifiesForRiskProfile(profile, result);
 }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { fetchHistoricalCandles } from '@/lib/binance';
 import {
   DAILY_TIMEFRAME,
@@ -8,14 +8,36 @@ import {
   DEFAULT_TOTAL_CAPITAL,
   EVALUATION_STRATEGY_VERSION,
   evaluateInput,
+  assertSupportedEvaluationVersion,
+  normalizeEvaluationInput,
   type EvaluationAssetInput,
   type EvaluationCandle,
   type EvaluationConfig,
   type EvaluationInput,
   type EvaluationRun,
 } from '@/lib/evaluationLab';
-import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
-import type { RiskProfile } from '@/lib/portfolioBuilder';
+import {
+  ATR_PERIOD,
+  CANONICAL_MODEL_VERSION,
+  MACD_FAST,
+  MACD_SIGNAL,
+  MACD_SLOW,
+  MIN_CANDLES,
+  RSI_PERIOD,
+} from '@/lib/canonicalModel';
+import {
+  RISK_PROFILE_POLICIES,
+  ASSET_COUNT_BY_RISK,
+  type RiskProfile,
+} from '@/lib/portfolioBuilder';
+import {
+  comparableOutputs,
+  hashEvaluationInput,
+  loadEvaluationRun,
+  loadEvaluationRuns,
+  saveEvaluationRun,
+  stableSerialize,
+} from './evaluationStore';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -34,18 +56,8 @@ type Fixture = {
   }>;
 };
 
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
 function configFor(riskProfile: RiskProfile, universe: readonly string[]): EvaluationConfig {
+  const policy = RISK_PROFILE_POLICIES[riskProfile];
   const withoutId: Omit<EvaluationConfig, 'configurationId'> = {
     strategyVersion: EVALUATION_STRATEGY_VERSION,
     modelVersion: CANONICAL_MODEL_VERSION,
@@ -67,8 +79,26 @@ function configFor(riskProfile: RiskProfile, universe: readonly string[]): Evalu
       'No performance metrics are reported because the current executable exit contract is incomplete.',
       'The historical universe is provider- and availability-dependent; survivorship bias is not removed.',
     ],
+    modelParameters: {
+      rsiPeriod: RSI_PERIOD,
+      macdFast: MACD_FAST,
+      macdSlow: MACD_SLOW,
+      macdSignal: MACD_SIGNAL,
+      atrPeriod: ATR_PERIOD,
+      minimumCandles: MIN_CANDLES,
+    },
+    eligibility: {
+      minimumScore: policy.minimumScore,
+      excludeHighVolatility: policy.excludeHighVolatility,
+      requirePositiveMomentum: policy.requirePositiveMomentum,
+    },
+    allocation: {
+      maxAllocation: policy.maxAllocation,
+      maxHoldings: ASSET_COUNT_BY_RISK[riskProfile],
+      method: 'score_proportional',
+    },
   };
-  const configurationId = createHash('sha256').update(stableJson(withoutId)).digest('hex');
+  const configurationId = createHash('sha256').update(stableSerialize(withoutId)).digest('hex');
   return { ...withoutId, configurationId };
 }
 
@@ -79,36 +109,6 @@ function option(args: string[], name: string): string | undefined {
 
 function storePath(args: string[]): string {
   return resolve(option(args, '--store') ?? STORE_DIR);
-}
-
-async function saveRun(run: EvaluationRun, store: string): Promise<void> {
-  const decisionsDir = join(store, 'decisions');
-  const contractsDir = join(store, 'contracts');
-  await mkdir(decisionsDir, { recursive: true });
-  await mkdir(contractsDir, { recursive: true });
-  await writeFile(
-    join(contractsDir, `${run.configuration.configurationId}.json`),
-    `${JSON.stringify(run.configuration, null, 2)}\n`,
-    { flag: 'wx' },
-  ).catch((error: NodeJS.ErrnoException) => {
-    if (error.code !== 'EEXIST') throw error;
-  });
-  for (const decision of run.decisions) {
-    const path = join(decisionsDir, `${decision.logicalKey.replaceAll(':', '_')}.json`);
-    await writeFile(path, `${JSON.stringify(decision, null, 2)}\n`, { flag: 'wx' }).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EEXIST') throw error;
-      },
-    );
-  }
-}
-
-async function loadDecisions(store: string): Promise<unknown[]> {
-  const directory = join(store, 'decisions');
-  const names = (await readdir(directory).catch(() => [])).filter((name) => name.endsWith('.json'));
-  return Promise.all(
-    names.map(async (name) => JSON.parse(await readFile(join(directory, name), 'utf8'))),
-  );
 }
 
 function toInput(fixture: Fixture): EvaluationInput {
@@ -130,9 +130,11 @@ async function replay(fixturePath: string, args: string[]): Promise<void> {
     'moderate',
     input.assets.map((asset) => asset.ticker),
   );
-  const run = evaluateInput(input, config);
-  await saveRun(run, storePath(args));
-  console.log(JSON.stringify(run, null, 2));
+  const normalizedInput = normalizeEvaluationInput(input);
+  const inputHash = hashEvaluationInput(normalizedInput);
+  const savedRun = evaluateInput(normalizedInput, config, inputHash);
+  await saveEvaluationRun(savedRun, storePath(args));
+  console.log(JSON.stringify(savedRun, null, 2));
 }
 
 async function observe(tickers: string[], args: string[]): Promise<void> {
@@ -162,35 +164,65 @@ async function observe(tickers: string[], args: string[]): Promise<void> {
     }),
   );
   const profile = (option(args, '--risk-profile') ?? 'moderate') as RiskProfile;
-  const run = evaluateInput({ evaluationTime, assets }, configFor(profile, tickers));
-  await saveRun(run, storePath(args));
+  const input = { evaluationTime, assets };
+  const normalizedInput = normalizeEvaluationInput(input);
+  const run = evaluateInput(
+    normalizedInput,
+    configFor(profile, tickers),
+    hashEvaluationInput(normalizedInput),
+  );
+  await saveEvaluationRun(run, storePath(args));
   console.log(JSON.stringify(run, null, 2));
 }
 
 async function report(args: string[]): Promise<void> {
-  const decisions = await loadDecisions(storePath(args));
-  const eligible = decisions.filter(
-    (decision) => (decision as { status?: string }).status === 'ELIGIBLE',
-  );
-  const rejected = decisions.length - eligible.length;
-  const reasons = decisions.flatMap(
-    (decision) =>
-      (decision as { rejectionReasons?: Array<{ code: string }> }).rejectionReasons ?? [],
-  );
-  const rejectionBreakdown = Object.fromEntries(
-    [...new Set(reasons.map((reason) => reason.code))]
-      .sort()
-      .map((code) => [code, reasons.filter((reason) => reason.code === code).length]),
-  );
+  const runs = await loadEvaluationRuns(storePath(args));
+  const groups = new Map<
+    string,
+    {
+      runs: number;
+      assets: number;
+      selected: number;
+      eligible: number;
+      rejected: number;
+      rejectionReasons: Record<string, number>;
+    }
+  >();
+  for (const { run } of runs) {
+    const key = [
+      run.configuration.strategyVersion,
+      run.configuration.modelVersion,
+      run.configuration.configurationId,
+      `${run.observationPeriod.start ?? 'none'}-${run.observationPeriod.end ?? 'none'}`,
+    ].join('/');
+    const current = groups.get(key) ?? {
+      runs: 0,
+      assets: 0,
+      selected: 0,
+      eligible: 0,
+      rejected: 0,
+      rejectionReasons: {},
+    };
+    current.runs += 1;
+    current.assets += run.coverage.assets;
+    current.selected += run.coverage.selected;
+    current.eligible += run.coverage.eligible;
+    current.rejected += run.coverage.rejected;
+    for (const [reason, count] of Object.entries(run.coverage.rejectionReasons)) {
+      current.rejectionReasons[reason] = (current.rejectionReasons[reason] ?? 0) + count;
+    }
+    groups.set(key, current);
+  }
   console.log(
     JSON.stringify(
       {
         store: storePath(args),
-        decisionCount: decisions.length,
+        runCount: runs.length,
         missingRuns: 'not determinable: no production schedule is installed',
-        eligibleCount: eligible.length,
-        rejectedCount: rejected,
-        rejectionBreakdown,
+        groups: [...groups.entries()].map(([configuration, summary]) => ({
+          configuration,
+          ...summary,
+        })),
         performanceMetrics: 'not reported: no complete executable exit contract',
       },
       null,
@@ -200,21 +232,47 @@ async function report(args: string[]): Promise<void> {
 }
 
 async function reproduce(logicalKey: string, args: string[]): Promise<void> {
-  const decisions = await loadDecisions(storePath(args));
-  const decision = decisions.find(
-    (candidate) => (candidate as { logicalKey?: string }).logicalKey === logicalKey,
-  );
-  if (!decision) throw new Error(`No decision found for ${logicalKey}`);
-  console.log(JSON.stringify(decision, null, 2));
+  const stored = await loadEvaluationRun(logicalKey, storePath(args));
+  assertSupportedEvaluationVersion(stored.contract);
+  const actualHash = hashEvaluationInput(stored.run.input);
+  if (actualHash !== stored.run.inputHash) {
+    console.log(
+      JSON.stringify(
+        {
+          status: 'MISMATCH',
+          reason: 'INPUT_HASH_MISMATCH',
+          expected: stored.run.inputHash,
+          actual: actualHash,
+        },
+        null,
+        2,
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const recalculated = evaluateInput(stored.run.input, stored.contract, stored.run.inputHash);
+  const expected = stableSerialize(comparableOutputs(stored.run));
+  const actual = stableSerialize(comparableOutputs(recalculated));
+  const status = expected === actual ? 'MATCH' : 'MISMATCH';
+  console.log(JSON.stringify({ status, runKey: logicalKey, expected, actual }, null, 2));
+  if (status === 'MISMATCH') process.exitCode = 1;
 }
 
-const [, , command, value, ...args] = process.argv;
-if (command === 'replay' && value) await replay(value, args);
-else if (command === 'observe' && value) await observe(value.split(',').filter(Boolean), args);
-else if (command === 'report')
-  await report([value, ...args].filter((item): item is string => Boolean(item)));
-else if (command === 'reproduce' && value) await reproduce(value, args);
-else {
-  console.error(USAGE);
-  process.exitCode = 1;
+async function main(): Promise<void> {
+  const [, , command, value, ...args] = process.argv;
+  if (command === 'replay' && value) await replay(value, args);
+  else if (command === 'observe' && value) await observe(value.split(',').filter(Boolean), args);
+  else if (command === 'report')
+    await report([value, ...args].filter((item): item is string => Boolean(item)));
+  else if (command === 'reproduce' && value) await reproduce(value, args);
+  else {
+    console.error(USAGE);
+    process.exitCode = 1;
+  }
 }
+
+await main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});

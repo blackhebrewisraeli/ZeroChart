@@ -16,7 +16,7 @@ ZeroChart now has a browser-independent validation layer for the current impleme
 | Exits               | Paper Trading has no automated stop orders. ATR stops are planned sizing assumptions. TradingView can emit a SELL signal, but that is not a server-side exit.                      |
 | Benchmark           | Not applicable for this lab because the current executable exit/observation contract is incomplete. No retrospective score-following return is presented as portfolio performance. |
 
-Each run stores a SHA-256 `configurationId`, the closed input candle snapshot, and immutable per-decision JSON records under `.zerochart-evaluations/decisions/`. Contracts are kept per configuration under `.zerochart-evaluations/contracts/`. Re-running the same logical evaluation uses the existing file rather than creating a second record. Later model/configuration changes produce a different identifier and preserve older records.
+Each run stores one immutable JSON snapshot containing every normalized asset input, closed-candle data, configuration contract, input SHA-256 hash, decisions, eligibility/selection outcomes, and allocations under `.zerochart-evaluations/runs/`. Contracts are kept per configuration under `.zerochart-evaluations/contracts/`. Re-running the same logical evaluation accepts identical content and rejects conflicting content rather than overwriting it. Temporary artifacts and malformed or contract-mismatched runs are treated as incomplete. Later model/configuration changes produce a different identifier and preserve older records.
 
 ## Commands
 
@@ -38,13 +38,15 @@ The minimal private report is:
 npm run evaluate -- report --store .zerochart-evaluations
 ```
 
-To reproduce a selected decision, use its `logicalKey` from the replay/observation output:
+To reproduce a complete saved portfolio decision, use its `runKey` from the replay/observation output:
 
 ```bash
-npm run evaluate -- reproduce 1767225600000:BTC-USD:CONFIGURATION_ID --store .zerochart-evaluations
+npm run evaluate -- reproduce 1767225600000:CONFIGURATION_ID --store .zerochart-evaluations
 ```
 
-The report separates recorded coverage, eligible/rejected decisions, rejection reasons, and configuration attribution. Missing runs are explicitly reported as not determinable because this task does not install a production schedule. It deliberately reports performance metrics as unavailable.
+Reproduction loads only the saved run and contract. It recalculates with the supported strategy/model implementation, verifies the input hash, compares decisions, coverage, observation period, and allocations, and prints `MATCH` or `MISMATCH`. A mismatch or unsupported historical version exits nonzero; reproduction never fetches network data.
+
+The report groups coverage by strategy version, model version, configuration hash, and observation period. It includes eligible/selected/rejected counts and rejection-reason totals. Missing runs are explicitly reported as not determinable because this task does not install a production schedule. It deliberately reports performance metrics as unavailable.
 
 ## Synthetic demonstration
 
@@ -58,8 +60,12 @@ Verified by this lab:
 - deterministic replay of identical inputs;
 - model, strategy, and configuration attribution;
 - explicit stale, missing, insufficient-history, and no-eligible outcomes;
-- duplicate-run idempotency at the logical decision key;
+- duplicate-run idempotency at the complete run key;
+- complete multi-asset snapshots and score-based selection limits;
+- offline recalculation with input-integrity and output comparisons;
+- conflict detection for concurrent retries and incomplete temporary artifacts;
 - isolation from trading mutation APIs.
+- one live, read-only Binance observation followed by offline `MATCH` reproduction.
 
 Not verified:
 
@@ -68,5 +74,6 @@ Not verified:
 - removal of provider-universe survivorship bias;
 - complete historical coverage for every asset class;
 - production database persistence or production scheduling.
+- atomicity across a process crash between contract and run publication; the loader detects missing or mismatched artifacts, but this remains a filesystem-level store rather than a transactional database.
 
 The next smallest task for performance evidence is to specify and independently persist a complete executable entry/exit observation contract, including a defined untouched evaluation period and an appropriate asset-universe benchmark. That task should not be inferred from this decision-validation foundation.

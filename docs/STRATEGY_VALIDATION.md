@@ -52,6 +52,8 @@ The report groups coverage by strategy version, model version, configuration has
 
 Campaign observations use a separate ignored store, `.zerochart-campaigns/`, so live evidence cannot mix with synthetic fixture replays. The manifest freezes the canonical strategy/model/configuration IDs, the existing moderate thresholds, the five-asset Binance universe (`BTC-USD`, `ETH-USD`, `SOL-USD`, `ADA-USD`, `XRP-USD`), daily candles, a 48-hour freshness limit, and a daily `06:30:00Z` slot. That slot is 390 minutes after the Binance daily candle closes at `00:00:00Z`; the deliberately generous buffer also makes the manual collection time practical for the owner.
 
+Loading a campaign revalidates the repository SHA shape, daily UTC schedule, close buffer, missing-data policy, and complete configuration hash. A changed manifest is rejected instead of being silently treated as evidence from the frozen campaign.
+
 Initialize the first 30-slot campaign once, from the exact commit that will run it:
 
 ```bash

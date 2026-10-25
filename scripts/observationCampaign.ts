@@ -93,13 +93,33 @@ function assertManifest(manifest: CampaignManifest): void {
   ) {
     throw new Error('Campaign manifest is not a prospective Binance observation campaign');
   }
+  if (!/^[0-9a-f]{40}$/.test(manifest.repositoryCommit)) {
+    throw new Error('Campaign repository commit is not a full Git SHA');
+  }
+  if (
+    manifest.schedule.timezone !== 'UTC' ||
+    manifest.schedule.cadence !== 'daily' ||
+    manifest.schedule.candleCloseTime !== '00:00:00' ||
+    manifest.schedule.observationTime !== OBSERVATION_TIME ||
+    manifest.schedule.closeBufferMinutes !== CLOSE_BUFFER_MINUTES
+  ) {
+    throw new Error('Campaign schedule does not match the frozen daily UTC schedule');
+  }
+  if (
+    manifest.missingDataPolicy.action !== 'fail-slot-and-retry-same-slot' ||
+    manifest.missingDataPolicy.substitution !== 'none' ||
+    manifest.missingDataPolicy.successfulSlotIdempotency !== 'do-not-refetch'
+  ) {
+    throw new Error('Campaign missing-data policy does not match the frozen policy');
+  }
   assertConfigurationIntegrity(manifest.configuration);
   const expected = configFor('moderate', CAMPAIGN_UNIVERSE);
   if (stableSerialize(manifest.configuration) !== stableSerialize(expected)) {
     throw new Error('Campaign configuration does not match the frozen moderate configuration');
   }
-  assertSlotBoundary(manifest.schedule.start, 'Campaign start');
-  assertSlotBoundary(manifest.schedule.end, 'Campaign end');
+  const start = assertSlotBoundary(manifest.schedule.start, 'Campaign start');
+  const end = assertSlotBoundary(manifest.schedule.end, 'Campaign end');
+  if (Date.parse(start) > Date.parse(end)) throw new Error('Campaign start must not exceed end');
 }
 
 async function writeExclusive(path: string, value: unknown): Promise<void> {

@@ -50,14 +50,14 @@ The report groups coverage by strategy version, model version, configuration has
 
 ## Private prospective campaign runbook
 
-Campaign observations use a separate ignored store, `.zerochart-campaigns/`, so live evidence cannot mix with synthetic fixture replays. The manifest freezes the canonical strategy/model/configuration IDs, the existing moderate thresholds, the five-asset Binance universe (`BTC-USD`, `ETH-USD`, `SOL-USD`, `ADA-USD`, `XRP-USD`), daily candles, a 48-hour freshness limit, and a daily `00:15:00Z` slot. That slot is 15 minutes after the Binance daily candle closes at `00:00:00Z`.
+Campaign observations use a separate ignored store, `.zerochart-campaigns/`, so live evidence cannot mix with synthetic fixture replays. The manifest freezes the canonical strategy/model/configuration IDs, the existing moderate thresholds, the five-asset Binance universe (`BTC-USD`, `ETH-USD`, `SOL-USD`, `ADA-USD`, `XRP-USD`), daily candles, a 48-hour freshness limit, and a daily `06:30:00Z` slot. That slot is 390 minutes after the Binance daily candle closes at `00:00:00Z`; the deliberately generous buffer also makes the manual collection time practical for the owner.
 
 Initialize the first 30-slot campaign once, from the exact commit that will run it:
 
 ```bash
 npm run evaluate -- campaign-init private-2026q4-001 \
-  --start 2026-10-25T00:15:00.000Z \
-  --end 2026-11-23T00:15:00.000Z
+  --start 2026-10-25T06:30:00.000Z \
+  --end 2026-11-23T06:30:00.000Z
 ```
 
 Run the currently due slot manually:
@@ -82,7 +82,7 @@ npm run evaluate -- campaign-reproduce private-2026q4-001 --block-network
 
 The manifest's missing-data policy fails a slot if any asset fetch fails or supplies unavailable, stale, or insufficient history. It never substitutes synthetic candles. A complete run with zero eligible or selected assets is valid and must not be retried merely to obtain eligibility. The report counts a prior unattempted slot as missed after the next slot becomes due; it never backfills or labels replay as prospective evidence.
 
-No scheduler is installed. Evidence collection only continues when the owner invokes `campaign-run` after each slot. A local scheduler may later invoke that exact command shortly after `00:15Z`, but it should be configured separately and must retain the same manifest and store.
+No scheduler is installed. Evidence collection only continues when the owner invokes `campaign-run` after each slot. A local scheduler may later invoke that exact command shortly after `06:30Z`, but it should be configured separately and must retain the same manifest and store.
 
 ## Synthetic demonstration
 

@@ -16,8 +16,8 @@ import {
 
 const campaignId = 'private-2026q4-001';
 const commit = '9d6e349000000000000000000000000000000000';
-const slot = '2026-10-25T00:15:00.000Z';
-const now = new Date('2026-10-25T06:00:00.000Z');
+const slot = '2026-10-25T06:30:00.000Z';
+const now = new Date('2026-10-25T07:00:00.000Z');
 const day = 24 * 60 * 60 * 1000;
 
 function candles(): Candle[] {
@@ -45,12 +45,12 @@ describe('prospective observation campaign', () => {
     await expect(
       initializeCampaign({
         campaignId,
-        start: '2026-10-25T00:14:00.000Z',
+        start: '2026-10-25T06:29:00.000Z',
         end: slot,
         repositoryCommit: commit,
         store,
       }),
-    ).rejects.toThrow('00:15:00Z');
+    ).rejects.toThrow('06:30:00Z');
   });
 
   it('preserves failures, retries the slot, and never duplicates its success', async () => {
@@ -92,7 +92,7 @@ describe('prospective observation campaign', () => {
 
   it('detects missed slots without backdating observations', async () => {
     const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
-    await createCampaign(store, '2026-10-23T00:15:00.000Z');
+    await createCampaign(store, '2026-10-23T06:30:00.000Z');
     await runDueCampaign(campaignId, store, { now, fetchCandles: async () => candles() });
     const report = await campaignReport(campaignId, store, now);
     expect(report.slots).toMatchObject({ expected: 3, completed: 1, missed: 2 });

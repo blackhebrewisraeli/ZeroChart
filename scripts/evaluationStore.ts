@@ -66,8 +66,8 @@ export async function reproduceEvaluationRun(
   status: 'MATCH' | 'MISMATCH';
   runKey: string;
   reason?: 'INPUT_HASH_MISMATCH';
-  expected: string;
-  actual: string;
+  expected?: string;
+  actual?: string;
 }> {
   const stored = await loadEvaluationRun(runKey, store);
   assertSupportedEvaluationVersion(stored.contract);
@@ -85,7 +85,9 @@ export async function reproduceEvaluationRun(
   const recalculated = evaluateInput(stored.run.input, stored.contract, stored.run.inputHash);
   const expected = stableSerialize(comparableOutputs(stored.run));
   const actual = stableSerialize(comparableOutputs(recalculated));
-  return { status: expected === actual ? 'MATCH' : 'MISMATCH', runKey, expected, actual };
+  return expected === actual
+    ? { status: 'MATCH', runKey }
+    : { status: 'MISMATCH', runKey, expected, actual };
 }
 
 function pathsFor(store: string, runKey: string, configurationId: string) {

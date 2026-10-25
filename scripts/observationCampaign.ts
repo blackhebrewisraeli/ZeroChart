@@ -21,6 +21,8 @@ import { configFor, fetchObservationAssets } from './evaluate-canonical';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CAMPAIGN_STORE = 'evaluation-store';
+const OBSERVATION_TIME = '06:30:00';
+const CLOSE_BUFFER_MINUTES = 390;
 export const CAMPAIGN_UNIVERSE = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'ADA-USD', 'XRP-USD'] as const;
 
 export interface CampaignManifest {
@@ -35,8 +37,8 @@ export interface CampaignManifest {
     timezone: 'UTC';
     cadence: 'daily';
     candleCloseTime: '00:00:00';
-    observationTime: '00:15:00';
-    closeBufferMinutes: 15;
+    observationTime: '06:30:00';
+    closeBufferMinutes: 390;
     start: string;
     end: string;
   };
@@ -78,8 +80,8 @@ function iso(value: string | number | Date): string {
 
 function assertSlotBoundary(value: string, label: string): string {
   const normalized = iso(value);
-  if (!normalized.endsWith('T00:15:00.000Z')) {
-    throw new Error(`${label} must be a UTC daily observation slot at 00:15:00Z`);
+  if (!normalized.endsWith(`T${OBSERVATION_TIME}.000Z`)) {
+    throw new Error(`${label} must be a UTC daily observation slot at ${OBSERVATION_TIME}Z`);
   }
   return normalized;
 }
@@ -132,8 +134,8 @@ export async function initializeCampaign(input: {
       timezone: 'UTC',
       cadence: 'daily',
       candleCloseTime: '00:00:00',
-      observationTime: '00:15:00',
-      closeBufferMinutes: 15,
+      observationTime: OBSERVATION_TIME,
+      closeBufferMinutes: CLOSE_BUFFER_MINUTES,
       start,
       end,
     },

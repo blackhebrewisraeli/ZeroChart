@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "1",
+  "specificationId": "8b58ae26c4492173f6ce850ba67acd5da5b2f98ab3047edf6bef8780f3865637",
+  "name": "zerochart-prospective-signal-outcomes",
+  "frozenAt": "2026-10-25T00:00:00.000Z",
+  "provider": "binance-spot-rest",
+  "timeframe": "1d-utc",
+  "providerTimestampSemantics": {
+    "candleKey": "open-time",
+    "openTimeField": 0,
+    "openPriceField": 1,
+    "dailyBoundary": "00:00:00Z"
+  },
+  "horizonsCalendarDays": [1, 7, 30],
+  "referencePrice": "OPEN of the first UTC daily candle whose open time is strictly after observedAt",
+  "endpointPrice": "OPEN of the UTC daily candle exactly horizon calendar days after reference open time",
+  "benchmark": "BTC-USD over the identical reference and endpoint timestamps",
+  "comparisonGroups": [
+    "selected-assets",
+    "qualified-not-selected-assets",
+    "scored-rejected-assets",
+    "full-scored-observed-universe"
+  ],
+  "missingDataRules": {
+    "substitution": "none",
+    "pending": "endpoint open time is later than collection time",
+    "available": "one validated candle exists at each exact required timestamp",
+    "missing": "endpoint has occurred but a required exact candle is absent",
+    "invalidConflicting": "duplicate, invalid, or conflicting provider data"
+  },
+  "interpretation": "Reference-price signal research only; not fills, a portfolio backtest, risk-adjusted alpha, or evidence of executable profitability."
+}

@@ -48,6 +48,7 @@ import {
   buildSyntheticReportModel,
   writeDecisionsReport,
 } from './decisionsReport';
+import { collectCampaignOutcomes } from './outcomeMeasurement';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -59,6 +60,7 @@ const USAGE = `Usage:
   npm run evaluate -- campaign-run CAMPAIGN_ID [--store DIR]
   npm run evaluate -- campaign-report CAMPAIGN_ID [--store DIR]
   npm run evaluate -- campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
+  npm run evaluate -- outcome-collect CAMPAIGN_ID [--store DIR]
   npm run evaluate -- decisions-report CAMPAIGN_ID [--store DIR] [--output FILE]
   npm run evaluate -- decisions-demo [--output FILE]`;
 
@@ -333,6 +335,14 @@ const commandHandlers: Record<string, CommandHandler> = {
     );
     printJson(result);
     if (result.status === 'MISMATCH') process.exitCode = 1;
+  },
+  'outcome-collect': async (value, args) => {
+    const result = await collectCampaignOutcomes(
+      requiredValue('outcome-collect', value),
+      storePath(args, '.zerochart-campaigns'),
+    );
+    printJson(result);
+    if (result.results.some((item) => item.status === 'CONFLICT')) process.exitCode = 1;
   },
   'decisions-report': async (value, args) => {
     const campaignId = requiredValue('decisions-report', value);

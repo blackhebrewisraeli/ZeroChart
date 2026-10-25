@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { fetchHistoricalCandles } from '@/lib/binance';
 import {
   DAILY_TIMEFRAME,
@@ -13,7 +13,6 @@ import {
   type EvaluationCandle,
   type EvaluationConfig,
   type EvaluationInput,
-  type EvaluationRun,
 } from '@/lib/evaluationLab';
 import {
   ATR_PERIOD,
@@ -109,7 +108,20 @@ function option(args: string[], name: string): string | undefined {
 }
 
 function storePath(args: string[]): string {
-  return resolve(option(args, '--store') ?? STORE_DIR);
+  return safeCliPath(option(args, '--store') ?? STORE_DIR, '--store');
+}
+
+function safeCliPath(value: string, optionName: string): string {
+  if (!value || value.includes('\0')) throw new Error(`Invalid ${optionName} path`);
+  const candidate = resolve(value);
+  const relativePath = relative(process.cwd(), candidate);
+  if (
+    relativePath === '..' ||
+    relativePath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
+  ) {
+    throw new Error(`${optionName} must be inside the current workspace`);
+  }
+  return candidate;
 }
 
 function toInput(fixture: Fixture): EvaluationInput {
@@ -125,7 +137,9 @@ function toInput(fixture: Fixture): EvaluationInput {
 }
 
 async function replay(fixturePath: string, args: string[]): Promise<void> {
-  const fixture = JSON.parse(await readFile(resolve(fixturePath), 'utf8')) as Fixture;
+  const fixture = JSON.parse(
+    await readFile(safeCliPath(fixturePath, 'fixture'), 'utf8'),
+  ) as Fixture;
   const input = toInput(fixture);
   const config = configFor(
     'moderate',

@@ -5,7 +5,6 @@ import { evaluateCandlesAsync } from '@/lib/financeClient';
 import { recommendPositionSize } from '@/lib/risk';
 import {
   allocateScoreCandidates,
-  qualifiesForRiskProfile,
   RISK_PROFILE_POLICIES,
   selectPortfolioCandidates,
   type Allocation,

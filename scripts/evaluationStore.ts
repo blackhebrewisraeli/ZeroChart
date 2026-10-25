@@ -55,6 +55,14 @@ export function stableSerialize(value: unknown): string {
 
 function pathsFor(store: string, runKey: string, configurationId: string) {
   const root = resolve(store);
+  for (const [label, value] of [
+    ['run key', runKey],
+    ['configuration ID', configurationId],
+  ] as const) {
+    if (!value || value.includes('/') || value.includes('\\') || value.includes('\0')) {
+      throw new EvaluationStoreError(`Invalid ${label}`);
+    }
+  }
   return {
     root,
     run: join(root, 'runs', `${encodeURIComponent(runKey)}.json`),
@@ -106,7 +114,7 @@ export async function saveEvaluationRun(run: EvaluationRun, store: string): Prom
 }
 
 async function assertNoIncompleteArtifacts(root: string): Promise<void> {
-  for (const directory of ['runs', 'contracts']) {
+  const readDirectory = async (directory: string) => {
     const path = join(root, directory);
     const names = await readdir(path).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return [];
@@ -115,7 +123,8 @@ async function assertNoIncompleteArtifacts(root: string): Promise<void> {
     if (names.some((name) => name.includes('.tmp-'))) {
       throw new IncompleteEvaluationError(`Incomplete evaluation write found in ${path}`);
     }
-  }
+  };
+  await Promise.all([readDirectory('runs'), readDirectory('contracts')]);
 }
 
 export async function loadEvaluationRun(

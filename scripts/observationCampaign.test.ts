@@ -129,6 +129,23 @@ describe('prospective observation campaign', () => {
     ).rejects.toThrow('frozen moderate configuration');
   });
 
+  it('rejects a frozen campaign schedule or policy mismatch', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
+    await createCampaign(store);
+    const path = join(store, campaignId, 'manifest.json');
+    const manifest = JSON.parse(await readFile(path, 'utf8')) as CampaignManifest;
+    (manifest.schedule as { closeBufferMinutes: number }).closeBufferMinutes = 30;
+    await writeFile(path, JSON.stringify(manifest));
+    await expect(campaignReport(campaignId, store, now)).rejects.toThrow(
+      'frozen daily UTC schedule',
+    );
+
+    (manifest.schedule as { closeBufferMinutes: number }).closeBufferMinutes = 390;
+    (manifest.missingDataPolicy as { substitution: string }).substitution = 'fixture';
+    await writeFile(path, JSON.stringify(manifest));
+    await expect(campaignReport(campaignId, store, now)).rejects.toThrow('frozen policy');
+  });
+
   it('keeps live evidence separate and reproduces it with fetch blocked', async () => {
     const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
     await createCampaign(store);

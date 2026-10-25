@@ -65,6 +65,10 @@ type Fixture = {
   }>;
 };
 
+function printJson(value: unknown): void {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
 export function configFor(riskProfile: RiskProfile, universe: readonly string[]): EvaluationConfig {
   const policy = RISK_PROFILE_POLICIES[riskProfile];
   const withoutId: Omit<EvaluationConfig, 'configurationId'> = {
@@ -158,7 +162,7 @@ async function replay(fixturePath: string, args: string[]): Promise<void> {
   const inputHash = hashEvaluationInput(normalizedInput);
   const savedRun = evaluateInput(normalizedInput, config, inputHash);
   await saveEvaluationRun(savedRun, storePath(args));
-  console.log(JSON.stringify(savedRun, null, 2));
+  printJson(savedRun);
 }
 
 async function observe(tickers: string[], args: string[]): Promise<void> {
@@ -173,7 +177,7 @@ async function observe(tickers: string[], args: string[]): Promise<void> {
     hashEvaluationInput(normalizedInput),
   );
   await saveEvaluationRun(run, storePath(args));
-  console.log(JSON.stringify(run, null, 2));
+  printJson(run);
 }
 
 export async function fetchObservationAssets(
@@ -244,27 +248,21 @@ async function report(args: string[]): Promise<void> {
     }
     groups.set(key, current);
   }
-  console.log(
-    JSON.stringify(
-      {
-        store: storePath(args),
-        runCount: runs.length,
-        missingRuns: 'not determinable: no production schedule is installed',
-        groups: [...groups.entries()].map(([configuration, summary]) => ({
-          configuration,
-          ...summary,
-        })),
-        performanceMetrics: 'not reported: no complete executable exit contract',
-      },
-      null,
-      2,
-    ),
-  );
+  printJson({
+    store: storePath(args),
+    runCount: runs.length,
+    missingRuns: 'not determinable: no production schedule is installed',
+    groups: [...groups.entries()].map(([configuration, summary]) => ({
+      configuration,
+      ...summary,
+    })),
+    performanceMetrics: 'not reported: no complete executable exit contract',
+  });
 }
 
 async function reproduce(logicalKey: string, args: string[]): Promise<void> {
   const result = await reproduceEvaluationRun(logicalKey, storePath(args));
-  console.log(JSON.stringify(result, null, 2));
+  printJson(result);
   if (result.status === 'MISMATCH') process.exitCode = 1;
 }
 
@@ -275,51 +273,71 @@ async function repositoryCommit(): Promise<string> {
   return stdout.trim();
 }
 
-async function main(): Promise<void> {
-  const [, , command, value, ...args] = process.argv;
-  if (command === 'replay' && value) await replay(value, args);
-  else if (command === 'observe' && value) await observe(value.split(',').filter(Boolean), args);
-  else if (command === 'report')
-    await report([value, ...args].filter((item): item is string => Boolean(item)));
-  else if (command === 'reproduce' && value) await reproduce(value, args);
-  else if (command === 'campaign-init' && value) {
+function requiredValue(command: string, value?: string): string {
+  if (!value) throw new Error(`${command} requires a value`);
+  return value;
+}
+
+type CommandHandler = (value: string | undefined, args: string[]) => Promise<void>;
+
+const commandHandlers: Record<string, CommandHandler> = {
+  replay: (value, args) => replay(requiredValue('replay', value), args),
+  observe: (value, args) =>
+    observe(requiredValue('observe', value).split(',').filter(Boolean), args),
+  report: (value, args) => report([value, ...args].filter((item): item is string => Boolean(item))),
+  reproduce: (value, args) => reproduce(requiredValue('reproduce', value), args),
+  'campaign-init': async (value, args) => {
+    const campaignId = requiredValue('campaign-init', value);
     const start = option(args, '--start');
     const end = option(args, '--end');
     if (!start || !end) throw new Error('campaign-init requires --start and --end');
-    console.log(
-      JSON.stringify(
-        await initializeCampaign({
-          campaignId: value,
-          start,
-          end,
-          repositoryCommit: await repositoryCommit(),
-          store: storePath(args, '.zerochart-campaigns'),
-        }),
-        null,
-        2,
+    printJson(
+      await initializeCampaign({
+        campaignId,
+        start,
+        end,
+        repositoryCommit: await repositoryCommit(),
+        store: storePath(args, '.zerochart-campaigns'),
+      }),
+    );
+  },
+  'campaign-run': async (value, args) => {
+    const result = await runDueCampaign(
+      requiredValue('campaign-run', value),
+      storePath(args, '.zerochart-campaigns'),
+    );
+    printJson(result);
+    if (result.attempt.status === 'FAILED') process.exitCode = 1;
+  },
+  'campaign-report': async (value, args) => {
+    printJson(
+      await campaignReport(
+        requiredValue('campaign-report', value),
+        storePath(args, '.zerochart-campaigns'),
       ),
     );
-  } else if (command === 'campaign-run' && value) {
-    const result = await runDueCampaign(value, storePath(args, '.zerochart-campaigns'));
-    console.log(JSON.stringify(result, null, 2));
-    if (result.attempt.status === 'FAILED') process.exitCode = 1;
-  } else if (command === 'campaign-report' && value) {
-    console.log(
-      JSON.stringify(await campaignReport(value, storePath(args, '.zerochart-campaigns')), null, 2),
-    );
-  } else if (command === 'campaign-reproduce' && value) {
+  },
+  'campaign-reproduce': async (value, args) => {
     const result = await reproduceCampaignRun(
-      value,
+      requiredValue('campaign-reproduce', value),
       storePath(args, '.zerochart-campaigns'),
       option(args, '--slot'),
       args.includes('--block-network'),
     );
-    console.log(JSON.stringify(result, null, 2));
+    printJson(result);
     if (result.status === 'MISMATCH') process.exitCode = 1;
-  } else {
+  },
+};
+
+async function main(): Promise<void> {
+  const [, , command, value, ...args] = process.argv;
+  const handler = command ? commandHandlers[command] : undefined;
+  if (!handler) {
     console.error(USAGE);
     process.exitCode = 1;
+    return;
   }
+  await handler(value, args);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

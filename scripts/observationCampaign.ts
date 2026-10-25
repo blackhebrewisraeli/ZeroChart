@@ -3,7 +3,6 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Candle } from '@/lib/binance';
 import {
-  DAILY_TIMEFRAME,
   evaluateInput,
   normalizeEvaluationInput,
   type EvaluationAssetInput,
@@ -302,7 +301,7 @@ export async function reproduceCampaignRun(
   const attempts = await loadAttempts(root);
   const slot = requestedSlot
     ? iso(requestedSlot)
-    : attempts.filter((a) => a.status === 'COMPLETED').at(-1)?.slot;
+    : [...attempts].reverse().find((attempt) => attempt.status === 'COMPLETED')?.slot;
   const attempt = attempts.find((item) => item.slot === slot && item.status === 'COMPLETED');
   if (!attempt?.runKey)
     throw new Error(`No successful campaign observation for ${slot ?? 'any slot'}`);

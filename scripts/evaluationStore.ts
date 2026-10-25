@@ -1,7 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, unlink, writeFile, link } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { EvaluationConfig, EvaluationInput, EvaluationRun } from '@/lib/evaluationLab';
+import {
+  assertSupportedEvaluationVersion,
+  evaluateInput,
+  type EvaluationConfig,
+  type EvaluationInput,
+  type EvaluationRun,
+} from '@/lib/evaluationLab';
 
 export class EvaluationStoreError extends Error {}
 export class EvaluationConflictError extends EvaluationStoreError {}
@@ -51,6 +57,37 @@ export function comparableOutputs(run: EvaluationRun): unknown {
 
 export function stableSerialize(value: unknown): string {
   return stableJson(value);
+}
+
+export async function reproduceEvaluationRun(
+  runKey: string,
+  store: string,
+): Promise<{
+  status: 'MATCH' | 'MISMATCH';
+  runKey: string;
+  reason?: 'INPUT_HASH_MISMATCH';
+  expected?: string;
+  actual?: string;
+}> {
+  const stored = await loadEvaluationRun(runKey, store);
+  assertSupportedEvaluationVersion(stored.contract);
+  assertConfigurationIntegrity(stored.contract);
+  const actualHash = hashEvaluationInput(stored.run.input);
+  if (actualHash !== stored.run.inputHash) {
+    return {
+      status: 'MISMATCH',
+      runKey,
+      reason: 'INPUT_HASH_MISMATCH',
+      expected: stored.run.inputHash,
+      actual: actualHash,
+    };
+  }
+  const recalculated = evaluateInput(stored.run.input, stored.contract, stored.run.inputHash);
+  const expected = stableSerialize(comparableOutputs(stored.run));
+  const actual = stableSerialize(comparableOutputs(recalculated));
+  return expected === actual
+    ? { status: 'MATCH', runKey }
+    : { status: 'MISMATCH', runKey, expected, actual };
 }
 
 function pathsFor(store: string, runKey: string, configurationId: string) {

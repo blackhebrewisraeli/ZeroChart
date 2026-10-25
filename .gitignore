@@ -50,3 +50,4 @@ supabase/.temp/
 # Vitest coverage (npm test -- --coverage)
 coverage/
 .zerochart-evaluations/
+.zerochart-campaigns/

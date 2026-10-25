@@ -48,6 +48,42 @@ Reproduction loads only the saved run and contract. It recalculates with the sup
 
 The report groups coverage by strategy version, model version, configuration hash, and observation period. It includes eligible/selected/rejected counts and rejection-reason totals. Missing runs are explicitly reported as not determinable because this task does not install a production schedule. It deliberately reports performance metrics as unavailable.
 
+## Private prospective campaign runbook
+
+Campaign observations use a separate ignored store, `.zerochart-campaigns/`, so live evidence cannot mix with synthetic fixture replays. The manifest freezes the canonical strategy/model/configuration IDs, the existing moderate thresholds, the five-asset Binance universe (`BTC-USD`, `ETH-USD`, `SOL-USD`, `ADA-USD`, `XRP-USD`), daily candles, a 48-hour freshness limit, and a daily `06:30:00Z` slot. That slot is 390 minutes after the Binance daily candle closes at `00:00:00Z`; the deliberately generous buffer also makes the manual collection time practical for the owner.
+
+Initialize the first 30-slot campaign once, from the exact commit that will run it:
+
+```bash
+npm run evaluate -- campaign-init private-2026q4-001 \
+  --start 2026-10-25T06:30:00.000Z \
+  --end 2026-11-23T06:30:00.000Z
+```
+
+Run the currently due slot manually:
+
+```bash
+npm run evaluate -- campaign-run private-2026q4-001
+```
+
+If that command records `FAILED`, run the same command again. Each failed attempt remains in the campaign, and a retry targets the same current slot. Once the slot is complete, the same command returns the saved attempt without fetching or writing another success.
+
+Report schedule and decision evidence:
+
+```bash
+npm run evaluate -- campaign-report private-2026q4-001
+```
+
+Reproduce the latest completed run from saved inputs while explicitly blocking `fetch`:
+
+```bash
+npm run evaluate -- campaign-reproduce private-2026q4-001 --block-network
+```
+
+The manifest's missing-data policy fails a slot if any asset fetch fails or supplies unavailable, stale, or insufficient history. It never substitutes synthetic candles. A complete run with zero eligible or selected assets is valid and must not be retried merely to obtain eligibility. The report counts a prior unattempted slot as missed after the next slot becomes due; it never backfills or labels replay as prospective evidence.
+
+No scheduler is installed. Evidence collection only continues when the owner invokes `campaign-run` after each slot. A local scheduler may later invoke that exact command shortly after `06:30Z`, but it should be configured separately and must retain the same manifest and store.
+
 ## Synthetic demonstration
 
 `docs/strategy-validation-fixture.json` is a clearly labeled synthetic fixture. Its candles are invented for deterministic replay and must not be interpreted as market history or prospective evidence.
@@ -70,7 +106,7 @@ Verified by this lab:
 Not verified:
 
 - profitability, net return, drawdown, turnover, or trade count;
-- automated exits or prospective forward observation;
+- automated exits or enough prospective forward observations to assess consistency over time;
 - removal of provider-universe survivorship bias;
 - complete historical coverage for every asset class;
 - production database persistence or production scheduling.

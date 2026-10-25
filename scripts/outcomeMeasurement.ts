@@ -104,7 +104,7 @@ function exactCandle(candles: readonly ResearchCandle[], openTime: number) {
   if (matches.length > 1) return { kind: 'invalid' as const, candle: null };
   const candle = matches[0];
   if (!candle) return { kind: 'missing' as const, candle: null };
-  if (!(candle.open > 0) || !Number.isFinite(candle.open)) {
+  if (candle.open <= 0 || !Number.isFinite(candle.open)) {
     return { kind: 'invalid' as const, candle: null };
   }
   return { kind: 'available' as const, candle };
@@ -288,53 +288,58 @@ export async function collectCampaignOutcomes(
   const now = options.now ?? new Date();
   const fetchCandles = options.fetchCandles ?? fetchResearchCandles;
   const { observations } = await loadCampaignEvidence(campaignId, store, now);
-  const results: Array<{
+  type CollectionResult = {
     asset: string;
     slot: string;
     status: 'CREATED' | 'UNCHANGED' | 'CONFLICT';
-  }> = [];
-  for (const observation of observations) {
-    const measurable = observation.run.decisions.filter((decision) => decision.score !== null);
-    const reference = firstDailyOpenStrictlyAfter(observation.observedAt);
-    const end = reference + 30 * DAY_MS;
-    const cache = new Map<string, Promise<ResearchCandle[]>>();
-    const load = (asset: string) => {
-      const current = cache.get(asset) ?? fetchCandles(asset, reference, end);
-      cache.set(asset, current);
-      return current;
-    };
-    const benchmark = await load('BTC-USD');
-    for (const decision of measurable) {
-      const record = measureOutcome({
-        campaignId,
-        slot: observation.slot,
-        runKey: observation.run.runKey,
-        observedAt: observation.observedAt,
-        decision,
-        assetCandles: await load(decision.asset),
-        benchmarkCandles: benchmark,
-        now,
-      });
-      const path = join(
-        resolve(store),
-        campaignId,
-        'outcomes',
-        OUTCOME_SPECIFICATION_ID,
-        safePart(observation.slot),
-        `${safePart(decision.asset)}.json`,
+  };
+  const byObservation = await Promise.all(
+    observations.map(async (observation): Promise<CollectionResult[]> => {
+      const measurable = observation.run.decisions.filter((decision) => decision.score !== null);
+      const reference = firstDailyOpenStrictlyAfter(observation.observedAt);
+      const end = reference + 30 * DAY_MS;
+      const cache = new Map<string, Promise<ResearchCandle[]>>();
+      const load = (asset: string) => {
+        const current = cache.get(asset) ?? fetchCandles(asset, reference, end);
+        cache.set(asset, current);
+        return current;
+      };
+      const benchmark = await load('BTC-USD');
+      return Promise.all(
+        measurable.map(async (decision): Promise<CollectionResult> => {
+          const record = measureOutcome({
+            campaignId,
+            slot: observation.slot,
+            runKey: observation.run.runKey,
+            observedAt: observation.observedAt,
+            decision,
+            assetCandles: await load(decision.asset),
+            benchmarkCandles: benchmark,
+            now,
+          });
+          const path = join(
+            resolve(store),
+            campaignId,
+            'outcomes',
+            OUTCOME_SPECIFICATION_ID,
+            safePart(observation.slot),
+            `${safePart(decision.asset)}.json`,
+          );
+          try {
+            return {
+              asset: decision.asset,
+              slot: observation.slot,
+              status: await saveOutcomeRecord(path, record),
+            };
+          } catch (error) {
+            if (!(error instanceof OutcomeConflictError)) throw error;
+            return { asset: decision.asset, slot: observation.slot, status: 'CONFLICT' };
+          }
+        }),
       );
-      try {
-        results.push({
-          asset: decision.asset,
-          slot: observation.slot,
-          status: await saveOutcomeRecord(path, record),
-        });
-      } catch (error) {
-        if (!(error instanceof OutcomeConflictError)) throw error;
-        results.push({ asset: decision.asset, slot: observation.slot, status: 'CONFLICT' });
-      }
-    }
-  }
+    }),
+  );
+  const results = byObservation.flat();
   return { outcomeSpecificationId: OUTCOME_SPECIFICATION_ID, results };
 }
 
@@ -347,18 +352,27 @@ export async function loadCampaignOutcomes(
     if (error.code === 'ENOENT') return [];
     throw error;
   });
-  const records: OutcomeRecord[] = [];
-  for (const slot of slots) {
-    const directory = join(root, slot);
-    const names = await readdir(directory);
-    for (const name of names.filter((entry) => entry.endsWith('.json'))) {
-      const record = JSON.parse(await readFile(join(directory, name), 'utf8')) as OutcomeRecord;
-      if (record.outcomeSpecificationId !== OUTCOME_SPECIFICATION_ID) {
-        throw new Error(`Outcome specification mismatch in ${name}`);
-      }
-      records.push(record);
-    }
-  }
+  const records = (
+    await Promise.all(
+      slots.map(async (slot): Promise<OutcomeRecord[]> => {
+        const directory = join(root, slot);
+        const names = await readdir(directory);
+        return Promise.all(
+          names
+            .filter((entry) => entry.endsWith('.json'))
+            .map(async (name) => {
+              const record = JSON.parse(
+                await readFile(join(directory, name), 'utf8'),
+              ) as OutcomeRecord;
+              if (record.outcomeSpecificationId !== OUTCOME_SPECIFICATION_ID) {
+                throw new Error(`Outcome specification mismatch in ${name}`);
+              }
+              return record;
+            }),
+        );
+      }),
+    )
+  ).flat();
   return records.sort((a, b) => a.slot.localeCompare(b.slot) || a.asset.localeCompare(b.asset));
 }
 
@@ -372,11 +386,11 @@ export function summarizeOutcomes(records: readonly OutcomeRecord[]) {
     });
     const sorted = [...values].sort((a, b) => a - b);
     const middle = Math.floor(sorted.length / 2);
-    const median = sorted.length
-      ? sorted.length % 2
-        ? sorted[middle]!
-        : (sorted[middle - 1]! + sorted[middle]!) / 2
-      : null;
+    let median: number | null = null;
+    if (sorted.length > 0) {
+      median =
+        sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+    }
     return {
       horizonDays,
       sampleSize: values.length,
@@ -387,7 +401,9 @@ export function summarizeOutcomes(records: readonly OutcomeRecord[]) {
         : null,
     };
   });
-  const dates = [...new Set(records.map((record) => record.observedAt.slice(0, 10)))].sort();
+  const dates = [...new Set(records.map((record) => record.observedAt.slice(0, 10)))].sort((a, b) =>
+    a.localeCompare(b),
+  );
   return {
     byHorizon: available,
     uniqueAssets: new Set(records.map((record) => record.asset)).size,

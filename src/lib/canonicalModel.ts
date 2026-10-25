@@ -1,6 +1,9 @@
 /**
  * Canonical Math Engine — the single source of truth for every Signal Score
- * in the app, and a 1:1 port of `pine/zerochart_quant_hud.pine`.
+ * in the app. The Pine HUD mirrors the factor and decision math, while its
+ * built-in MACD uses TradingView's EMA initialization rather than the explicit
+ * SMA-seeded convention in `src/lib/indicators.ts`; see the numerical audit in
+ * `docs/QUANT_MODEL_VERIFICATION.md`.
  *
  * Input is a daily OHLC candle series. The engine computes Wilder RSI(14),
  * MACD(12, 26, 9) and Wilder ATR(14) on it (src/lib/indicators.ts), normalizes

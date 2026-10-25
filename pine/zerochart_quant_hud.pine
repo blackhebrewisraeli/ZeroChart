@@ -1,6 +1,8 @@
 //@version=6
 // ZeroChart Quant HUD & ATR Risk Engine
-// 1:1 port of the ZeroChart quant engine:
+// Factor and decision port of the ZeroChart quant engine. TradingView's built-in
+// MACD has a different EMA seed from the TypeScript engine during warm-up; see
+// docs/QUANT_MODEL_VERIFICATION.md before changing either model under 1.0.0.
 //   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
 //   src/lib/canonicalModel.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
 //   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 2x ATR stop floored at 0)

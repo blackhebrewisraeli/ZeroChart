@@ -97,7 +97,9 @@ function emaSeries(values: Float64Array, period: number): Float64Array {
  * MACD (12, 26, 9) by default: the MACD line is EMA(12) − EMA(26), the signal
  * line is an EMA(9) of the valid MACD tail, and the histogram is the difference.
  * Warm-up values are `NaN`, so the first defined histogram sits at index
- * slow + signal − 2 (33 for the defaults), matching TA-Lib conventions.
+ * slow + signal − 2 (33 for the defaults). This is ZeroChart's explicit
+ * independent-EMA convention; TA-Lib's composite MACD aligns the fast seed
+ * window to the slow seed window, so transient values are not interchangeable.
  */
 export function macd(values: number[], fast = 12, slow = 26, signalPeriod = 9): MacdResult {
   const length = values.length;

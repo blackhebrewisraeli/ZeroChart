@@ -100,6 +100,36 @@ describe('evaluation lab', () => {
     expect(evaluateInput(input, config())).toEqual(evaluateInput(input, config()));
   });
 
+  it('sorts unordered candles but preserves duplicates and missing intervals', () => {
+    const source = candles(40);
+    const duplicate = { ...source[10]! };
+    const withProviderAnomalies = source
+      .filter((_candle, index) => index !== 20)
+      .concat(duplicate)
+      .reverse();
+    const run = evaluateInput(
+      {
+        evaluationTime,
+        assets: [
+          {
+            ticker: 'BTC-USD',
+            source: 'fixture',
+            timeframe: DAILY_TIMEFRAME,
+            candles: withProviderAnomalies,
+          },
+        ],
+      },
+      config(),
+    );
+    const snapshot = run.decisions[0]!.inputSnapshot;
+    const closeTimes = snapshot.map((candle) => candle.closeTime);
+
+    expect(closeTimes).toEqual([...closeTimes].sort((a, b) => a - b));
+    expect(closeTimes.filter((closeTime) => closeTime === duplicate.closeTime)).toHaveLength(2);
+    expect(closeTimes).not.toContain(source[20]!.closeTime);
+    expect(run.decisions[0]?.observedInputCount).toBe(40);
+  });
+
   it('excludes the open candle and preserves model attribution', () => {
     const input: EvaluationInput = {
       evaluationTime,

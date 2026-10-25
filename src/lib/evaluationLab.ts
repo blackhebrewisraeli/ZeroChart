@@ -288,6 +288,18 @@ export function assertSupportedEvaluationVersion(config: EvaluationConfig): void
       `Unsupported historical evaluation version: ${config.strategyVersion}/${config.modelVersion}`,
     );
   }
+  if (
+    config.modelParameters.rsiPeriod !== RSI_PERIOD ||
+    config.modelParameters.macdFast !== MACD_FAST ||
+    config.modelParameters.macdSlow !== MACD_SLOW ||
+    config.modelParameters.macdSignal !== MACD_SIGNAL ||
+    config.modelParameters.atrPeriod !== ATR_PERIOD ||
+    config.modelParameters.minimumCandles !== MIN_CANDLES
+  ) {
+    throw new Error(
+      `Incompatible model parameters for ${config.modelVersion}: stored parameters do not match the supported implementation`,
+    );
+  }
 }
 
 export function evaluateInput(

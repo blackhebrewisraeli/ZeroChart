@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fetchHistoricalCandles } from '@/lib/binance';
@@ -32,6 +31,8 @@ import {
 } from '@/lib/portfolioBuilder';
 import {
   comparableOutputs,
+  assertConfigurationIntegrity,
+  hashEvaluationConfig,
   hashEvaluationInput,
   loadEvaluationRun,
   loadEvaluationRuns,
@@ -98,7 +99,7 @@ function configFor(riskProfile: RiskProfile, universe: readonly string[]): Evalu
       method: 'score_proportional',
     },
   };
-  const configurationId = createHash('sha256').update(stableSerialize(withoutId)).digest('hex');
+  const configurationId = hashEvaluationConfig({ ...withoutId, configurationId: '' });
   return { ...withoutId, configurationId };
 }
 
@@ -234,6 +235,7 @@ async function report(args: string[]): Promise<void> {
 async function reproduce(logicalKey: string, args: string[]): Promise<void> {
   const stored = await loadEvaluationRun(logicalKey, storePath(args));
   assertSupportedEvaluationVersion(stored.contract);
+  assertConfigurationIntegrity(stored.contract);
   const actualHash = hashEvaluationInput(stored.run.input);
   if (actualHash !== stored.run.inputHash) {
     console.log(

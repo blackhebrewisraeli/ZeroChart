@@ -1,10 +1,14 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+// @vitest-environment node
+
+import { mkdtemp, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  assertConfigurationIntegrity,
   EvaluationConflictError,
   IncompleteEvaluationError,
+  hashEvaluationConfig,
   hashEvaluationInput,
   loadEvaluationRun,
   loadEvaluationRuns,
@@ -13,6 +17,7 @@ import {
 import {
   DAILY_TIMEFRAME,
   EVALUATION_STRATEGY_VERSION,
+  assertSupportedEvaluationVersion,
   evaluateInput,
   type EvaluationConfig,
   type EvaluationCandle,
@@ -25,7 +30,7 @@ const day = 24 * 60 * 60 * 1000;
 const evaluationTime = Date.UTC(2026, 0, 1);
 
 function config(): EvaluationConfig {
-  return {
+  const withoutId: Omit<EvaluationConfig, 'configurationId'> = {
     strategyVersion: EVALUATION_STRATEGY_VERSION,
     modelVersion: CANONICAL_MODEL_VERSION,
     universe: ['BTC-USD'],
@@ -57,7 +62,10 @@ function config(): EvaluationConfig {
       maxHoldings: 5,
       method: 'score_proportional',
     },
-    configurationId: 'store-test-config',
+  };
+  return {
+    ...withoutId,
+    configurationId: hashEvaluationConfig({ ...withoutId, configurationId: '' }),
   };
 }
 
@@ -120,6 +128,59 @@ describe('evaluation store', () => {
     await expect(saveEvaluationRun(conflicting, store)).rejects.toBeInstanceOf(
       EvaluationConflictError,
     );
+  });
+
+  it('allows identical simultaneous saves and leaves one complete run', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-store-'));
+    const saved = run();
+    await Promise.all([saveEvaluationRun(saved, store), saveEvaluationRun(saved, store)]);
+    const loaded = await loadEvaluationRun(saved.runKey, store);
+    expect(loaded.run).toEqual(saved);
+    await expect(readdir(join(store, 'runs'))).resolves.toEqual([
+      `${encodeURIComponent(saved.runKey)}.json`,
+    ]);
+    await expect(
+      readdir(join(store, 'runs')).then((names) => names.filter((name) => name.includes('.tmp-'))),
+    ).resolves.toEqual([]);
+    await expect(
+      readdir(join(store, 'contracts')).then((names) =>
+        names.filter((name) => name.includes('.tmp-')),
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it('rejects the conflicting writer during simultaneous saves', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-store-'));
+    const saved = run();
+    const conflicting = structuredClone(saved);
+    conflicting.inputHash = 'different';
+    const results = await Promise.allSettled([
+      saveEvaluationRun(saved, store),
+      saveEvaluationRun(conflicting, store),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')?.reason).toBeInstanceOf(
+      EvaluationConflictError,
+    );
+    const loaded = await loadEvaluationRun(saved.runKey, store);
+    expect([saved.inputHash, conflicting.inputHash]).toContain(loaded.run.inputHash);
+  });
+
+  it('rejects tampered configuration parameters and hashes', async () => {
+    const saved = run();
+    const incompatible = structuredClone(saved);
+    incompatible.configuration.modelParameters.rsiPeriod = 7;
+    expect(() => assertSupportedEvaluationVersion(incompatible.configuration)).toThrow(
+      'Incompatible model parameters',
+    );
+    const invalidHash = {
+      ...saved.configuration,
+      configurationId: 'wrong',
+    };
+    expect(() => assertConfigurationIntegrity(invalidHash)).toThrow(
+      'Evaluation configuration hash mismatch',
+    );
+    expect(hashEvaluationConfig(saved.configuration)).toBe(saved.configuration.configurationId);
   });
 
   it('detects incomplete temporary artifacts', async () => {

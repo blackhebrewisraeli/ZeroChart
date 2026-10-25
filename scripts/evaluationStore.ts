@@ -28,6 +28,19 @@ export function hashEvaluationInput(input: EvaluationInput): string {
   return createHash('sha256').update(stableJson(input)).digest('hex');
 }
 
+export function hashEvaluationConfig(config: EvaluationConfig): string {
+  const { configurationId: _configurationId, ...withoutId } = config;
+  return createHash('sha256').update(stableJson(withoutId)).digest('hex');
+}
+
+export function assertConfigurationIntegrity(config: EvaluationConfig): void {
+  if (hashEvaluationConfig(config) !== config.configurationId) {
+    throw new IncompleteEvaluationError(
+      `Evaluation configuration hash mismatch: ${config.configurationId}`,
+    );
+  }
+}
+
 export function comparableOutputs(run: EvaluationRun): unknown {
   return {
     decisions: run.decisions,
@@ -80,6 +93,7 @@ async function atomicCreateOrVerify(path: string, content: string): Promise<void
 }
 
 export async function saveEvaluationRun(run: EvaluationRun, store: string): Promise<void> {
+  assertConfigurationIntegrity(run.configuration);
   const paths = pathsFor(store, run.runKey, run.configuration.configurationId);
   const contract = `${stableSerialize(run.configuration)}\n`;
   const stored: StoredEvaluationRun = {
@@ -128,6 +142,7 @@ export async function loadEvaluationRun(
       `Evaluation run is incomplete or contract-mismatched: ${paths.run}`,
     );
   }
+  assertConfigurationIntegrity(stored.contract);
   const contractPath = pathsFor(store, runKey, stored.contract.configurationId).contract;
   const contractContent = await readExisting(contractPath);
   let persistedContract: unknown;

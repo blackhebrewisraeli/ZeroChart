@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '@/lib/binance';
 import { hashEvaluationConfig } from './evaluationStore';
+import { legacyConfigFor } from './evaluate-canonical';
 import {
   campaignReport,
   initializeCampaign,
@@ -24,7 +25,7 @@ function candles(): Candle[] {
   const lastOpen = Date.parse('2026-10-24T00:00:00.000Z');
   return Array.from({ length: 40 }, (_, index) => {
     const timestamp = lastOpen - (39 - index) * day;
-    return { timestamp, open: 100, high: 101, low: 99, close: 100 };
+    return { timestamp, closeTime: timestamp + day - 1, open: 100, high: 101, low: 99, close: 100 };
   });
 }
 
@@ -112,6 +113,20 @@ describe('prospective observation campaign', () => {
     expect(report.slots).toMatchObject({ expected: 3, completed: 1, missed: 2 });
   });
 
+  it('fails a slot on structurally invalid candles instead of recording eligibility', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
+    await createCampaign(store);
+    const invalid = candles();
+    invalid[10] = { ...invalid[10]!, high: 90, low: 110 };
+    const result = await runDueCampaign(campaignId, store, {
+      now,
+      fetchCandles: async () => invalid,
+    });
+    expect(result.attempt).toMatchObject({ status: 'FAILED', runKey: null });
+    expect(result.attempt.failures[0]).toMatchObject({ code: 'DATA_INVALID' });
+    expect(result.attempt.failures[0]?.detail).toContain('HIGH_BELOW_LOW');
+  });
+
   it('rejects a campaign configuration mismatch', async () => {
     const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
     await createCampaign(store);
@@ -158,5 +173,22 @@ describe('prospective observation campaign', () => {
     expect(report.reproductions).toHaveLength(1);
     expect(report.reproductions[0]).toMatchObject({ status: 'MATCH', networkBlocked: true });
     expect(JSON.stringify(report)).not.toContain('fixture');
+  });
+
+  it('keeps legacy campaign artifacts readable but refuses retroactive policy upgrade', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
+    await createCampaign(store);
+    const path = join(store, campaignId, 'manifest.json');
+    const manifest = JSON.parse(await readFile(path, 'utf8')) as CampaignManifest;
+    manifest.configuration = legacyConfigFor('moderate', manifest.configuration.universe);
+    manifest.schedule.candleCloseTime = '00:00:00';
+    await writeFile(path, JSON.stringify(manifest));
+
+    await expect(campaignReport(campaignId, store, now)).resolves.toMatchObject({
+      candleValidationPolicyVersion: 'legacy-unversioned',
+    });
+    await expect(
+      runDueCampaign(campaignId, store, { now, fetchCandles: async () => candles() }),
+    ).rejects.toThrow('legacy candle contract');
   });
 });

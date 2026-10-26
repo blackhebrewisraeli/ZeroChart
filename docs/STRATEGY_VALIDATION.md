@@ -7,7 +7,7 @@ ZeroChart now has a browser-independent validation layer for the current impleme
 | Area                | Current implementation                                                                                                                                                             |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Universe and source | Crypto tickers supported by Binance REST klines; equity/forex quote feeds exist, but canonical portfolio scoring has no historical candle source for them.                         |
-| Timeframe           | Closed daily (`1d`) OHLC candles, oldest first.                                                                                                                                    |
+| Timeframe           | Binance daily policy `binance-daily-v1`: epoch-ms UTC-midnight opens, provider close at `23:59:59.999Z`, validated closed OHLC, oldest first after sorting.                        |
 | Model               | Canonical model `1.0.0`: Wilder RSI(14), MACD(12,26,9) histogram, and Wilder ATR(14), with regime-tilted 40/40/20 base weights. At least 34 valid candles are required.            |
 | Eligibility         | Conservative: score >=60, no high volatility, max 8, max 10% each. Moderate: score >=60, max 5, max 25% each. Aggressive: score >=71, positive momentum, max 3, max 50% each.      |
 | Allocation          | Eligible assets are ranked by score and allocated proportionally, capped by the selected profile. The lab records a proposal, not a BUY.                                           |
@@ -50,7 +50,7 @@ The report groups coverage by strategy version, model version, configuration has
 
 ## Private prospective campaign runbook
 
-Campaign observations use a separate ignored store, `.zerochart-campaigns/`, so live evidence cannot mix with synthetic fixture replays. The manifest freezes the canonical strategy/model/configuration IDs, the existing moderate thresholds, the five-asset Binance universe (`BTC-USD`, `ETH-USD`, `SOL-USD`, `ADA-USD`, `XRP-USD`), daily candles, a 48-hour freshness limit, and a daily `06:30:00Z` slot. That slot is 390 minutes after the Binance daily candle closes at `00:00:00Z`; the deliberately generous buffer also makes the manual collection time practical for the owner.
+Campaign observations use a separate ignored store, `.zerochart-campaigns/`, so live evidence cannot mix with synthetic fixture replays. The manifest freezes the canonical strategy/model/configuration IDs, the existing moderate thresholds, the five-asset Binance universe (`BTC-USD`, `ETH-USD`, `SOL-USD`, `ADA-USD`, `XRP-USD`), daily candles, a 48-hour freshness limit, and a daily `06:30:00Z` slot. Under the provider's inclusive convention, the preceding UTC day's candle closes at `23:59:59.999Z`; the deliberately generous observation buffer also makes manual collection practical for the owner.
 
 Loading a campaign revalidates the repository SHA shape, daily UTC schedule, close buffer, missing-data policy, and complete configuration hash. A changed manifest is rejected instead of being silently treated as evidence from the frozen campaign.
 
@@ -82,7 +82,14 @@ Reproduce the latest completed run from saved inputs while explicitly blocking `
 npm run evaluate -- campaign-reproduce private-2026q4-001 --block-network
 ```
 
-The manifest's missing-data policy fails a slot if any asset fetch fails or supplies unavailable, stale, or insufficient history. It never substitutes synthetic candles. A complete run with zero eligible or selected assets is valid and must not be retried merely to obtain eligibility. The report counts a prior unattempted slot as missed after the next slot becomes due; it never backfills or labels replay as prospective evidence.
+The manifest's missing-data policy fails a slot if any asset fetch fails or supplies invalid,
+unavailable, stale, or insufficient history. It never substitutes synthetic candles. New
+campaigns hash `binance-daily-v1` into their configuration and use schema 2. Pre-policy
+campaigns remain readable/reproducible but cannot be advanced by the current runner; the owner
+must explicitly initialize a new ID. A complete run with zero eligible or selected assets is
+valid and must not be retried merely to obtain eligibility. The report counts a prior
+unattempted slot as missed after the next slot becomes due; it never backfills or labels replay
+as prospective evidence.
 
 No scheduler is installed. Evidence collection only continues when the owner invokes `campaign-run` after each slot. A local scheduler may later invoke that exact command shortly after `06:30Z`, but it should be configured separately and must retain the same manifest and store.
 

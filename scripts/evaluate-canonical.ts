@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { fetchHistoricalCandles } from '@/lib/binance';
+import { CandleProviderDataError, fetchHistoricalCandles } from '@/lib/binance';
 import {
   DAILY_TIMEFRAME,
   DEFAULT_MAX_DATA_AGE_MS,
@@ -49,6 +49,7 @@ import {
   writeDecisionsReport,
 } from './decisionsReport';
 import { collectCampaignOutcomes } from './outcomeMeasurement';
+import { BINANCE_DAILY_CANDLE_POLICY_VERSION } from '@/lib/candleValidation';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -78,7 +79,11 @@ function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function configFor(riskProfile: RiskProfile, universe: readonly string[]): EvaluationConfig {
+function buildConfig(
+  riskProfile: RiskProfile,
+  universe: readonly string[],
+  includeValidation: boolean,
+): EvaluationConfig {
   const policy = RISK_PROFILE_POLICIES[riskProfile];
   const withoutId: Omit<EvaluationConfig, 'configurationId'> = {
     strategyVersion: EVALUATION_STRATEGY_VERSION,
@@ -88,6 +93,14 @@ export function configFor(riskProfile: RiskProfile, universe: readonly string[])
     riskProfile,
     totalCapital: DEFAULT_TOTAL_CAPITAL,
     maxDataAgeMs: DEFAULT_MAX_DATA_AGE_MS,
+    ...(includeValidation
+      ? {
+          candleValidation: {
+            policyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+            modelWindow: 200,
+          },
+        }
+      : {}),
     executionTiming: 'next_observation_after_closed_candle' as const,
     costs: { feeBps: 25, slippageBps: 0 },
     exitBehavior: 'none_in_evaluation_lab' as const,
@@ -122,6 +135,18 @@ export function configFor(riskProfile: RiskProfile, universe: readonly string[])
   };
   const configurationId = hashEvaluationConfig({ ...withoutId, configurationId: '' });
   return { ...withoutId, configurationId };
+}
+
+export function configFor(riskProfile: RiskProfile, universe: readonly string[]): EvaluationConfig {
+  return buildConfig(riskProfile, universe, true);
+}
+
+/** Exact pre-policy contract, used only to identify and reproduce legacy evidence. */
+export function legacyConfigFor(
+  riskProfile: RiskProfile,
+  universe: readonly string[],
+): EvaluationConfig {
+  return buildConfig(riskProfile, universe, false);
 }
 
 export function option(args: string[], name: string): string | undefined {
@@ -203,10 +228,25 @@ export async function fetchObservationAssets(
           timeframe: DAILY_TIMEFRAME,
           candles: candles.map((candle) => ({
             ...candle,
-            closeTime: candle.timestamp + 24 * 60 * 60 * 1000,
           })),
         };
       } catch (error) {
+        if (error instanceof CandleProviderDataError) {
+          return {
+            ticker,
+            source: 'binance-rest',
+            timeframe: DAILY_TIMEFRAME,
+            candles: [],
+            validationIssues: [
+              {
+                code: 'MALFORMED_PROVIDER_ROW' as const,
+                index: -1,
+                timestamp: null,
+                detail: error.message,
+              },
+            ],
+          };
+        }
         return {
           ticker,
           source: 'binance-rest',

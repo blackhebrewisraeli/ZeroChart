@@ -1,6 +1,7 @@
 import { useQueries } from '@tanstack/react-query';
 import { CANONICAL_MODEL_VERSION, type CanonicalResult } from '@/lib/canonicalModel';
 import { scoreTicker } from '@/lib/roboAdvisor';
+import { BINANCE_DAILY_CANDLE_POLICY_VERSION } from '@/lib/candleValidation';
 
 /** Daily candles move slowly; one engine pass per ticker per 5 minutes is plenty. */
 const STALE_MS = 5 * 60_000;
@@ -23,7 +24,12 @@ export function useCanonicalScores(
 ): ReadonlyMap<string, CanonicalResult> {
   return useQueries({
     queries: [...new Set(tickers)].map((ticker) => ({
-      queryKey: ['canonical-score', CANONICAL_MODEL_VERSION, ticker],
+      queryKey: [
+        'canonical-score',
+        CANONICAL_MODEL_VERSION,
+        BINANCE_DAILY_CANDLE_POLICY_VERSION,
+        ticker,
+      ],
       queryFn: async (): Promise<Entry> => [ticker, await scoreTicker(ticker)],
       staleTime: STALE_MS,
     })),

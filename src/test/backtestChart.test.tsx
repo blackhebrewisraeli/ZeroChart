@@ -270,7 +270,16 @@ describe('BacktestChart friction and trailing-stop controls', () => {
     expect(computeBacktestAsync).not.toHaveBeenCalled();
 
     // …but the run that finishes uses it, so the result matches the controls.
-    release([{ timestamp: 1_700_000_000_000, open: 99, high: 102, low: 98, close: 100 }]);
+    release([
+      {
+        timestamp: 1_700_000_000_000,
+        closeTime: 1_700_086_399_999,
+        open: 99,
+        high: 102,
+        low: 98,
+        close: 100,
+      },
+    ]);
     await screen.findByText('Alpha vs. Hold');
     expect(computeBacktestAsync).toHaveBeenCalledTimes(1);
     expect(vi.mocked(computeBacktestAsync).mock.calls[0]?.[0]).toMatchObject({

@@ -15,12 +15,19 @@ import {
   selectPortfolioCandidates,
   type RiskProfile,
 } from '@/lib/portfolioBuilder';
+import {
+  BINANCE_DAILY_CANDLE_POLICY_VERSION,
+  formatCandleIssues,
+  type CandleIssue,
+  validateBinanceDailyCandles,
+} from '@/lib/candleValidation';
 
 export const EVALUATION_STRATEGY_VERSION = 'canonical-portfolio-v1';
 export const DAILY_TIMEFRAME = '1d';
 export const DEFAULT_MAX_DATA_AGE_MS = 48 * 60 * 60 * 1000;
 export const DEFAULT_TOTAL_CAPITAL = 100_000;
-export const EVALUATION_SCHEMA_VERSION = '1';
+export const EVALUATION_SCHEMA_VERSION = '2';
+export const LEGACY_EVALUATION_SCHEMA_VERSION = '1';
 export const SUPPORTED_STRATEGY_VERSIONS = [EVALUATION_STRATEGY_VERSION] as const;
 export const SUPPORTED_MODEL_VERSIONS = [CANONICAL_MODEL_VERSION] as const;
 
@@ -28,6 +35,7 @@ export type DecisionStatus =
   | 'ELIGIBLE'
   | 'DATA_UNAVAILABLE'
   | 'DATA_FETCH_FAILED'
+  | 'DATA_INVALID'
   | 'STALE_DATA'
   | 'INSUFFICIENT_HISTORY'
   | 'BELOW_MINIMUM_SCORE'
@@ -44,6 +52,10 @@ export interface EvaluationConfig {
   riskProfile: RiskProfile;
   totalCapital: number;
   maxDataAgeMs: number;
+  candleValidation?: {
+    policyVersion: typeof BINANCE_DAILY_CANDLE_POLICY_VERSION;
+    modelWindow: number;
+  };
   executionTiming: 'next_observation_after_closed_candle';
   costs: {
     feeBps: number;
@@ -85,6 +97,7 @@ export interface EvaluationAssetInput {
   timeframe: typeof DAILY_TIMEFRAME;
   candles: readonly EvaluationCandle[];
   error?: string;
+  validationIssues?: readonly CandleIssue[];
 }
 
 export interface EvaluationInput {
@@ -125,7 +138,7 @@ export interface DecisionSnapshot {
 }
 
 export interface EvaluationRun {
-  schemaVersion: typeof EVALUATION_SCHEMA_VERSION;
+  schemaVersion: typeof EVALUATION_SCHEMA_VERSION | typeof LEGACY_EVALUATION_SCHEMA_VERSION;
   runKey: string;
   evaluationTime: number;
   input: EvaluationInput;
@@ -157,6 +170,27 @@ function closedCandles(
   return candles
     .filter((candle) => candle.closeTime <= evaluationTime)
     .sort((a, b) => a.closeTime - b.closeTime);
+}
+
+function modelCandles(
+  asset: EvaluationAssetInput,
+  evaluationTime: number,
+  config: EvaluationConfig,
+): { candles: EvaluationCandle[]; invalidDetail: string | null } {
+  if (!config.candleValidation || asset.source !== 'binance-rest') {
+    return { candles: closedCandles(asset.candles, evaluationTime), invalidDetail: null };
+  }
+  const validation = validateBinanceDailyCandles(asset.candles, {
+    evaluationTime,
+    maxDataAgeMs: config.maxDataAgeMs,
+    modelWindow: config.candleValidation.modelWindow,
+  });
+  return {
+    candles: validation.closed,
+    invalidDetail: validation.structurallyValid
+      ? null
+      : `${validation.policyVersion}: ${formatCandleIssues(validation.issues)}`,
+  };
 }
 
 function inputReference(asset: EvaluationAssetInput, candles: readonly EvaluationCandle[]): string {
@@ -289,6 +323,14 @@ export function assertSupportedEvaluationVersion(config: EvaluationConfig): void
     );
   }
   if (
+    config.candleValidation &&
+    config.candleValidation.policyVersion !== BINANCE_DAILY_CANDLE_POLICY_VERSION
+  ) {
+    throw new Error(
+      `Unsupported candle-validation policy: ${config.candleValidation.policyVersion}`,
+    );
+  }
+  if (
     config.modelParameters.rsiPeriod !== RSI_PERIOD ||
     config.modelParameters.macdFast !== MACD_FAST ||
     config.modelParameters.macdSlow !== MACD_SLOW ||
@@ -309,7 +351,18 @@ export function evaluateInput(
 ): EvaluationRun {
   const normalizedInput = normalizeEvaluationInput(input);
   const decisions = normalizedInput.assets.map((asset) => {
-    const closed = closedCandles(asset.candles, normalizedInput.evaluationTime);
+    const validated = modelCandles(asset, normalizedInput.evaluationTime, config);
+    const closed = validated.candles;
+    if (asset.validationIssues?.length) {
+      return emptyDecision(
+        asset,
+        input,
+        config,
+        closed,
+        'DATA_INVALID',
+        `Candle validation failed: ${formatCandleIssues(asset.validationIssues)}`,
+      );
+    }
     if (asset.error) {
       return emptyDecision(
         asset,
@@ -318,6 +371,16 @@ export function evaluateInput(
         closed,
         'DATA_FETCH_FAILED',
         `Market-data fetch failed: ${asset.error}`,
+      );
+    }
+    if (validated.invalidDetail) {
+      return emptyDecision(
+        asset,
+        input,
+        config,
+        closed,
+        'DATA_INVALID',
+        `Candle validation failed: ${validated.invalidDetail}`,
       );
     }
     if (closed.length === 0) {
@@ -354,14 +417,32 @@ export function evaluateInput(
     const result = evaluateCandles(closed);
     return result.status === 'OK'
       ? scoredDecision(asset, input, config, closed, result)
-      : emptyDecision(
-          asset,
-          input,
-          config,
-          closed,
-          'INSUFFICIENT_HISTORY',
-          `The canonical model requires ${result.required} valid candles; ${result.received} were available.`,
-        );
+      : result.status === 'DATA_INVALID'
+        ? emptyDecision(
+            asset,
+            input,
+            config,
+            closed,
+            'DATA_INVALID',
+            `Candle validation failed: ${formatCandleIssues(result.issues)}`,
+          )
+        : result.status === 'STALE_DATA'
+          ? emptyDecision(
+              asset,
+              input,
+              config,
+              closed,
+              'STALE_DATA',
+              'Latest closed candle exceeds freshness policy.',
+            )
+          : emptyDecision(
+              asset,
+              input,
+              config,
+              closed,
+              'INSUFFICIENT_HISTORY',
+              `The canonical model requires ${result.required} valid candles; ${result.received} were available.`,
+            );
   });
 
   const qualified = decisions.filter((decision) => decision.status === 'ELIGIBLE');
@@ -401,6 +482,7 @@ export function evaluateInput(
       [
         'DATA_UNAVAILABLE',
         'DATA_FETCH_FAILED',
+        'DATA_INVALID',
         'STALE_DATA',
         'INSUFFICIENT_HISTORY',
         'BELOW_MINIMUM_SCORE',
@@ -429,7 +511,9 @@ export function evaluateInput(
   const periodStart = periodValues.length > 0 ? Math.min(...periodValues) : null;
   const periodEnd = periodValues.length > 0 ? Math.max(...periodValues) : null;
   return {
-    schemaVersion: EVALUATION_SCHEMA_VERSION,
+    schemaVersion: config.candleValidation
+      ? EVALUATION_SCHEMA_VERSION
+      : LEGACY_EVALUATION_SCHEMA_VERSION,
     runKey: `${normalizedInput.evaluationTime}:${config.configurationId}`,
     evaluationTime: normalizedInput.evaluationTime,
     input: normalizedInput,

@@ -9,6 +9,7 @@ import {
   type EvaluationInput,
 } from '@/lib/evaluationLab';
 import { CANONICAL_MODEL_VERSION, MIN_CANDLES } from '@/lib/canonicalModel';
+import { BINANCE_DAILY_CANDLE_POLICY_VERSION } from '@/lib/candleValidation';
 
 const day = 24 * 60 * 60 * 1000;
 const evaluationTime = Date.UTC(2026, 0, 1);
@@ -82,6 +83,24 @@ function config(): EvaluationConfig {
     },
     configurationId: 'fixture-config-v1',
   };
+}
+
+function validatedConfig(): EvaluationConfig {
+  return {
+    ...config(),
+    candleValidation: {
+      policyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+      modelWindow: 200,
+    },
+  };
+}
+
+function validatedCandles(count: number, offset = 0): EvaluationCandle[] {
+  return candles(count, offset).map((item) => ({
+    ...item,
+    open: item.close,
+    closeTime: item.closeTime - 1,
+  }));
 }
 
 describe('evaluation lab', () => {
@@ -196,6 +215,59 @@ describe('evaluation lab', () => {
     expect(run.decisions[0]?.status).toBe('DATA_FETCH_FAILED');
     expect(run.decisions[0]?.rejectionReasons[0]?.detail).toContain('request timed out');
     expect(run.decisions[0]?.inputSnapshot).toEqual([]);
+  });
+
+  it('records structural data failure separately from an eligibility rejection', () => {
+    const invalid = validatedCandles(40);
+    invalid[10] = { ...invalid[10]!, high: 90, low: 110 };
+    const run = evaluateInput(
+      {
+        evaluationTime,
+        assets: [
+          {
+            ticker: 'INVALID',
+            source: 'binance-rest',
+            timeframe: DAILY_TIMEFRAME,
+            candles: invalid,
+          },
+          {
+            ticker: 'VALID',
+            source: 'binance-rest',
+            timeframe: DAILY_TIMEFRAME,
+            candles: validatedCandles(40),
+          },
+        ],
+      },
+      validatedConfig(),
+    );
+    expect(run.schemaVersion).toBe('2');
+    expect(run.decisions.find((item) => item.asset === 'INVALID')).toMatchObject({
+      status: 'DATA_INVALID',
+      score: null,
+      selectionStatus: 'NOT_ELIGIBLE',
+    });
+    expect(
+      run.decisions.find((item) => item.asset === 'INVALID')?.rejectionReasons[0]?.detail,
+    ).toContain('HIGH_BELOW_LOW');
+    expect(run.decisions.find((item) => item.asset === 'VALID')?.status).not.toBe('DATA_INVALID');
+  });
+
+  it('keeps freshness distinct from structural validity', () => {
+    const run = evaluateInput(
+      {
+        evaluationTime,
+        assets: [
+          {
+            ticker: 'STALE',
+            source: 'binance-rest',
+            timeframe: DAILY_TIMEFRAME,
+            candles: validatedCandles(40, -5 * day),
+          },
+        ],
+      },
+      validatedConfig(),
+    );
+    expect(run.decisions[0]?.status).toBe('STALE_DATA');
   });
 
   it('is idempotent at the logical decision-key level', () => {

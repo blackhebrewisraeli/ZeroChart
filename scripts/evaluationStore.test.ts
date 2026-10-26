@@ -12,6 +12,7 @@ import {
   hashEvaluationInput,
   loadEvaluationRun,
   loadEvaluationRuns,
+  reproduceEvaluationRun,
   saveEvaluationRun,
 } from './evaluationStore';
 import {
@@ -94,6 +95,17 @@ describe('evaluation store', () => {
     expect(loaded.run.input.assets).toHaveLength(1);
     expect(loaded.run.decisions).toEqual(saved.decisions);
     expect(loaded.contract).toEqual(saved.configuration);
+  });
+
+  it('reproduces unversioned schema-1 evidence under its original contract', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-store-'));
+    const legacy = run();
+    expect(legacy.schemaVersion).toBe('1');
+    await saveEvaluationRun(legacy, store);
+    await expect(reproduceEvaluationRun(legacy.runKey, store)).resolves.toEqual({
+      status: 'MATCH',
+      runKey: legacy.runKey,
+    });
   });
 
   it('detects tampered inputs through the stored hash', async () => {

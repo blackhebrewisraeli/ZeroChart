@@ -22,11 +22,12 @@ review. It is not evidence of predictive value, profitability, or suitability fo
   This PR does not change scores under model `1.0.0`; correcting either side would require a
   new model version, Pine parity changes, and a new campaign. Existing campaign evidence must
   remain labeled `1.0.0` and must not be rewritten.
-- **D — Unresolved evidence gap:** the pure OHLC model has no timestamp or interval and assumes
-  structurally valid candles. The evaluation boundary sorts timestamped candles, but neither
-  boundary rejects duplicate timestamps, missing intervals, `high < low`, or closes outside
-  `[low, high]`. Current behavior is now tested and documented; whether ingestion should reject
-  those records requires a separate input-contract decision.
+- **D — Resolved at ingestion:** the pure OHLC model remains deliberately mathematical, while
+  the shared `binance-daily-v1` boundary now sorts valid unordered input and rejects duplicate
+  timestamps, missing daily intervals, invalid timestamp/close-time semantics, nonpositive or
+  nonfinite prices, `high < low`, and available opens/closes outside `[low, high]`. Open candles
+  are excluded and freshness remains a separate status. Legacy schema-1 evidence retains its
+  original behavior for exact reproduction.
 
 ## Exact mathematical contract
 
@@ -179,13 +180,13 @@ and describes MACD as two price EMAs plus an EMA signal in its
 | Rising/falling/flat                 | Decimal fixtures                                                                  | one-sided RSI 100/0; flat RSI 50; flat MACD/ATR zero                   | `1e-12` relative                | **A**                                                                   |
 | Irregular and tiny positive prices  | Decimal fixtures                                                                  | identical scale-sensitive recurrences                                  | `1e-12` relative, `1e-24` floor | **A**; IEEE-754 remains the runtime representation                      |
 | Nonfinite OHLC                      | Explicit `NaN`/infinity tests                                                     | invalid terminal reading => insufficient                               | exact status                    | **A** for current behavior; status does not identify the invalid field  |
-| Inconsistent ranges                 | Explicit `high<low` and close-outside-range tests                                 | assumed prevalidated; no repair                                        | exact status                    | **D** ingestion contract gap                                            |
+| Inconsistent ranges                 | Explicit `high<low` and open/close-outside-range tests                            | rejected by `binance-daily-v1`; no repair                              | exact status                    | **A** at ingestion; pure model remains unchanged                        |
 | Regime precedence/boundaries        | Direct mathematical cases                                                         | inclusive 4%, +/-0.5%, RSI 30/70; precedence as listed                 | exact                           | **A**                                                                   |
 | Component and final score           | Hand arithmetic                                                                   | piecewise/linear transforms; weights; final-only `Math.round`          | exact / 12 digits               | **A**                                                                   |
 | Profile eligibility                 | Below/at/above direct cases                                                       | `>=60`, `>=71`, strict momentum `>50`, high-volatility exclusion       | exact                           | **A**                                                                   |
 | Ranking and ties                    | Direct candidates                                                                 | score desc, ticker asc, original order final fallback                  | exact                           | **A**; locale behavior follows JS runtime locale                        |
 | Caps and cash                       | 90/60-score hand case                                                             | independent per-asset cap; no redistribution                           | exact                           | **A**; 80% cash retained in the tested conservative case                |
-| Duplicate/unordered/missing candles | Evaluation-boundary inspection                                                    | evaluation sorts; pure model has no timestamps; duplicates/gaps remain | exact behavior                  | **D** pending explicit ingestion policy                                 |
+| Duplicate/unordered/missing candles | Shared validator and boundary tests                                               | valid input sorts; duplicates/gaps reject; no synthesis                 | exact behavior                  | **A** under `binance-daily-v1`; legacy schema 1 remains reproducible     |
 
 ## Correction proposal and evidence impact
 

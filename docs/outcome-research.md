@@ -1,10 +1,21 @@
 # Prospective signal-outcome research
 
-The frozen machine-readable convention is `docs/outcome-measurement.v1.json`. Its identifier is the SHA-256 of the canonical specification content excluding the `specificationId` field:
+New collections use the frozen machine-readable convention
+`docs/outcome-measurement.v2.json`, which adds `binance-daily-v1` validation of every exact
+reference and endpoint candle. Version 1 remains committed and unchanged for historical
+outcome evidence. Each identifier is the SHA-256 of canonical specification content excluding
+the `specificationId` field.
 
-`8b58ae26c4492173f6ce850ba67acd5da5b2f98ab3047edf6bef8780f3865637`
+The v1 identifier is
+`8b58ae26c4492173f6ce850ba67acd5da5b2f98ab3047edf6bef8780f3865637`; v2 is emitted by
+`6893a69ee03ae96ca7b1b4d67b1b61d0438096811a06d532f8fb66a3b63e6931`.
+`outcome-collect` separates v2 files under that new identifier.
 
-Binance Spot klines are keyed by open time: array field 0 is the open timestamp and field 1 is the OPEN price. The research adapter requests `1d` UTC candles with exact `startTime` and `endTime` bounds. It never substitutes a nearby candle. See the official [Binance Spot REST market-data documentation](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints#klinecandlestick-data).
+Binance Spot klines are keyed by open time: field 0 is the open timestamp, fields 1–4 are
+OHLC, and field 6 is the inclusive close timestamp. The research adapter requests `1d` UTC
+candles with exact `startTime` and `endTime` bounds. It validates the exact reference and
+endpoint candles and never substitutes a nearby candle. See the official
+[Binance Spot REST market-data documentation](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/market#klinecandlestick-data).
 
 ## Commands
 

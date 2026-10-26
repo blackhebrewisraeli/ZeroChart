@@ -19,19 +19,18 @@ The run used strategy `canonical-portfolio-v1`, model `1.0.0`, configuration `db
 
 This is one prospective observation, not multi-day evidence. Decision consistency over time, provider reliability over time, missed-slot behavior in live operation, and retry behavior after a real provider failure are not yet measurable. Profitability, returns, win rate, drawdown, turnover, and trade count are not measurable because there is no complete executable entry/exit strategy contract. No trade, alert, production database mutation, deployment, scheduler, or external recruitment occurred.
 
-## Owner commands
+## Frozen-contract status and owner commands
 
-Run the currently due slot manually after `06:30Z`:
-
-```bash
-npm run evaluate -- campaign-run private-2026q4-001
-```
-
-Use the same command to retry a failed current slot. It preserves the failed attempt and will not duplicate a successful slot.
+This campaign was created before candle-validation policy attribution and remains frozen to
+that original contract. Existing observations, manifests, outcomes, and reproductions are not
+modified. The current runner intentionally refuses to append observations under the newer
+`binance-daily-v1` contract.
 
 ```bash
 npm run evaluate -- campaign-report private-2026q4-001
 npm run evaluate -- campaign-reproduce private-2026q4-001 --block-network
 ```
 
-No scheduler is installed. Collection stops unless the owner invokes the runner for each daily slot.
+To continue collection, the owner must initialize a new campaign ID with future slots as
+documented in [CANDLE_INPUT_CONTRACT.md](CANDLE_INPUT_CONTRACT.md). This change does not create,
+activate, or schedule one automatically.

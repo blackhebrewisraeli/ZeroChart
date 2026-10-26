@@ -20,11 +20,15 @@ export interface Kline {
 /** A full OHLC candle for a single interval. */
 export interface Candle {
   timestamp: number;
+  /** Binance close time (raw kline field 6), in epoch milliseconds. */
+  closeTime: number;
   open: number;
   high: number;
   low: number;
   close: number;
 }
+
+export class CandleProviderDataError extends Error {}
 
 /**
  * Parses the raw klines array returned by Binance into `{ timestamp, close }`
@@ -48,25 +52,31 @@ export function parseKlines(raw: unknown): Kline[] {
  * dropping any malformed rows.
  */
 export function parseCandles(raw: unknown): Candle[] {
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw))
+    throw new CandleProviderDataError('Binance klines response is not an array');
   const result: Candle[] = [];
-  for (const row of raw) {
-    if (!Array.isArray(row)) continue;
+  for (const [index, row] of raw.entries()) {
+    if (!Array.isArray(row))
+      throw new CandleProviderDataError(`Binance kline row ${index} is not an array`);
     const timestamp = Number(row[0]);
     const open = Number.parseFloat(String(row[1]));
     const high = Number.parseFloat(String(row[2]));
     const low = Number.parseFloat(String(row[3]));
     const close = Number.parseFloat(String(row[4]));
+    const closeTime = Number(row[6]);
     if (
       !Number.isFinite(timestamp) ||
       !Number.isFinite(open) ||
       !Number.isFinite(high) ||
       !Number.isFinite(low) ||
-      !Number.isFinite(close)
+      !Number.isFinite(close) ||
+      !Number.isFinite(closeTime)
     ) {
-      continue;
+      throw new CandleProviderDataError(
+        `Binance kline row ${index} contains a malformed OHLC or timestamp field`,
+      );
     }
-    result.push({ timestamp, open, high, low, close });
+    result.push({ timestamp, closeTime, open, high, low, close });
   }
   return result;
 }

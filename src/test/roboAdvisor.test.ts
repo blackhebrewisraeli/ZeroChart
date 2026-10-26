@@ -9,6 +9,7 @@ import {
 import type { Asset } from '@/lib/assets';
 import { evaluateCandles, MIN_CANDLES, type EngineCandle } from '@/lib/canonicalModel';
 import { recommendPositionSize } from '@/lib/risk';
+import type { Candle } from '@/lib/binance';
 
 function makeAsset(ticker: string, currentPrice: number | null = 100): Asset {
   return {
@@ -59,6 +60,23 @@ function engineScore(candles: EngineCandle[]) {
   return result;
 }
 
+function timestampedCandles(count = 40): Candle[] {
+  const day = 86_400_000;
+  const today = Math.floor(Date.now() / day) * day;
+  return Array.from({ length: count }, (_, index) => {
+    const timestamp = today - (count - index) * day;
+    const close = 100 + index / 10;
+    return {
+      timestamp,
+      closeTime: timestamp + day - 1,
+      open: close,
+      high: close + 1,
+      low: close - 1,
+      close,
+    };
+  });
+}
+
 describe('scoreTicker', () => {
   it('returns the canonical result for the fetched candles', async () => {
     const candles = makeCandles(200);
@@ -68,6 +86,37 @@ describe('scoreTicker', () => {
   it('never rejects: a failed fetch is INSUFFICIENT_DATA with zero candles', async () => {
     const result = await scoreTicker('BTC', depsFor({ BTC: new Error('network down') }));
     expect(result).toMatchObject({ status: 'INSUFFICIENT_DATA', received: 0 });
+  });
+
+  it('returns a data failure instead of scoring duplicate provider timestamps', async () => {
+    const candles = timestampedCandles();
+    candles.push({ ...candles[10]!, close: candles[10]!.close + 0.5 });
+    const result = await scoreTicker('BTC', {
+      fetchCandles: async () => candles,
+    });
+    expect(result).toMatchObject({
+      status: 'DATA_INVALID',
+      validationPolicyVersion: 'binance-daily-v1',
+    });
+    if (result.status !== 'DATA_INVALID') throw new Error('Expected data validation failure');
+    expect(result.issues.map((issue) => issue.code)).toContain('DUPLICATE_TIMESTAMP');
+  });
+
+  it('keeps stale history distinct from structural data failure', async () => {
+    const day = 86_400_000;
+    const stale = timestampedCandles().map((candle) => ({
+      ...candle,
+      timestamp: candle.timestamp - 5 * day,
+      closeTime: candle.closeTime - 5 * day,
+    }));
+    await expect(
+      scoreTicker('BTC', {
+        fetchCandles: async () => stale,
+      }),
+    ).resolves.toMatchObject({
+      status: 'STALE_DATA',
+      validationPolicyVersion: 'binance-daily-v1',
+    });
   });
 });
 
@@ -212,6 +261,8 @@ describe('buildQuantPortfolio', () => {
       totalCandidates: 4,
       eligible: 1,
       insufficientData: 1,
+      dataFailures: 0,
+      staleData: 0,
       networkFailures: 1,
       belowMinimumScore: 1,
       highVolatility: 0,

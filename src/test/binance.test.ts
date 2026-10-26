@@ -1,4 +1,10 @@
-import { isBinanceCrypto, parseKlines, toBinanceSymbol, toDisplayTicker } from '@/lib/binance';
+import {
+  isBinanceCrypto,
+  parseCandles,
+  parseKlines,
+  toBinanceSymbol,
+  toDisplayTicker,
+} from '@/lib/binance';
 
 describe('toBinanceSymbol', () => {
   it('maps crypto tickers to USDT pairs', () => {
@@ -48,5 +54,26 @@ describe('parseKlines', () => {
   it('drops malformed rows', () => {
     const raw = [[null, 'x'], 'nope', [1700000000000, '1', '2', '3', '4', '5']];
     expect(parseKlines(raw)).toEqual([{ timestamp: 1700000000000, close: 4 }]);
+  });
+});
+
+describe('parseCandles', () => {
+  it('preserves the provider close-time field', () => {
+    expect(
+      parseCandles([[1_700_006_400_000, '100', '102', '98', '101', '10', 1_700_092_799_999]]),
+    ).toEqual([
+      {
+        timestamp: 1_700_006_400_000,
+        closeTime: 1_700_092_799_999,
+        open: 100,
+        high: 102,
+        low: 98,
+        close: 101,
+      },
+    ]);
+  });
+
+  it('throws instead of silently dropping a malformed provider row', () => {
+    expect(() => parseCandles([[1_700_006_400_000, 'bad']])).toThrow('malformed');
   });
 });

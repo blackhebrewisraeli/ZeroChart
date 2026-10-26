@@ -16,7 +16,7 @@ import {
   saveEvaluationRun,
   stableSerialize,
 } from './evaluationStore';
-import { configFor, fetchObservationAssets } from './evaluate-canonical';
+import { configFor, fetchObservationAssets, legacyConfigFor } from './evaluate-canonical';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CAMPAIGN_STORE = 'evaluation-store';
@@ -35,7 +35,7 @@ export interface CampaignManifest {
   schedule: {
     timezone: 'UTC';
     cadence: 'daily';
-    candleCloseTime: '00:00:00';
+    candleCloseTime: '00:00:00' | '23:59:59.999';
     observationTime: '06:30:00';
     closeBufferMinutes: 390;
     start: string;
@@ -64,7 +64,7 @@ export interface CampaignAttempt {
 
 type FetchCandles = (ticker: string, interval?: string, limit?: number) => Promise<Candle[]>;
 
-function campaignRoot(store: string, campaignId: string): string {
+export function campaignRoot(store: string, campaignId: string): string {
   if (!/^[a-z0-9][a-z0-9-]{2,63}$/.test(campaignId)) {
     throw new Error('Campaign ID must be 3-64 lowercase letters, numbers, or hyphens');
   }
@@ -99,7 +99,6 @@ function assertManifest(manifest: CampaignManifest): void {
   if (
     manifest.schedule.timezone !== 'UTC' ||
     manifest.schedule.cadence !== 'daily' ||
-    manifest.schedule.candleCloseTime !== '00:00:00' ||
     manifest.schedule.observationTime !== OBSERVATION_TIME ||
     manifest.schedule.closeBufferMinutes !== CLOSE_BUFFER_MINUTES
   ) {
@@ -113,9 +112,15 @@ function assertManifest(manifest: CampaignManifest): void {
     throw new Error('Campaign missing-data policy does not match the frozen policy');
   }
   assertConfigurationIntegrity(manifest.configuration);
-  const expected = configFor('moderate', CAMPAIGN_UNIVERSE);
-  if (stableSerialize(manifest.configuration) !== stableSerialize(expected)) {
+  const current = configFor('moderate', CAMPAIGN_UNIVERSE);
+  const legacy = legacyConfigFor('moderate', CAMPAIGN_UNIVERSE);
+  const isCurrent = stableSerialize(manifest.configuration) === stableSerialize(current);
+  const isLegacy = stableSerialize(manifest.configuration) === stableSerialize(legacy);
+  if (!isCurrent && !isLegacy) {
     throw new Error('Campaign configuration does not match the frozen moderate configuration');
+  }
+  if (manifest.schedule.candleCloseTime !== (isCurrent ? '23:59:59.999' : '00:00:00')) {
+    throw new Error('Campaign schedule does not match its candle-validation contract');
   }
   const start = assertSlotBoundary(manifest.schedule.start, 'Campaign start');
   const end = assertSlotBoundary(manifest.schedule.end, 'Campaign end');
@@ -158,7 +163,7 @@ export async function initializeCampaign(input: {
     schedule: {
       timezone: 'UTC',
       cadence: 'daily',
-      candleCloseTime: '00:00:00',
+      candleCloseTime: '23:59:59.999',
       observationTime: OBSERVATION_TIME,
       closeBufferMinutes: CLOSE_BUFFER_MINUTES,
       start,
@@ -220,9 +225,13 @@ function attemptFailures(run: ReturnType<typeof evaluateInput>) {
   return run.decisions.flatMap((decision) =>
     decision.rejectionReasons
       .filter((reason) =>
-        ['DATA_UNAVAILABLE', 'DATA_FETCH_FAILED', 'STALE_DATA', 'INSUFFICIENT_HISTORY'].includes(
-          reason.code,
-        ),
+        [
+          'DATA_UNAVAILABLE',
+          'DATA_FETCH_FAILED',
+          'DATA_INVALID',
+          'STALE_DATA',
+          'INSUFFICIENT_HISTORY',
+        ].includes(reason.code),
       )
       .map((reason) => ({ asset: decision.asset, code: reason.code, detail: reason.detail })),
   );
@@ -235,6 +244,11 @@ export async function runDueCampaign(
 ): Promise<{ alreadyCompleted: boolean; attempt: CampaignAttempt }> {
   const root = campaignRoot(store, campaignId);
   const manifest = await loadManifest(campaignId, store);
+  if (!manifest.configuration.candleValidation) {
+    throw new Error(
+      'This campaign is frozen under the legacy candle contract and cannot be advanced by the current evaluator. Reproduce existing runs or initialize a new owner-approved campaign.',
+    );
+  }
   const now = options.now ?? new Date();
   const due = slotsThrough(manifest, now);
   const slot = due.at(-1);
@@ -406,6 +420,8 @@ export async function campaignReport(campaignId: string, store: string, now = ne
     modelVersion: manifest.configuration.modelVersion,
     strategyVersion: manifest.configuration.strategyVersion,
     configurationId: manifest.configuration.configurationId,
+    candleValidationPolicyVersion:
+      manifest.configuration.candleValidation?.policyVersion ?? 'legacy-unversioned',
     riskProfile: manifest.configuration.riskProfile,
     universe: manifest.configuration.universe,
     freshness: { maxDataAgeMs: manifest.configuration.maxDataAgeMs, source: manifest.source },

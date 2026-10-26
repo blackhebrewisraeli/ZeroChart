@@ -402,6 +402,8 @@ function EmptyPortfolioState({
     hasCandidates && diagnostics.networkFailures === diagnostics.totalCandidates;
   const allInsufficient =
     hasCandidates && diagnostics.insufficientData === diagnostics.totalCandidates;
+  const allDataInvalid = hasCandidates && diagnostics.dataFailures === diagnostics.totalCandidates;
+  const allStale = hasCandidates && diagnostics.staleData === diagnostics.totalCandidates;
 
   let heading = 'No qualifying assets';
   let explanation = `No asset met the ${riskLabel} profile requirements in this analysis. This can be a normal result; ZeroChart does not lower the rules just to create a proposal.`;
@@ -409,6 +411,14 @@ function EmptyPortfolioState({
     heading = 'Market history unavailable';
     explanation =
       'The analyzer could not load candle history, so it did not evaluate eligibility or create a proposal.';
+  } else if (allDataInvalid) {
+    heading = 'Market data failed validation';
+    explanation =
+      'Candle history violated the versioned input contract, so the analyzer did not evaluate eligibility or create a proposal.';
+  } else if (allStale) {
+    heading = 'Market history is stale';
+    explanation =
+      'Candle history was structurally valid but older than the freshness limit, so the analyzer did not evaluate eligibility or create a proposal.';
   } else if (allInsufficient) {
     heading = 'Not enough market history';
     explanation = `The engine needs ${MIN_CANDLES} daily candles per asset. It skips assets without enough history instead of guessing a score.`;

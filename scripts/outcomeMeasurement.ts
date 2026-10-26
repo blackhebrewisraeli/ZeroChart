@@ -1,10 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { DecisionSnapshot } from '@/lib/evaluationLab';
 import { toBinanceSymbol } from '@/lib/binance';
 import { stableSerialize } from './evaluationStore';
-import { loadCampaignEvidence } from './observationCampaign';
+import { campaignRoot, loadCampaignEvidence } from './observationCampaign';
+import {
+  BINANCE_DAILY_CANDLE_POLICY_VERSION,
+  formatCandleIssues,
+  validateBinanceDailyCandles,
+} from '@/lib/candleValidation';
 
 const DAY_MS = 86_400_000;
 export const OUTCOME_HORIZONS = [1, 7, 30] as const;
@@ -12,10 +17,11 @@ export type OutcomeHorizon = (typeof OUTCOME_HORIZONS)[number];
 export type OutcomeStatus = 'PENDING' | 'AVAILABLE' | 'MISSING' | 'INVALID_CONFLICTING';
 
 export const OUTCOME_SPECIFICATION = {
-  schemaVersion: '1',
+  schemaVersion: '2',
   name: 'zerochart-prospective-signal-outcomes',
   frozenAt: '2026-10-25T00:00:00.000Z',
   provider: 'binance-spot-rest',
+  candleValidationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
   timeframe: '1d-utc',
   providerTimestampSemantics: {
     candleKey: 'open-time',
@@ -48,10 +54,16 @@ export const OUTCOME_SPECIFICATION = {
 export const OUTCOME_SPECIFICATION_ID = createHash('sha256')
   .update(stableSerialize(OUTCOME_SPECIFICATION))
   .digest('hex');
+export const LEGACY_OUTCOME_SPECIFICATION_ID =
+  '8b58ae26c4492173f6ce850ba67acd5da5b2f98ab3047edf6bef8780f3865637';
 
 export interface ResearchCandle {
   openTime: number;
+  closeTime: number;
   open: number;
+  high: number;
+  low: number;
+  close: number;
 }
 
 export interface HorizonOutcome {
@@ -66,7 +78,7 @@ export interface HorizonOutcome {
 }
 
 export interface OutcomeRecord {
-  schemaVersion: '1';
+  schemaVersion: '1' | '2';
   campaignId: string;
   slot: string;
   runKey: string;
@@ -81,6 +93,7 @@ export interface OutcomeRecord {
   analysisRegistration: 'PREREGISTERED' | 'RETROSPECTIVELY_SPECIFIED';
   synthetic: boolean;
   outcomeSpecificationId: string;
+  candleValidationPolicyVersion?: typeof BINANCE_DAILY_CANDLE_POLICY_VERSION;
   provider: 'binance-spot-rest';
   fetchedAt: string;
   referenceOpenTime: string;
@@ -101,13 +114,31 @@ export function firstDailyOpenStrictlyAfter(observedAt: string | number | Date):
 
 function exactCandle(candles: readonly ResearchCandle[], openTime: number) {
   const matches = candles.filter((candle) => candle.openTime === openTime);
-  if (matches.length > 1) return { kind: 'invalid' as const, candle: null };
+  if (matches.length > 1)
+    return { kind: 'invalid' as const, candle: null, detail: 'DUPLICATE_TIMESTAMP' };
   const candle = matches[0];
-  if (!candle) return { kind: 'missing' as const, candle: null };
-  if (candle.open <= 0 || !Number.isFinite(candle.open)) {
-    return { kind: 'invalid' as const, candle: null };
+  if (!candle) return { kind: 'missing' as const, candle: null, detail: null };
+  const validation = validateBinanceDailyCandles(
+    [
+      {
+        timestamp: candle.openTime,
+        closeTime: candle.closeTime,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+      },
+    ],
+    { evaluationTime: candle.closeTime + 1 },
+  );
+  if (!validation.structurallyValid) {
+    return {
+      kind: 'invalid' as const,
+      candle: null,
+      detail: `${BINANCE_DAILY_CANDLE_POLICY_VERSION}: ${formatCandleIssues(validation.issues)}`,
+    };
   }
-  return { kind: 'available' as const, candle };
+  return { kind: 'available' as const, candle, detail: null };
 }
 
 function pct(reference: number, endpoint: number): number {
@@ -164,7 +195,14 @@ export function measureOutcome(input: {
       return {
         ...base,
         status: 'INVALID_CONFLICTING',
-        detail: 'Duplicate or invalid exact candle.',
+        detail: [
+          assetReference.detail,
+          benchmarkReference.detail,
+          assetEndpoint.detail,
+          benchmarkEndpoint.detail,
+        ]
+          .filter(Boolean)
+          .join(' '),
       };
     }
     if (
@@ -193,7 +231,7 @@ export function measureOutcome(input: {
     };
   });
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     campaignId: input.campaignId,
     slot: input.slot,
     runKey: input.runKey,
@@ -211,6 +249,7 @@ export function measureOutcome(input: {
         : 'RETROSPECTIVELY_SPECIFIED',
     synthetic: input.synthetic ?? false,
     outcomeSpecificationId: OUTCOME_SPECIFICATION_ID,
+    candleValidationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
     provider: 'binance-spot-rest',
     fetchedAt: (input.fetchedAt ?? input.now).toISOString(),
     referenceOpenTime: new Date(referenceOpenTime).toISOString(),
@@ -245,7 +284,14 @@ export async function fetchResearchCandles(
     if (!Array.isArray(row)) return [];
     const openTime = Number(row[0]);
     const open = Number.parseFloat(String(row[1]));
-    return Number.isFinite(openTime) && Number.isFinite(open) ? [{ openTime, open }] : [];
+    const high = Number.parseFloat(String(row[2]));
+    const low = Number.parseFloat(String(row[3]));
+    const close = Number.parseFloat(String(row[4]));
+    const closeTime = Number(row[6]);
+    if (![openTime, closeTime, open, high, low, close].every(Number.isFinite)) {
+      throw new Error('Binance research kline contains a malformed OHLC or timestamp field');
+    }
+    return [{ openTime, closeTime, open, high, low, close }];
   });
 }
 
@@ -347,33 +393,48 @@ export async function loadCampaignOutcomes(
   campaignId: string,
   store: string,
 ): Promise<OutcomeRecord[]> {
-  const root = join(resolve(store), campaignId, 'outcomes', OUTCOME_SPECIFICATION_ID);
-  const slots = await readdir(root).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  });
+  const storeRoot = resolve(store);
+  const outcomeRoot = resolve(campaignRoot(storeRoot, campaignId), 'outcomes');
+  if (!outcomeRoot.startsWith(`${storeRoot}${sep}`)) {
+    throw new Error('Invalid campaign outcome path');
+  }
+  const specificationIds = [LEGACY_OUTCOME_SPECIFICATION_ID, OUTCOME_SPECIFICATION_ID];
   const records = (
     await Promise.all(
-      slots.map(async (slot): Promise<OutcomeRecord[]> => {
-        const directory = join(root, slot);
-        const names = await readdir(directory);
-        return Promise.all(
-          names
-            .filter((entry) => entry.endsWith('.json'))
-            .map(async (name) => {
-              const record = JSON.parse(
-                await readFile(join(directory, name), 'utf8'),
-              ) as OutcomeRecord;
-              if (record.outcomeSpecificationId !== OUTCOME_SPECIFICATION_ID) {
-                throw new Error(`Outcome specification mismatch in ${name}`);
-              }
-              return record;
+      specificationIds.map(async (specificationId): Promise<OutcomeRecord[]> => {
+        const root = join(outcomeRoot, specificationId);
+        const slots = await readdir(root).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return [];
+          throw error;
+        });
+        return (
+          await Promise.all(
+            slots.map(async (slot): Promise<OutcomeRecord[]> => {
+              const directory = join(root, slot);
+              const names = await readdir(directory);
+              return Promise.all(
+                names
+                  .filter((entry) => entry.endsWith('.json'))
+                  .map(async (name) => {
+                    const record = JSON.parse(
+                      await readFile(join(directory, name), 'utf8'),
+                    ) as OutcomeRecord;
+                    if (record.outcomeSpecificationId !== specificationId) {
+                      throw new Error(`Outcome specification mismatch in ${name}`);
+                    }
+                    return record;
+                  }),
+              );
             }),
-        );
+          )
+        ).flat();
       }),
     )
   ).flat();
-  return records.sort((a, b) => a.slot.localeCompare(b.slot) || a.asset.localeCompare(b.asset));
+  const byDecision = new Map(records.map((record) => [`${record.slot}:${record.asset}`, record]));
+  return [...byDecision.values()].sort(
+    (a, b) => a.slot.localeCompare(b.slot) || a.asset.localeCompare(b.asset),
+  );
 }
 
 export function summarizeOutcomes(records: readonly OutcomeRecord[]) {

@@ -13,10 +13,18 @@ import {
 const day = 24 * 60 * 60 * 1000;
 
 function candles(slot: number) {
+  const slotDay = Math.floor(slot / day) * day;
   return Array.from({ length: 45 }, (_, index) => {
-    const timestamp = slot - (45 - index) * day;
+    const timestamp = slotDay - (45 - index) * day;
     const close = 100 + index;
-    return { timestamp, open: close - 0.5, high: close + 1, low: close - 1, close };
+    return {
+      timestamp,
+      closeTime: timestamp + day - 1,
+      open: close - 0.5,
+      high: close + 1,
+      low: close - 1,
+      close,
+    };
   });
 }
 

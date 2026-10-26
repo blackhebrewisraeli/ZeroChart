@@ -27,6 +27,7 @@
  * a score; it is stamped on every result and keys the client-side score cache.
  */
 import { atr, macd, rsi } from '@/lib/indicators';
+import type { CandleIssue } from '@/lib/candleValidation';
 
 export const CANONICAL_MODEL_VERSION = '1.0.0';
 
@@ -141,7 +142,22 @@ export interface InsufficientData {
   received: number;
 }
 
-export type CanonicalResult = CanonicalScore | InsufficientData;
+export interface InvalidCandleData {
+  status: 'DATA_INVALID';
+  version: typeof CANONICAL_MODEL_VERSION;
+  validationPolicyVersion: string;
+  issues: readonly CandleIssue[];
+}
+
+export interface StaleCandleData {
+  status: 'STALE_DATA';
+  version: typeof CANONICAL_MODEL_VERSION;
+  validationPolicyVersion: string;
+  latestCloseTime: number | null;
+}
+
+export type CanonicalResult =
+  CanonicalScore | InsufficientData | InvalidCandleData | StaleCandleData;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));

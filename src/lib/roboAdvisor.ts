@@ -1,6 +1,14 @@
 import type { Asset } from '@/lib/assets';
-import { fetchHistoricalCandles } from '@/lib/binance';
-import type { CanonicalResult, EngineCandle } from '@/lib/canonicalModel';
+import { CandleProviderDataError, fetchHistoricalCandles, type Candle } from '@/lib/binance';
+import {
+  CANONICAL_MODEL_VERSION,
+  type CanonicalResult,
+  type EngineCandle,
+} from '@/lib/canonicalModel';
+import {
+  BINANCE_DAILY_CANDLE_POLICY_VERSION,
+  validateBinanceDailyCandles,
+} from '@/lib/candleValidation';
 import { evaluateCandlesAsync } from '@/lib/financeClient';
 import { recommendPositionSize } from '@/lib/risk';
 import {
@@ -14,13 +22,15 @@ export { qualifiesForRiskProfile, RISK_PROFILE_POLICIES } from '@/lib/portfolioB
 
 export interface QuantDeps {
   /** Daily OHLC candles, oldest first; `[]` when the ticker has no candle source. */
-  fetchCandles: (ticker: string) => Promise<readonly EngineCandle[]>;
+  fetchCandles: (ticker: string) => Promise<readonly (EngineCandle | Candle)[]>;
 }
 
 export interface PortfolioBuildDiagnostics {
   totalCandidates: number;
   eligible: number;
   insufficientData: number;
+  dataFailures: number;
+  staleData: number;
   networkFailures: number;
   belowMinimumScore: number;
   highVolatility: number;
@@ -48,8 +58,62 @@ async function scoreTickerAttempt(
 ): Promise<ScoreAttempt> {
   try {
     const candles = await deps.fetchCandles(ticker);
+    const timestamped = candles.every(
+      (candle): candle is Candle => 'timestamp' in candle && 'closeTime' in candle,
+    );
+    if (timestamped) {
+      const validation = validateBinanceDailyCandles(candles, {
+        evaluationTime: Date.now(),
+        maxDataAgeMs: 48 * 60 * 60 * 1000,
+        modelWindow: 200,
+      });
+      if (!validation.structurallyValid) {
+        return {
+          result: {
+            status: 'DATA_INVALID',
+            version: CANONICAL_MODEL_VERSION,
+            validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+            issues: validation.issues,
+          },
+          networkFailed: false,
+        };
+      }
+      if (validation.fresh === false) {
+        return {
+          result: {
+            status: 'STALE_DATA',
+            version: CANONICAL_MODEL_VERSION,
+            validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+            latestCloseTime: validation.latestCloseTime,
+          },
+          networkFailed: false,
+        };
+      }
+      return {
+        result: await evaluateCandlesAsync(validation.closed),
+        networkFailed: false,
+      };
+    }
     return { result: await evaluateCandlesAsync(candles), networkFailed: false };
-  } catch {
+  } catch (error) {
+    if (error instanceof CandleProviderDataError) {
+      return {
+        result: {
+          status: 'DATA_INVALID',
+          version: CANONICAL_MODEL_VERSION,
+          validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+          issues: [
+            {
+              code: 'MALFORMED_PROVIDER_ROW',
+              index: -1,
+              timestamp: null,
+              detail: error.message,
+            },
+          ],
+        },
+        networkFailed: false,
+      };
+    }
     return { result: await evaluateCandlesAsync([]), networkFailed: true };
   }
 }
@@ -97,6 +161,8 @@ export async function buildQuantPortfolio(
     totalCandidates: candidates.length,
     eligible: 0,
     insufficientData: 0,
+    dataFailures: 0,
+    staleData: 0,
     networkFailures: 0,
     belowMinimumScore: 0,
     highVolatility: 0,
@@ -120,7 +186,9 @@ export async function buildQuantPortfolio(
       return [];
     }
     if (result.status !== 'OK') {
-      diagnostics.insufficientData += 1;
+      if (result.status === 'DATA_INVALID') diagnostics.dataFailures += 1;
+      else if (result.status === 'STALE_DATA') diagnostics.staleData += 1;
+      else diagnostics.insufficientData += 1;
       return [];
     }
     if (policy.excludeHighVolatility && result.regime === 'HIGH_VOLATILITY') {

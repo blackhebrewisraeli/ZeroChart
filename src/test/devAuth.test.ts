@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readDevAuthUser } from '@/lib/authStore';
+import { isDevAuthUser, readDevAuthUser } from '@/lib/authStore';
 
 function at(url: string, env: { DEV?: boolean; MODE?: string } = {}) {
   vi.stubGlobal('location', new URL(url));
@@ -39,5 +39,13 @@ describe('readDevAuthUser', () => {
   ])('stays off for %s', (_label, url, env) => {
     at(url, env);
     expect(readDevAuthUser()).toBeNull();
+  });
+
+  it('isDevAuthUser matches only the stub id, and never in a production build', () => {
+    at('http://localhost:8080/');
+    expect(isDevAuthUser('00000000-0000-4000-8000-000000000001')).toBe(true);
+    expect(isDevAuthUser('11111111-1111-4111-8111-111111111111')).toBe(false);
+    vi.stubEnv('DEV', false);
+    expect(isDevAuthUser('00000000-0000-4000-8000-000000000001')).toBe(false);
   });
 });

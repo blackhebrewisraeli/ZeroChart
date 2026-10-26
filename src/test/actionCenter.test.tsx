@@ -110,6 +110,7 @@ vi.mock('sonner', () => ({
 
 import { PAPER_STARTING_CASH, PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { ActionCenter } from '@/components/ActionCenter';
+import { SignalDiagnostics } from '@/components/SignalDiagnostics';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { toast } from 'sonner';
 
@@ -376,5 +377,25 @@ describe('Action Center', () => {
 
     expect(db.update).toHaveBeenCalledWith({ status: 'DISMISSED' });
     expect(store.portfolios.paper_trading.transactions.some((t) => t.type === 'buy')).toBe(false);
+  });
+});
+
+describe('trading_signals under the ?devAuth stub', () => {
+  afterEach(cleanup);
+
+  // The id, not the URL: zone navigation drops `?devAuth` but the stub stays signed in.
+  it('never queries or subscribes, since the stub has no session', () => {
+    vi.clearAllMocks();
+    render(
+      <PortfolioProvider>
+        <ActionCenter assets={[btc]} />
+        <SignalDiagnostics />
+        <Probe />
+      </PortfolioProvider>,
+    );
+    act(() => store.switchScope('00000000-0000-4000-8000-000000000001'));
+
+    expect(db.open).not.toHaveBeenCalled();
+    expect(db.eq).not.toHaveBeenCalled();
   });
 });

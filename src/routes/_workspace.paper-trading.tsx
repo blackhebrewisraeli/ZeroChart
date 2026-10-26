@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Workspace } from '@/components/Workspace';
 
-export const Route = createFileRoute('/paper-trading')({
+export const Route = createFileRoute('/_workspace/paper-trading')({
   head: () => ({
     meta: [
       { title: 'Paper Trading Terminal — ZeroChart' },
@@ -12,6 +11,4 @@ export const Route = createFileRoute('/paper-trading')({
       },
     ],
   }),
-  // Same component as `/`, so switching zones keeps the shell (and its live feed) mounted.
-  component: Workspace,
 });

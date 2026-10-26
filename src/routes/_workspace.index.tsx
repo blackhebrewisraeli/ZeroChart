@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Workspace } from '@/components/Workspace';
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute('/_workspace/')({
   head: () => ({
     meta: [
       { title: 'ZeroChart — Quant research and paper trading' },
@@ -19,5 +18,4 @@ export const Route = createFileRoute('/')({
       { name: 'twitter:card', content: 'summary_large_image' },
     ],
   }),
-  component: Workspace,
 });

@@ -522,8 +522,8 @@ function Terminal() {
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('Crypto');
   // The URL is the source of truth: / (Research), /paper-trading, /account.
   const navigate = useNavigate();
-  const onPaper = useMatch({ from: '/paper-trading', shouldThrow: false }) !== undefined;
-  const onAccount = useMatch({ from: '/account', shouldThrow: false }) !== undefined;
+  const onPaper = useMatch({ from: '/_workspace/paper-trading', shouldThrow: false }) !== undefined;
+  const onAccount = useMatch({ from: '/_workspace/account', shouldThrow: false }) !== undefined;
   let view: WorkspaceView = 'research';
   if (onPaper) view = 'paper';
   else if (onAccount) view = 'account';

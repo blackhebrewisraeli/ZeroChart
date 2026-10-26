@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { createRouter, rootRouteId } from '@tanstack/react-router';
 import { describe, expect, it } from 'vitest';
 
+import { Workspace } from '@/components/Workspace';
 import { routeTree } from '@/routeTree.gen';
 
 // Match routes without running loaders or rendering: loaders may need a server or
@@ -18,9 +19,23 @@ describe('App routing', () => {
   it('matches each workspace zone as its own route', () => {
     const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
 
-    expect(router.matchRoutes('/').at(-1)?.routeId).toBe('/');
-    expect(router.matchRoutes('/paper-trading').at(-1)?.routeId).toBe('/paper-trading');
-    expect(router.matchRoutes('/account').at(-1)?.routeId).toBe('/account');
+    expect(router.matchRoutes('/').at(-1)?.routeId).toBe('/_workspace/');
+    expect(router.matchRoutes('/paper-trading').at(-1)?.routeId).toBe('/_workspace/paper-trading');
+    expect(router.matchRoutes('/account').at(-1)?.routeId).toBe('/_workspace/account');
+  });
+
+  // Code splitting wraps each route's component in its own lazy component, so zones that
+  // each declared `component: Workspace` remounted the shell (and its Binance socket) on
+  // every switch. Only the shared layout may render it.
+  it('mounts the Workspace shell once, on a layout shared by every zone', () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+
+    expect(router.routesById['/_workspace'].options.component).toBe(Workspace);
+    for (const path of ['/', '/paper-trading', '/account']) {
+      const [, layout, zone] = router.matchRoutes(path);
+      expect(layout?.routeId).toBe('/_workspace');
+      expect(router.routesById[zone!.routeId].options.component).toBeUndefined();
+    }
   });
 
   it('matches the public shared portfolio route without an auth-only route wrapper', () => {

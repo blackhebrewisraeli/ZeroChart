@@ -9,25 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AccountRouteImport } from './routes/account'
-import { Route as PaperTradingRouteImport } from './routes/paper-trading'
+import { Route as WorkspaceRouteImport } from './routes/_workspace'
+import { Route as WorkspaceIndexRouteImport } from './routes/_workspace.index'
+import { Route as WorkspaceAccountRouteImport } from './routes/_workspace.account'
+import { Route as WorkspacePaperTradingRouteImport } from './routes/_workspace.paper-trading'
 import { Route as PPortfolioIdRouteImport } from './routes/p/$portfolioId'
 
-const IndexRoute = IndexRouteImport.update({
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/_workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => WorkspaceRoute,
 } as any)
-const AccountRoute = AccountRouteImport.update({
+const WorkspaceAccountRoute = WorkspaceAccountRouteImport.update({
   id: '/account',
   path: '/account',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => WorkspaceRoute,
 } as any)
-const PaperTradingRoute = PaperTradingRouteImport.update({
+const WorkspacePaperTradingRoute = WorkspacePaperTradingRouteImport.update({
   id: '/paper-trading',
   path: '/paper-trading',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => WorkspaceRoute,
 } as any)
 const PPortfolioIdRoute = PPortfolioIdRouteImport.update({
   id: '/p/$portfolioId',
@@ -36,61 +41,73 @@ const PPortfolioIdRoute = PPortfolioIdRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/account': typeof AccountRoute
-  '/paper-trading': typeof PaperTradingRoute
+  '/': typeof WorkspaceIndexRoute
+  '/account': typeof WorkspaceAccountRoute
+  '/paper-trading': typeof WorkspacePaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/account': typeof AccountRoute
-  '/paper-trading': typeof PaperTradingRoute
+  '/account': typeof WorkspaceAccountRoute
+  '/paper-trading': typeof WorkspacePaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
+  '/': typeof WorkspaceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/account': typeof AccountRoute
-  '/paper-trading': typeof PaperTradingRoute
+  '/_workspace': typeof WorkspaceRouteWithChildren
+  '/_workspace/account': typeof WorkspaceAccountRoute
+  '/_workspace/paper-trading': typeof WorkspacePaperTradingRoute
   '/p/$portfolioId': typeof PPortfolioIdRoute
+  '/_workspace/': typeof WorkspaceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths: '/' | '/account' | '/paper-trading' | '/p/$portfolioId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/account' | '/paper-trading' | '/p/$portfolioId'
-  id: '__root__' | '/' | '/account' | '/paper-trading' | '/p/$portfolioId'
+  to: '/account' | '/paper-trading' | '/p/$portfolioId' | '/'
+  id:
+    | '__root__'
+    | '/_workspace'
+    | '/_workspace/account'
+    | '/_workspace/paper-trading'
+    | '/p/$portfolioId'
+    | '/_workspace/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AccountRoute: typeof AccountRoute
-  PaperTradingRoute: typeof PaperTradingRoute
+  WorkspaceRoute: typeof WorkspaceRouteWithChildren
   PPortfolioIdRoute: typeof PPortfolioIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_workspace': {
+      id: '/_workspace'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof WorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_workspace/': {
+      id: '/_workspace/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof WorkspaceIndexRouteImport
+      parentRoute: typeof WorkspaceRoute
     }
-    '/account': {
-      id: '/account'
+    '/_workspace/account': {
+      id: '/_workspace/account'
       path: '/account'
       fullPath: '/account'
-      preLoaderRoute: typeof AccountRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof WorkspaceAccountRouteImport
+      parentRoute: typeof WorkspaceRoute
     }
-    '/paper-trading': {
-      id: '/paper-trading'
+    '/_workspace/paper-trading': {
+      id: '/_workspace/paper-trading'
       path: '/paper-trading'
       fullPath: '/paper-trading'
-      preLoaderRoute: typeof PaperTradingRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof WorkspacePaperTradingRouteImport
+      parentRoute: typeof WorkspaceRoute
     }
     '/p/$portfolioId': {
       id: '/p/$portfolioId'
@@ -102,10 +119,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface WorkspaceRouteChildren {
+  WorkspaceAccountRoute: typeof WorkspaceAccountRoute
+  WorkspacePaperTradingRoute: typeof WorkspacePaperTradingRoute
+  WorkspaceIndexRoute: typeof WorkspaceIndexRoute
+}
+
+const WorkspaceRouteChildren: WorkspaceRouteChildren = {
+  WorkspaceAccountRoute: WorkspaceAccountRoute,
+  WorkspacePaperTradingRoute: WorkspacePaperTradingRoute,
+  WorkspaceIndexRoute: WorkspaceIndexRoute,
+}
+
+const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
+  WorkspaceRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AccountRoute: AccountRoute,
-  PaperTradingRoute: PaperTradingRoute,
+  WorkspaceRoute: WorkspaceRouteWithChildren,
   PPortfolioIdRoute: PPortfolioIdRoute,
 }
 export const routeTree = rootRouteImport

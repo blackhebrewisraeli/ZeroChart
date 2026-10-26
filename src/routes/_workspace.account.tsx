@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { Workspace } from '@/components/Workspace';
 
-export const Route = createFileRoute('/account')({
+export const Route = createFileRoute('/_workspace/account')({
   head: () => ({
     meta: [
       { title: 'Account — ZeroChart' },
@@ -11,6 +10,4 @@ export const Route = createFileRoute('/account')({
       },
     ],
   }),
-  // Same component as `/`, so switching zones keeps the shell (and its live feed) mounted.
-  component: Workspace,
 });

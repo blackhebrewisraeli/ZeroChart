@@ -12,7 +12,7 @@ const read = (file: string) => readFileSync(path.resolve(__dirname, '../..', fil
 const SURFACES = [
   'src/components/LandingPage.tsx',
   'src/components/RoboAdvisor.tsx',
-  'src/routes/index.tsx',
+  'src/routes/_workspace.index.tsx',
   'src/components/Workspace.tsx',
   'src/components/PaperTradingTerminal.tsx',
   'src/lib/tourSteps.ts',

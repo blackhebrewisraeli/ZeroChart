@@ -210,6 +210,11 @@ describe('prospective signal outcomes', () => {
     await expect(readFile(path, 'utf8')).resolves.toBe(content);
   });
 
+  it('rejects campaign IDs that could escape the outcome store', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-outcome-'));
+    await expect(loadCampaignOutcomes('../outside', store)).rejects.toThrow('Campaign ID must be');
+  });
+
   it('labels pre-freeze and synthetic evidence honestly', () => {
     const measured = record({
       observedAt: '2026-10-24T12:00:00.000Z',

@@ -415,34 +415,35 @@ export function evaluateInput(
       );
     }
     const result = evaluateCandles(closed);
-    return result.status === 'OK'
-      ? scoredDecision(asset, input, config, closed, result)
-      : result.status === 'DATA_INVALID'
-        ? emptyDecision(
-            asset,
-            input,
-            config,
-            closed,
-            'DATA_INVALID',
-            `Candle validation failed: ${formatCandleIssues(result.issues)}`,
-          )
-        : result.status === 'STALE_DATA'
-          ? emptyDecision(
-              asset,
-              input,
-              config,
-              closed,
-              'STALE_DATA',
-              'Latest closed candle exceeds freshness policy.',
-            )
-          : emptyDecision(
-              asset,
-              input,
-              config,
-              closed,
-              'INSUFFICIENT_HISTORY',
-              `The canonical model requires ${result.required} valid candles; ${result.received} were available.`,
-            );
+    if (result.status === 'OK') return scoredDecision(asset, input, config, closed, result);
+    if (result.status === 'DATA_INVALID') {
+      return emptyDecision(
+        asset,
+        input,
+        config,
+        closed,
+        'DATA_INVALID',
+        `Candle validation failed: ${formatCandleIssues(result.issues)}`,
+      );
+    }
+    if (result.status === 'STALE_DATA') {
+      return emptyDecision(
+        asset,
+        input,
+        config,
+        closed,
+        'STALE_DATA',
+        'Latest closed candle exceeds freshness policy.',
+      );
+    }
+    return emptyDecision(
+      asset,
+      input,
+      config,
+      closed,
+      'INSUFFICIENT_HISTORY',
+      `The canonical model requires ${result.required} valid candles; ${result.received} were available.`,
+    );
   });
 
   const qualified = decisions.filter((decision) => decision.status === 'ELIGIBLE');

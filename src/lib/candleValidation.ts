@@ -61,6 +61,93 @@ function issue(
   };
 }
 
+function validateTimestamp(candle: DailyCandle, index: number): CandleIssue[] {
+  if (!Number.isSafeInteger(candle.timestamp) || candle.timestamp <= 0) {
+    return [issue('INVALID_TIMESTAMP', index, candle, 'Open time must be a positive integer.')];
+  }
+  const issues: CandleIssue[] = [];
+  if (candle.timestamp < 100_000_000_000 || candle.timestamp > 10_000_000_000_000) {
+    issues.push(
+      issue(
+        'TIMESTAMP_NOT_MILLISECONDS',
+        index,
+        candle,
+        'Open time must be Unix epoch milliseconds.',
+      ),
+    );
+  }
+  if (candle.timestamp % DAY_MS !== 0) {
+    issues.push(
+      issue(
+        'TIMESTAMP_NOT_UTC_DAY_ALIGNED',
+        index,
+        candle,
+        'Daily open time must be aligned to 00:00:00.000 UTC.',
+      ),
+    );
+  }
+  return issues;
+}
+
+function validateCloseTime(candle: DailyCandle, index: number): CandleIssue[] {
+  if (!Number.isSafeInteger(candle.closeTime) || candle.closeTime <= candle.timestamp) {
+    return [
+      issue('INVALID_CLOSE_TIME', index, candle, 'Close time must be an integer after open time.'),
+    ];
+  }
+  if (candle.closeTime !== candle.timestamp + BINANCE_DAILY_CLOSE_OFFSET_MS) {
+    return [
+      issue(
+        'CLOSE_TIME_CONVENTION_MISMATCH',
+        index,
+        candle,
+        'Binance 1d close time must be open time plus 86,399,999 ms.',
+      ),
+    ];
+  }
+  return [];
+}
+
+function validatePrices(candle: DailyCandle, index: number): CandleIssue[] {
+  const issues: CandleIssue[] = [];
+  const prices = [
+    ...(candle.open === undefined ? [] : ([['open', candle.open]] as const)),
+    ['high', candle.high] as const,
+    ['low', candle.low] as const,
+    ['close', candle.close] as const,
+  ];
+  for (const [field, value] of prices) {
+    if (!Number.isFinite(value)) {
+      issues.push(issue('NONFINITE_PRICE', index, candle, `${field} must be finite.`));
+    } else if (value <= 0) {
+      issues.push(issue('NON_POSITIVE_PRICE', index, candle, `${field} must be positive.`));
+    }
+  }
+  if (Number.isFinite(candle.high) && Number.isFinite(candle.low) && candle.high < candle.low) {
+    issues.push(
+      issue('HIGH_BELOW_LOW', index, candle, 'high must be greater than or equal to low.'),
+    );
+  }
+  if (
+    candle.open !== undefined &&
+    Number.isFinite(candle.open) &&
+    Number.isFinite(candle.low) &&
+    Number.isFinite(candle.high) &&
+    (candle.open < candle.low || candle.open > candle.high)
+  ) {
+    issues.push(issue('OPEN_OUTSIDE_RANGE', index, candle, 'open must be within [low, high].'));
+  }
+  if (
+    Number.isFinite(candle.close) &&
+    Number.isFinite(candle.low) &&
+    Number.isFinite(candle.high) &&
+    (candle.close < candle.low || candle.close > candle.high)
+  ) {
+    issues.push(issue('CLOSE_OUTSIDE_RANGE', index, candle, 'close must be within [low, high].'));
+  }
+  return issues;
+}
+
 /**
  * Validates Binance 1d candles without repairing provider data. Sorting is the
  * sole normalization. Open candles are excluded before cadence and model-window
@@ -86,87 +173,11 @@ export function validateBinanceDailyCandles<T extends DailyCandle>(
   const issues: CandleIssue[] = [];
 
   closed.forEach((candle, index) => {
-    if (!Number.isSafeInteger(candle.timestamp) || candle.timestamp <= 0) {
-      issues.push(
-        issue('INVALID_TIMESTAMP', index, candle, 'Open time must be a positive integer.'),
-      );
-    } else {
-      if (candle.timestamp < 100_000_000_000 || candle.timestamp > 10_000_000_000_000) {
-        issues.push(
-          issue(
-            'TIMESTAMP_NOT_MILLISECONDS',
-            index,
-            candle,
-            'Open time must be Unix epoch milliseconds.',
-          ),
-        );
-      }
-      if (candle.timestamp % DAY_MS !== 0) {
-        issues.push(
-          issue(
-            'TIMESTAMP_NOT_UTC_DAY_ALIGNED',
-            index,
-            candle,
-            'Daily open time must be aligned to 00:00:00.000 UTC.',
-          ),
-        );
-      }
-    }
-    if (!Number.isSafeInteger(candle.closeTime) || candle.closeTime <= candle.timestamp) {
-      issues.push(
-        issue(
-          'INVALID_CLOSE_TIME',
-          index,
-          candle,
-          'Close time must be an integer after open time.',
-        ),
-      );
-    } else if (candle.closeTime !== candle.timestamp + BINANCE_DAILY_CLOSE_OFFSET_MS) {
-      issues.push(
-        issue(
-          'CLOSE_TIME_CONVENTION_MISMATCH',
-          index,
-          candle,
-          'Binance 1d close time must be open time plus 86,399,999 ms.',
-        ),
-      );
-    }
-
-    const prices = [
-      ...(candle.open === undefined ? [] : ([['open', candle.open]] as const)),
-      ['high', candle.high] as const,
-      ['low', candle.low] as const,
-      ['close', candle.close] as const,
-    ];
-    for (const [field, value] of prices) {
-      if (!Number.isFinite(value)) {
-        issues.push(issue('NONFINITE_PRICE', index, candle, `${field} must be finite.`));
-      } else if (value <= 0) {
-        issues.push(issue('NON_POSITIVE_PRICE', index, candle, `${field} must be positive.`));
-      }
-    }
-    if (Number.isFinite(candle.high) && Number.isFinite(candle.low) && candle.high < candle.low) {
-      issues.push(
-        issue('HIGH_BELOW_LOW', index, candle, 'high must be greater than or equal to low.'),
-      );
-    }
-    if (
-      candle.open !== undefined &&
-      Number.isFinite(candle.open) &&
-      Number.isFinite(candle.low) &&
-      Number.isFinite(candle.high) &&
-      (candle.open < candle.low || candle.open > candle.high)
-    ) {
-      issues.push(issue('OPEN_OUTSIDE_RANGE', index, candle, 'open must be within [low, high].'));
-    }
-    if (
-      Number.isFinite(candle.close) &&
-      Number.isFinite(candle.low) &&
-      Number.isFinite(candle.high) &&
-      (candle.close < candle.low || candle.close > candle.high)
-    ) {
-      issues.push(issue('CLOSE_OUTSIDE_RANGE', index, candle, 'close must be within [low, high].'));
-    }
+    issues.push(
+      ...validateTimestamp(candle, index),
+      ...validateCloseTime(candle, index),
+      ...validatePrices(candle, index),
+    );
   });
 
   // A timestamp that cannot be placed on the timeline must not disappear as

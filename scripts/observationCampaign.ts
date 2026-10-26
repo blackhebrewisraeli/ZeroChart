@@ -64,7 +64,7 @@ export interface CampaignAttempt {
 
 type FetchCandles = (ticker: string, interval?: string, limit?: number) => Promise<Candle[]>;
 
-function campaignRoot(store: string, campaignId: string): string {
+export function campaignRoot(store: string, campaignId: string): string {
   if (!/^[a-z0-9][a-z0-9-]{2,63}$/.test(campaignId)) {
     throw new Error('Campaign ID must be 3-64 lowercase letters, numbers, or hyphens');
   }

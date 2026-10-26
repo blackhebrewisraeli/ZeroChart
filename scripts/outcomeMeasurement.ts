@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { DecisionSnapshot } from '@/lib/evaluationLab';
 import { toBinanceSymbol } from '@/lib/binance';
 import { stableSerialize } from './evaluationStore';
-import { loadCampaignEvidence } from './observationCampaign';
+import { campaignRoot, loadCampaignEvidence } from './observationCampaign';
 import {
   BINANCE_DAILY_CANDLE_POLICY_VERSION,
   formatCandleIssues,
@@ -393,11 +393,16 @@ export async function loadCampaignOutcomes(
   campaignId: string,
   store: string,
 ): Promise<OutcomeRecord[]> {
+  const storeRoot = resolve(store);
+  const outcomeRoot = resolve(campaignRoot(storeRoot, campaignId), 'outcomes');
+  if (!outcomeRoot.startsWith(`${storeRoot}${sep}`)) {
+    throw new Error('Invalid campaign outcome path');
+  }
   const specificationIds = [LEGACY_OUTCOME_SPECIFICATION_ID, OUTCOME_SPECIFICATION_ID];
   const records = (
     await Promise.all(
       specificationIds.map(async (specificationId): Promise<OutcomeRecord[]> => {
-        const root = join(resolve(store), campaignId, 'outcomes', specificationId);
+        const root = join(outcomeRoot, specificationId);
         const slots = await readdir(root).catch((error: NodeJS.ErrnoException) => {
           if (error.code === 'ENOENT') return [];
           throw error;

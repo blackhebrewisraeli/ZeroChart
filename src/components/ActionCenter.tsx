@@ -12,6 +12,7 @@ import { toBinanceSymbol } from '@/lib/ticker';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
 import { loadPaperTransactions } from '@/lib/db';
+import { isDevAuthUser } from '@/lib/authStore';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
 const isStrategy = (signal: Signal) => signal.signal_kind === 'strategy';
@@ -51,7 +52,8 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const risk = usePaperRisk(pending[0] && findAsset(assets, pending[0].ticker)?.ticker);
 
   useEffect(() => {
-    if (!userId) return;
+    // The dev stub has no session to read `trading_signals` with.
+    if (!userId || isDevAuthUser(userId)) return;
     let live = true;
     const channel = supabase
       // wait: SUBSCRIBED only once the postgres_changes listener is live, not just the join.

@@ -33,6 +33,7 @@ interface AuthStore {
 const AuthContext = createContext<AuthStore | null>(null);
 
 const DEV_AUTH_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const DEV_AUTH_USER_ID = '00000000-0000-4000-8000-000000000001';
 
 /**
  * Dev-only stub user for headless browser verification (Playwright / CDP):
@@ -50,13 +51,23 @@ export function readDevAuthUser(): User | null {
   const flag = new URLSearchParams(location.search).get('devAuth');
   if (flag !== '1' && flag !== 'pro') return null;
   return {
-    id: '00000000-0000-4000-8000-000000000001',
+    id: DEV_AUTH_USER_ID,
     aud: 'authenticated',
     email: 'dev@localhost',
     app_metadata: { is_pro: flag === 'pro' },
     user_metadata: {},
     created_at: new Date(0).toISOString(),
   };
+}
+
+/**
+ * True for the `?devAuth` stub, which has no Supabase session to read with.
+ * Checks the id, not the URL: client-side navigation drops `?devAuth` while
+ * the stub stays signed in. Statically `false` in `vite build`.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function isDevAuthUser(userId: string): boolean {
+  return import.meta.env.DEV && userId === DEV_AUTH_USER_ID;
 }
 
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {

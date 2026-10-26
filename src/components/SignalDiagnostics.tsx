@@ -3,6 +3,7 @@ import { Activity, CheckCircle2 } from 'lucide-react';
 import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/lib/supabaseClient';
 import { usePortfolio } from '@/lib/portfolioStore';
+import { isDevAuthUser } from '@/lib/authStore';
 import { cn } from '@/lib/utils';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
@@ -17,7 +18,8 @@ export function SignalDiagnostics() {
   const { scopeUserId: userId } = usePortfolio();
 
   useEffect(() => {
-    if (!userId) return;
+    // The dev stub has no session to read `trading_signals` with.
+    if (!userId || isDevAuthUser(userId)) return;
     let live = true;
     const load = async () => {
       const { data, error } = await supabase

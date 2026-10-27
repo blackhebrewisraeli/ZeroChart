@@ -6,8 +6,14 @@ import { toast } from 'sonner';
 import { AssetIcon } from '@/components/AssetIcon';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { usePortfolio, type PortfolioType } from '@/lib/portfolioStore';
-import { LEDGER_NAMES, type CorePortfolioType, type TradeIntent } from '@/lib/portfolioAccounting';
+import {
+  heldShares,
+  LEDGER_NAMES,
+  type CorePortfolioType,
+  type TradeIntent,
+} from '@/lib/portfolioAccounting';
 import { usePaperRisk } from '@/hooks/usePaperRisk';
+import { checkSell, formatShares } from '@/lib/risk';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { useLivePrice } from '@/lib/livePriceStore';
 import { toBinanceSymbol } from '@/lib/ticker';
@@ -71,6 +77,8 @@ export function TradeTicket({
   const [open, setOpen] = useState(false);
   /** A paper fill is in flight to the server. */
   const [booking, setBooking] = useState(false);
+  // The same, for a second press that lands before `booking` re-renders.
+  const bookingRef = useRef(false);
   const [mounted, setMounted] = useState(false);
   const [side, setSide] = useState<Side>('buy');
   const [amount, setAmount] = useState('');
@@ -85,12 +93,7 @@ export function TradeTicket({
 
   const numericAmount = Number(amount);
   const { canSubmit, estimatedQty, fee, total } = orderEstimate(numericAmount, price, side);
-  // Paper entries must clear the portfolio risk manager first.
-  const entry =
-    isPaper && side === 'buy' && canSubmit && price != null
-      ? paperRisk.checkBuy(asset.ticker, { shares: estimatedQty, price, fee })
-      : null;
-  const rejection = entry?.ok === false ? entry.reason : null;
+  const rejection = paperCheck();
 
   useEffect(() => {
     setMounted(true);
@@ -130,6 +133,7 @@ export function TradeTicket({
 
   /** Books a Paper Trading fill on the server. */
   async function bookPaperFill(shares: number, fillPrice: number) {
+    bookingRef.current = true;
     setBooking(true);
     const result = await executePaperTrade({
       side,
@@ -138,6 +142,7 @@ export function TradeTicket({
       price: fillPrice,
       fee,
     });
+    bookingRef.current = false;
     setBooking(false);
     return result;
   }
@@ -165,18 +170,33 @@ export function TradeTicket({
 
   /** Shares the order fills, snapped to the holding when selling it all. */
   function fillShares(type: PortfolioType, fillPrice: number): number {
-    const heldShares = portfolios[type].positions
-      .filter((position) => position.ticker.toUpperCase() === asset.ticker.toUpperCase())
-      .reduce((sum, position) => sum + position.shares, 0);
+    const held = heldShares(portfolios[type], asset.ticker);
     const orderShares = numericAmount / fillPrice;
     // A cent-rounded "sell everything" amount can overshoot the holding by dust.
-    return side === 'sell' && Math.abs(orderShares - heldShares) * fillPrice < 0.01
-      ? heldShares
-      : orderShares;
+    return side === 'sell' && Math.abs(orderShares - held) * fillPrice < 0.01 ? held : orderShares;
+  }
+
+  /**
+   * Why a Paper Trading order can't book, shown before it is sent: a BUY must
+   * clear the portfolio risk manager, a SELL can't exceed the holding. The
+   * server checks both again.
+   */
+  function paperCheck(): string | null {
+    if (!isPaper || !canSubmit || price == null) return null;
+    const check =
+      side === 'buy'
+        ? paperRisk.checkBuy(asset.ticker, { shares: estimatedQty, price, fee })
+        : checkSell(
+            portfolios.paper_trading,
+            asset.ticker,
+            fillShares('paper_trading', price),
+            price,
+          );
+    return check.ok ? null : check.reason;
   }
 
   async function handleSubmit() {
-    if (!canSubmit || price == null || booking || rejection) return;
+    if (!canSubmit || price == null || bookingRef.current || rejection) return;
     if (recordsFills) {
       const shares = fillShares(portfolioType, price);
       const result =
@@ -187,10 +207,11 @@ export function TradeTicket({
         toast.error(result.error ?? 'Order rejected');
         return;
       }
+      // The units booked, which the ticket only estimated.
       toast.success(`${side === 'buy' ? 'Bought' : 'Sold'} ${asset.ticker}`, {
-        description: `${formatPrice(numericAmount)} at ${formatPrice(price)} · fee ${formatPrice(
-          fee,
-        )} — recorded in your ${LEDGER_NAMES[portfolioType]} ledger.`,
+        description: `${formatShares(shares)} ${asset.ticker} (${formatPrice(numericAmount)}) at ${formatPrice(
+          price,
+        )} · fee ${formatPrice(fee)} — recorded in your ${LEDGER_NAMES[portfolioType]} ledger.`,
       });
     } else {
       toast.success(`${side === 'buy' ? 'Buy' : 'Sell'} order submitted`, {
@@ -314,10 +335,8 @@ export function TradeTicket({
                         />
                       </div>
                       <span className="ticket-hint">
-                        ≈{' '}
-                        {estimatedQty > 0
-                          ? estimatedQty.toLocaleString(undefined, { maximumFractionDigits: 6 })
-                          : '0'}{' '}
+                        {/* Already marked as an estimate: one ≈ is enough. */}≈{' '}
+                        {estimatedQty > 0 ? formatShares(estimatedQty).replace('≈', '') : '0'}{' '}
                         {asset.ticker}
                       </span>
                     </div>

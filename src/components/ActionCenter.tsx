@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabaseClient';
 import { formatPrice, type Asset } from '@/lib/assets';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { usePaperRisk } from '@/hooks/usePaperRisk';
-import { formatShares } from '@/lib/risk';
+import { checkSell, formatShares } from '@/lib/risk';
+import { Shares } from '@/components/Shares';
 import { toBinanceSymbol } from '@/lib/ticker';
 import { FEE_RATE } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
@@ -43,13 +44,19 @@ function findAsset(assets: Asset[], ticker: string): Asset | undefined {
   });
 }
 
-/** The signal's booked fill price, if any: execute_tactical_signal links exactly one row to it. */
-async function bookedPrice(signalId: string): Promise<number | null> {
+type Fill = { price: number; quantity: number };
+type FillRow = { price: number | null; quantity: number | null };
+
+const asFill = (row: FillRow | null | undefined): Fill | null =>
+  row?.price != null && row.quantity != null ? { price: row.price, quantity: row.quantity } : null;
+
+/** The signal's booked fill, if any: execute_tactical_signal links exactly one row to it. */
+async function bookedFill(signalId: string): Promise<Fill | null> {
   const { data } = await supabase
     .from('paper_transactions')
-    .select('price')
+    .select('price, quantity')
     .eq('signal_id', signalId);
-  return data?.[0]?.price ?? null;
+  return asFill(data?.[0]);
 }
 
 /** Appends fetched rows that aren't already listed or known to be resolved. */
@@ -62,11 +69,12 @@ function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>
  * Action Center: TradingView signals (via the tv-webhook function) as one
  * giant card with Execute / Dismiss. Execute books a tactical fill of the
  * signal's quantity (units) in the `paper_trading` ledger at the live price.
- * A BUY the portfolio risk manager rejects stays on screen with Execute
- * disabled and the reason spelled out.
+ * A BUY the portfolio risk manager rejects, or a SELL of more than the
+ * paper holding, stays on screen with Execute disabled and the reason spelled
+ * out. The server checks both again when it books.
  */
 export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
-  const { scopeUserId: userId, getPortfolio, replacePaperLedger } = usePortfolio();
+  const { scopeUserId: userId, portfolios, replacePaperLedger } = usePortfolio();
   const [pending, setPending] = useState<Signal[]>([]);
   const [busy, setBusy] = useState(false);
   // Resolution is one-way (RLS only updates PENDING rows), so a backlog snapshot
@@ -159,43 +167,30 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
       toast.error(`No live ${signal.ticker} price to fill at yet`);
       return;
     }
-    const held =
-      getPortfolio('paper_trading').positions.find(
-        (p) => p.ticker.toUpperCase() === asset.ticker.toUpperCase(),
-      )?.shares ?? 0;
     const buying = signal.action === 'BUY';
-    if (!buying && held <= 0) {
-      toast.error(`No open ${asset.ticker} paper position to sell`);
-      return;
-    }
-    const quantity = Number(signal.quantity);
-    if (!buying && quantity > held) {
-      toast.error(`Only ${formatShares(held)} ${asset.ticker} units are available to sell`);
-      return;
-    }
-    const shares = quantity;
     setBusy(true);
     try {
       if (!userId) throw new Error('Sign in to execute a tactical signal');
-      const { error } = await supabase.rpc('execute_tactical_signal', {
+      const { data, error } = await supabase.rpc('execute_tactical_signal', {
         signal_id: signal.id,
         user_id: userId,
         execution_price: price,
       });
       // A dropped connection can hide a committed fill, and a retry of it is
       // refused as no longer waiting: the fill row says whether it booked.
-      const filled = error ? await bookedPrice(signal.id) : price;
-      if (filled === null) throw new Error(error?.message);
+      const fill = error ? await bookedFill(signal.id) : asFill(data);
+      if (fill === null) throw new Error(error?.message);
       forget(signal.id);
       try {
         replacePaperLedger(await loadPaperTransactions(userId));
       } catch {
         toast.warning('Trade executed; Paper Trading is still syncing');
       }
+      // What the server booked, which the card only proposed.
       toast.success(
-        `${buying ? 'Bought' : 'Sold'} ${formatPrice(shares * filled)} of ${asset.ticker}`,
+        `${buying ? 'Bought' : 'Sold'} ${formatPrice(fill.quantity * fill.price)} of ${asset.ticker}`,
         {
-          description: `${formatShares(shares)} units at ${formatPrice(filled)} — simulated fill in your Paper Trading ledger.`,
+          description: `Booked ${formatShares(fill.quantity)} ${asset.ticker} at ${formatPrice(fill.price)} — simulated fill in your Paper Trading ledger.`,
         },
       );
     } catch (error) {
@@ -224,7 +219,9 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           stopPrice: signal.stop_loss,
         })
       : null;
-  const rejection = entry?.ok === false ? entry.reason : null;
+  const exit =
+    !buying && asset ? checkSell(portfolios.paper_trading, asset.ticker, quantity) : null;
+  const rejection = [entry, exit].find((check) => check?.ok === false)?.reason ?? null;
   const provenanceComplete = Boolean(
     signal.exchange && signal.timeframe && signal.bar_time && signal.model_version,
   );
@@ -246,7 +243,9 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         </div>
         <div>
           <dt>Quantity</dt>
-          <dd>{formatShares(quantity)} units</dd>
+          <dd>
+            <Shares value={quantity} /> units
+          </dd>
         </div>
         {notional !== null && (
           <div>

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Asset } from '@/lib/assets';
 
@@ -451,6 +451,113 @@ describe('Action Center', () => {
     await act(async () => db.release());
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('SELL SIGNAL'));
     expect(dismiss).not.toHaveAttribute('aria-disabled');
+  });
+
+  describe('pre-trade review', () => {
+    /** A paper BUY of BTC-USD at $50,000, as paper_transactions stores it. */
+    const buyRow = (id: string, quantity: number) => ({
+      id,
+      action: 'BUY',
+      ticker: 'BTC-USD',
+      quantity,
+      price: 50_000,
+      fees: quantity * 50_000 * FEE_RATE,
+      created_at: '2026-10-27T00:00:00.000Z',
+    });
+    const executeButton = () => screen.findByRole('button', { name: 'Execute Trade (Paper)' });
+
+    it('shows a SELL above the paper holding inline, and updates as the holding changes', async () => {
+      db.pending = [signal({ action: 'SELL', quantity: 0.02 })];
+      renderSignedIn();
+
+      const execute = await executeButton();
+      expect(execute).toBeDisabled();
+      expect(execute).toHaveAccessibleDescription('No open BTC-USD position to sell.');
+
+      act(() => store.replacePaperLedger([buyRow('seed-0', 0.01)]));
+      expect(execute).toBeDisabled();
+      expect(execute).toHaveAccessibleDescription('Only 0.01 BTC-USD available to sell.');
+      // The order is never shortened to fit.
+      expect(screen.getByText('0.02 units')).toBeInTheDocument();
+
+      act(() => store.replacePaperLedger([buyRow('seed-0', 0.01), buyRow('seed-1', 0.01)]));
+      expect(execute).toBeEnabled();
+      expect(execute).not.toHaveAttribute('aria-describedby');
+      expect(screen.queryByText(/available to sell/)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
+      expect(db.rpc).not.toHaveBeenCalled();
+    });
+
+    it('shows the server refusal when a SELL the browser allowed finds the holding gone', async () => {
+      const seed = [buyRow('seed-0', 0.01)];
+      db.rows = [...seed];
+      db.pending = [signal({ action: 'SELL', quantity: 0.01 })];
+      renderSignedIn();
+      act(() => store.replacePaperLedger(seed));
+
+      const execute = await executeButton();
+      expect(execute).toBeEnabled();
+      // Another tab sold it first; this tab's ledger hasn't caught up.
+      db.rpcError = { message: 'Insufficient shares' };
+      fireEvent.click(execute);
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Insufficient shares'));
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
+      expect(db.rpc).toHaveBeenCalledTimes(1);
+      expect(db.rows).toHaveLength(1);
+    });
+
+    it('books a covered SELL once however often Execute is pressed, keeping the button focusable', async () => {
+      const seed = [buyRow('seed-0', 0.01)];
+      db.rows = [...seed];
+      db.pending = [signal({ action: 'SELL', quantity: 0.01 })];
+      renderSignedIn();
+      act(() => store.replacePaperLedger(seed));
+
+      const execute = await executeButton();
+      execute.focus();
+      fireEvent.click(execute);
+      expect(execute).toHaveAttribute('aria-disabled', 'true');
+      expect(execute).not.toBeDisabled();
+      expect(document.activeElement).toBe(execute);
+      fireEvent.click(execute);
+
+      await waitFor(() =>
+        expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull(),
+      );
+      expect(db.rpc).toHaveBeenCalledTimes(1);
+      expect(store.portfolios.paper_trading.positions).toHaveLength(0);
+      expect(toast.success).toHaveBeenCalledWith('Sold $500.00 of BTC-USD', {
+        description:
+          'Booked 0.01 BTC-USD at $50,000.00 — simulated fill in your Paper Trading ledger.',
+      });
+    });
+
+    it('shows the exact quantity it proposes, then the fill the server booked', async () => {
+      // Near a whole unit, like the 1.99501247 that once read "2".
+      db.pending = [signal({ quantity: 0.99501247 })];
+      renderSignedIn();
+
+      const execute = await executeButton();
+      expect(screen.getByText('0.99501247 units')).toBeInTheDocument();
+      fireEvent.click(execute);
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('Bought $49,750.62 of BTC-USD', {
+          description:
+            'Booked 0.99501247 BTC-USD at $50,000.00 — simulated fill in your Paper Trading ledger.',
+        }),
+      );
+    });
+
+    it('marks a quantity it has to round, and gives assistive tech the stored value', async () => {
+      db.pending = [signal({ quantity: 1 / 3 })];
+      renderSignedIn();
+
+      const shown = await screen.findByTitle('Exact: 0.3333333333333333');
+      expect(within(shown).getByText('≈0.33333333')).toHaveAttribute('aria-hidden', 'true');
+      expect(within(shown).getByText('0.3333333333333333')).toHaveClass('sr-only');
+    });
   });
 });
 

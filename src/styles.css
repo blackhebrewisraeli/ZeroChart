@@ -1393,8 +1393,15 @@ body {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
 }
+.robo-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
 .robo-plan-title {
-  margin: 0 0 10px;
+  margin: 0;
   font:
     600 10px 'JetBrains Mono',
     monospace;
@@ -1453,6 +1460,57 @@ body {
     monospace;
   font-variant-numeric: tabular-nums;
   color: var(--foreground);
+}
+.robo-reprice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--foreground);
+  font:
+    600 12px 'DM Sans',
+    sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease-out;
+}
+.robo-reprice:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.robo-reprice[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: progress;
+}
+.robo-reprice:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+/* A repriced plan: what moved, so it is reviewed before Confirm. */
+.robo-plan-repriced {
+  margin: 0 0 10px;
+  font:
+    600 12px 'JetBrains Mono',
+    monospace;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.robo-plan-repriced.is-changed {
+  color: var(--signal-yellow);
+}
+.robo-plan-table tr.is-changed > * {
+  background: color-mix(in oklch, var(--signal-yellow) 8%, transparent);
+}
+.robo-plan-was {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.shares-rounded {
+  cursor: help;
 }
 .robo-plan-uncertain {
   display: flex;
@@ -3141,7 +3199,9 @@ body {
 .signal-diagnostics-status {
   flex: 0 0 auto;
   color: var(--accent-amber);
-  font: 600 11px 'JetBrains Mono', monospace;
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
 }
 @media (max-width: 500px) {
   .action-center-actions {

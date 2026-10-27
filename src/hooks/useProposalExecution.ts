@@ -215,8 +215,11 @@ export function useProposalExecution({
   const [serverPlan, setServerPlan] = useState<PortfolioReceipt | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [execution, setExecution] = useState<Execution>({ state: 'idle' });
-  // Bumped to price the same proposal again after Confirm found it had moved.
+  // Bumped to price the same proposal again: after Confirm found it had moved,
+  // or when the owner asks for fresh prices.
   const [repriced, setRepriced] = useState(0);
+  // The plan on screen before the latest reprice, to show the owner what moved.
+  const [priorPlan, setPriorPlan] = useState<PortfolioReceipt | null>(null);
   const executingRef = useRef(false);
 
   // A new proposal starts clean: new request ID, no plan, nothing booked.
@@ -228,6 +231,7 @@ export function useProposalExecution({
     setRequestId(crypto.randomUUID());
     setServerPlan(null);
     setServerError(null);
+    setPriorPlan(null);
     setExecution({ state: 'idle' });
   }
 
@@ -384,6 +388,7 @@ export function useProposalExecution({
         if (error instanceof PortfolioChangedError) {
           // Nothing booked: show the plan as it prices now and wait for a fresh Confirm.
           settled(userId, requestId);
+          setPriorPlan(serverPlan);
           setServerPlan(null);
           setRepriced((n) => n + 1);
           setExecution({ state: 'failed', reason: error.message });
@@ -406,5 +411,32 @@ export function useProposalExecution({
       ? () =>
           void reconcile(userId, { requestId, riskProfile, budget, holdings: toHoldings(result) })
       : null;
-  return { plan, planError, execution, busy, confirm, checkAgain };
+
+  // Signed in and not booked, the same proposal (budget, profile, holdings and
+  // request ID) can be priced again, e.g. once a stale quote refreshes. It is a
+  // dry run, so it books nothing, and Confirm waits for its plan. Never while a
+  // booking is out or unresolved: reconciling that request ID comes first.
+  const canReprice = userId !== null && execution.state !== 'completed';
+  const repriceReady = canReprice && !busy && (serverPlan !== null || serverError !== null);
+  function reprice() {
+    if (!repriceReady || executingRef.current) return;
+    if (serverPlan) setPriorPlan(serverPlan);
+    setServerPlan(null);
+    setServerError(null);
+    if (execution.state === 'failed') setExecution({ state: 'idle' });
+    setRepriced((n) => n + 1);
+  }
+
+  return {
+    plan,
+    planError,
+    // A receipt is what booked: nothing to compare it with.
+    priorPlan: execution.state === 'completed' ? null : priorPlan,
+    execution,
+    busy,
+    confirm,
+    checkAgain,
+    reprice: canReprice ? reprice : null,
+    repriceReady,
+  };
 }

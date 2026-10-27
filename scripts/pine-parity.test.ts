@@ -16,6 +16,7 @@ import {
   decisions,
   parsePineExport,
   readWindow,
+  selfCheckPine,
   snapshotCandles,
   verifyAgainstReference,
   type ParityFixtures,
@@ -238,5 +239,20 @@ describe('production path and candidate isolation (source checks, not runtime ev
 
   it('keeps the harness free of alerts and secrets', () => {
     expect(harness).not.toMatch(/alert(condition)?\(|USER_SECRET_PLACEHOLDER|secret_token/);
+  });
+
+  it('keeps the committed self-check generated from the harness and the fixtures', () => {
+    const selfCheck = read('pine/diagnostics/zerochart_parity_selfcheck.pine');
+    expect(selfCheck).toBe(selfCheckPine(harness, fixtures, snapshot));
+    expect(selfCheck.startsWith(harness)).toBe(true);
+    expect(selfCheck).not.toMatch(/alert(condition)?\(|USER_SECRET_PLACEHOLDER|secret_token/);
+    // Every case's expected app readings reach Pine complete and in bar order.
+    const branches = selfCheck.split(/\n {4}(?:else )?if barSource == "[^"]+"\n/).slice(1);
+    for (const [index, fixture] of fixtures.cases.entries()) {
+      const app = [...branches[index]!.matchAll(/array\.concat\(expApp, str\.split\("([^"]*)"/g)];
+      expect(app.flatMap((match) => match[1]!.split(','))).toEqual(
+        fixture.perBar.app.map((value) => value ?? '-'),
+      );
+    }
   });
 });

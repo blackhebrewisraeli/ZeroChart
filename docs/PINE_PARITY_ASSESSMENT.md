@@ -383,8 +383,10 @@ Each step needs the owner's approval. Steps 1 to 3 are done: #95 merged, migrati
    first `1.0.0-pw200` signal shows in the Action Center and executes as a paper trade, then
    stop the old 60-minute alert. This is the first time the candidate's alert and webhook paths
    run. A later migration may stop executing `1.0.0` signals (contract).
-   - Copy the script from the app's Pine Script dialog, not from GitHub. Only the app fills in
-     the webhook token; an alert that sends `USER_SECRET_PLACEHOLDER` is refused with 401.
+   - Don't generate a new webhook token for this. Each user has one token, and generating one
+     replaces the token the hourly alert sends, so that alert would get 401. Copy the script
+     without generating a token and replace `USER_SECRET_PLACEHOLDER` with the current token
+     from the hourly alert's script. An alert that sends the placeholder is also refused with 401.
    - Create the alert on `BINANCE:BTCUSDT` `1D` with the `ZC Quant pw200` condition "Any
      alert() function call" and the same webhook URL as the hourly alert. A price alert is not a
      substitute.

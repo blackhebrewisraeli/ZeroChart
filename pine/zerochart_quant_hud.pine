@@ -1,14 +1,18 @@
 //@version=6
-// ZeroChart Quant HUD & ATR Risk Engine
-// Factor and decision port of the ZeroChart quant engine. TradingView's built-in
-// MACD has a different EMA seed from the TypeScript engine during warm-up; see
-// docs/QUANT_MODEL_VERIFICATION.md before changing either model under 1.0.0.
+// ZeroChart Quant HUD & ATR Risk Engine, model_version 1.0.0-pw200
+// Factor and decision port of the ZeroChart quant engine. RSI(14), MACD(12, 26, 9)
+// and ATR(14) are recomputed on every bar over the last min(200, bars) bars with
+// src/lib/indicators.ts's seeds and operation order, like the app re-scoring its
+// latest 200 daily candles, and the score needs the same 34 bars. On
+// BINANCE:BTCUSDT 1D it matched every app decision at runtime
+// (docs/PINE_PARITY_ASSESSMENT.md). execute_tactical_signal accepts 1.0.0-pw200
+// alerts only on daily (1D) charts. The ATR Period input drives sizing and the stop.
 //   src/lib/indicators.ts  - Wilder RSI(14), MACD(12, 26, 9), Wilder ATR
 //   src/lib/canonicalModel.ts - RSI / MACD / ATR factor scores, regime detection, regime-tilted weights
 //   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 2x ATR stop floored at 0)
 // HUD shows plain-English actions. Alerts emit JSON for the tv-webhook pipeline.
 // Quantitative analysis is informational. Not financial advice.
-indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay = true)
+indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant pw200", overlay = true, max_bars_back = 300)
 
 // ===== Inputs =====
 accountCapital   = input.float(10000, "Account Capital ($)", minval = 1.0, group = "Risk Engine")
@@ -34,13 +38,17 @@ float MOMENTUM_SATURATION      = 0.01   // +/-1% of price saturates the momentum
 float LOW_VOLATILITY           = 0.005  // ATR/price <= 0.5% reads as maximally quiet
 float HIGH_VOLATILITY          = 0.055  // ATR/price >= 5.5% reads as maximally blown-out
 float REGIME_HIGH_VOLATILITY   = 0.04   // ATR/price >= 4% -> HIGH_VOLATILITY regime
-float CALM_VOLATILITY          = 0.02   // volatility below 2% reads as "calm"
 float REGIME_TRENDING_MOMENTUM = 0.005  // |MACD hist|/price >= 0.5% -> TRENDING regime
-// CANONICAL_MODEL_VERSION: bump both with any change that can move a score.
-const string MODEL_VERSION = "1.0.0"
+// CANONICAL_MODEL_VERSION plus this Pine implementation: bump with any change that can move a score.
+const string MODEL_VERSION = "1.0.0-pw200"
+int MODEL_WINDOW               = 200    // roboAdvisor.ts / evaluationLab: last 200 closed candles
+int MIN_CANDLES                = 34     // canonicalModel.ts MIN_CANDLES
 float FLAT_MOMENTUM            = 0.0005 // momentum inside +/-0.05% reads as "flat"
 float RSI_OVERSOLD             = 30.0
 float RSI_OVERBOUGHT           = 70.0
+float K12 = 2.0 / 13.0
+float K26 = 2.0 / 27.0
+float K9  = 2.0 / 10.0
 
 // ===== Factor scores (0-100) =====
 // Mean reversion: piecewise-linear through (0,100) (30,95) (50,55) (70,15) (100,0).
@@ -68,48 +76,119 @@ volatilityFactorScore(float v) =>
 fmtShares(float s) =>
     str.tostring(s, s >= 100 ? "0.0" : s >= 1 ? "0.00" : "0.0000")
 
-// ===== Core indicators (normalized by price) =====
-float rsiValue = ta.rsi(close, 14)
-[macdLine, signalLine, macdHist] = ta.macd(close, 12, 26, 9)
-float atrValue = ta.atr(atrPeriod)
-float momentumPct = macdHist / close
-float volatilityPct = atrValue / close
+// ===== Window indicators: indicators.ts, operation for operation =====
+// Window index i (0 = oldest) is src[n - 1 - i]. Each call re-seeds on the
+// current window, like the app re-scoring its latest 200 candles.
+// ponytail: O(window) loops per bar; restrict to the last bars if TradingView's time limit trips.
+zcRsi(float src, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float avgGain = 0.0
+        float avgLoss = 0.0
+        for i = 1 to 14
+            float change = src[n - 1 - i] - src[n - i]
+            if change >= 0
+                avgGain += change
+            else
+                avgLoss -= change
+        avgGain /= 14
+        avgLoss /= 14
+        for i = 15 to n - 1
+            float change = src[n - 1 - i] - src[n - i]
+            float gain = change > 0 ? change : 0.0
+            float loss = change < 0 ? -change : 0.0
+            avgGain := (avgGain * 13 + gain) / 14
+            avgLoss := (avgLoss * 13 + loss) / 14
+        result := avgLoss == 0 ? (avgGain == 0 ? 50.0 : 100.0) : avgGain == 0 ? 0.0 : 100 - 100 / (1 + avgGain / avgLoss)
+    result
 
-bool hasRsi = not na(rsiValue)
-bool hasMomentum = not na(momentumPct)
-bool hasVolatility = not na(volatilityPct)
-bool ready = hasRsi and hasMomentum and hasVolatility
+// SMA-seeded EMA(12) and EMA(26), MACD line from window index 25, SMA-seeded
+// EMA(9) signal from index 33; returns the histogram on the window's last bar.
+zcMacdHist(float src, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float fast = 0.0
+        float slow = 0.0
+        for i = 0 to 11
+            fast += src[n - 1 - i]
+        fast /= 12
+        for i = 12 to 25
+            fast += K12 * (src[n - 1 - i] - fast)
+        for i = 0 to 25
+            slow += src[n - 1 - i]
+        slow /= 26
+        float line = fast - slow
+        float signal = line
+        for i = 26 to 33
+            float v = src[n - 1 - i]
+            fast += K12 * (v - fast)
+            slow += K26 * (v - slow)
+            line := fast - slow
+            signal += line
+        signal /= 9
+        // Pine counts down when `to` < `from`, so a 34-bar window must skip this loop.
+        if n > 34
+            for i = 34 to n - 1
+                float v = src[n - 1 - i]
+                fast += K12 * (v - fast)
+                slow += K26 * (v - slow)
+                line := fast - slow
+                signal += K9 * (line - signal)
+        result := line - signal
+    result
+
+// Wilder ATR(14) with the first true range high - low, seeded by the mean of TR 0..13.
+zcAtr(float h, float l, float c, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float seed = h[n - 1] - l[n - 1]
+        for i = 1 to 13
+            float prevClose = c[n - i]
+            seed += math.max(h[n - 1 - i] - l[n - 1 - i], math.abs(h[n - 1 - i] - prevClose), math.abs(l[n - 1 - i] - prevClose))
+        float previous = seed / 14
+        for i = 14 to n - 1
+            float prevClose = c[n - i]
+            float trueRange = math.max(h[n - 1 - i] - l[n - 1 - i], math.abs(h[n - 1 - i] - prevClose), math.abs(l[n - 1 - i] - prevClose))
+            previous := (previous * 13 + trueRange) / 14
+        result := previous
+    result
+
+// ===== Core indicators (normalized by price) =====
+int windowLength = math.min(bar_index + 1, MODEL_WINDOW)
+float rsiValue = zcRsi(close, windowLength)
+float macdHist = zcMacdHist(close, windowLength)
+float scoreAtr = zcAtr(high, low, close, windowLength)
+float momentumPct = macdHist / close
+float volatilityPct = scoreAtr / close
+// canonicalModel.ts: INSUFFICIENT_DATA below 34 candles or on any non-finite reading.
+bool ready = windowLength >= MIN_CANDLES and not na(rsiValue) and not na(macdHist) and not na(scoreAtr) and close > 0
 
 // ===== Regime detection + regime-tilted weights (first match wins) =====
 string regime = "NEUTRAL"
 float wRsi = 0.4
 float wMomentum = 0.4
 float wVolatility = 0.2
-if hasVolatility and volatilityPct >= REGIME_HIGH_VOLATILITY
+if volatilityPct >= REGIME_HIGH_VOLATILITY
     regime := "HIGH_VOLATILITY"
     wRsi := 0.35
     wMomentum := 0.35
     wVolatility := 0.3
-else if hasMomentum and math.abs(momentumPct) >= REGIME_TRENDING_MOMENTUM
+else if math.abs(momentumPct) >= REGIME_TRENDING_MOMENTUM
     regime := "TRENDING"
     wRsi := 0.3
     wMomentum := 0.5
-else if hasRsi and (rsiValue <= RSI_OVERSOLD or rsiValue >= RSI_OVERBOUGHT)
+else if rsiValue <= RSI_OVERSOLD or rsiValue >= RSI_OVERBOUGHT
     regime := "MEAN_REVERTING"
     wRsi := 0.5
     wMomentum := 0.3
 
-// ===== Composite score: weights renormalized over the factors that have data =====
-float rsiScore = hasRsi ? rsiFactorScore(rsiValue) : na
-float momentumScore = hasMomentum ? momentumFactorScore(momentumPct) : na
-float volatilityScore = hasVolatility ? volatilityFactorScore(volatilityPct) : na
-
-float activeWeight = (hasRsi ? wRsi : 0.0) + (hasMomentum ? wMomentum : 0.0) + (hasVolatility ? wVolatility : 0.0)
-float weightedSum = (hasRsi ? wRsi * rsiScore : 0.0) + (hasMomentum ? wMomentum * momentumScore : 0.0) + (hasVolatility ? wVolatility * volatilityScore : 0.0)
-float weighted = activeWeight == 0.0 ? 0.0 : weightedSum / activeWeight
-int score = math.round(math.max(0.0, math.min(100.0, weighted)))
+// ===== Composite score: no score until every factor is defined =====
+float activeWeight = wRsi + wMomentum + wVolatility
+float weightedSum = wRsi * rsiFactorScore(rsiValue) + wMomentum * momentumFactorScore(momentumPct) + wVolatility * volatilityFactorScore(volatilityPct)
+int score = ready ? math.round(math.max(0.0, math.min(100.0, weightedSum / activeWeight))) : na
 
 // ===== Dynamic position sizing (risk.ts) =====
+float atrValue = ta.atr(atrPeriod)
 float riskDollars = accountCapital * (riskPct / 100.0)
 float stopDistance = atrValue * atrStopMult
 float riskShares = stopDistance > 0 ? riskDollars / stopDistance : na
@@ -142,27 +221,27 @@ if not na(stopDistance)
             trailStop := math.min(trailStop, shortStop)
 
 bool stopBreached = trailDir == -1 and trailDir[1] == 1
-color trailColor = trailDir == 1 ? (score >= 60 ? C_GREEN : C_BRAND) : C_RED
+color trailColor = trailDir == 1 ? (ready and score >= 60 ? C_GREEN : C_BRAND) : C_RED
 // Break the line on the flip bar instead of drawing a vertical jump.
 plot(showTrailingStop and trailDir == trailDir[1] ? trailStop : na, "ZC ATR Trailing Stop", color = trailColor, linewidth = 2, style = plot.style_linebr)
 
 // ===== High-conviction signals (fire on transitions only) =====
-bool bullishMomentum = hasMomentum and momentumPct >= FLAT_MOMENTUM
+bool bullishMomentum = ready and momentumPct >= FLAT_MOMENTUM
 bool longSetup = ready and score >= 78 and bullishMomentum
 bool riskSetup = ready and (score <= 28 or regime == "HIGH_VOLATILITY")
 bool longSignal = longSetup and not longSetup[1]
 bool riskSignal = riskSetup and not riskSetup[1]
 bool highConviction = ready and score >= 80
-bool isHighVolatility = regime == "HIGH_VOLATILITY"
+bool isHighVolatility = ready and regime == "HIGH_VOLATILITY"
 
 plotshape(showSignals and longSignal, "ZC LONG", shape.labelup, location.belowbar, color = C_GREEN, text = "ZC LONG", textcolor = C_BG, size = size.tiny)
 plotshape(showSignals and riskSignal, "ZC RISK", shape.labeldown, location.abovebar, color = C_RED, text = "ZC RISK", textcolor = color.white, size = size.tiny)
 bgcolor(longSignal ? color.new(C_GREEN, 90) : riskSignal ? color.new(C_RED, 90) : na, title = "ZC Signal Highlight")
 
 // ===== Plain-English action (score bands) =====
-string action = score >= 78 ? "STRONG BUY" : score >= 60 ? "BUY" : score > 28 ? "WAIT" : score > 15 ? "RISK/TRIM" : "STRONG SELL"
-color actionBg = action == "STRONG BUY" or action == "BUY" ? C_GREEN : action == "WAIT" ? color.gray : C_RED
-string vibe = regime == "HIGH_VOLATILITY" ? "High Volatility" : regime == "TRENDING" ? (momentumPct >= 0 ? "Strong Bull Trend" : "Strong Bear Trend") : regime == "MEAN_REVERTING" ? "Mean Reverting" : math.abs(momentumPct) < FLAT_MOMENTUM ? "Flat/Ranging" : "Quiet Tape"
+string action = not ready ? "NOT ENOUGH DATA" : score >= 78 ? "STRONG BUY" : score >= 60 ? "BUY" : score > 28 ? "WAIT" : score > 15 ? "RISK/TRIM" : "STRONG SELL"
+color actionBg = action == "STRONG BUY" or action == "BUY" ? C_GREEN : action == "WAIT" or action == "NOT ENOUGH DATA" ? color.gray : C_RED
+string vibe = not ready ? "-" : regime == "HIGH_VOLATILITY" ? "High Volatility" : regime == "TRENDING" ? (momentumPct >= 0 ? "Strong Bull Trend" : "Strong Bear Trend") : regime == "MEAN_REVERTING" ? "Mean Reverting" : math.abs(momentumPct) < FLAT_MOMENTUM ? "Flat/Ranging" : "Quiet Tape"
 string sizeVerb = action == "STRONG SELL" or action == "RISK/TRIM" ? "Sell" : "Buy"
 string sizeText = na(suggestedShares) ? "-" : sizeVerb + " $" + str.tostring(math.round(notional)) + " (" + fmtShares(suggestedShares) + " " + syminfo.ticker + ")" + (sizeCapped ? " capped" : "")
 string stopText = na(stopDistance) ? "-" : "Exit at $" + str.tostring(stopPrice, format.mintick)
@@ -177,20 +256,16 @@ plot(stopPrice, "ZC Stop", display = display.none)
 // USER_SECRET_PLACEHOLDER for your webhook token when you copy the script.
 const string WEBHOOK_SECRET = "USER_SECRET_PLACEHOLDER"
 
-// alert() sends live values; event_id is the fire time in {{timenow}}'s format and
-// bar_time the open of the bar that fired, in {{time}}'s.
 webhookJson(string side) =>
     "{\"signal_kind\": \"strategy\", \"ticker\": \"" + syminfo.ticker + "\", \"action\": \"" + side + "\", \"signal_score\": " + str.tostring(score) + ", \"price\": " + str.tostring(close) + ", \"quantity\": " + str.tostring(suggestedShares) + ", \"stop_loss\": " + str.tostring(stopPrice) + ", \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"" + str.format_time(timenow, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"exchange\": \"" + syminfo.prefix + "\", \"timeframe\": \"" + timeframe.period + "\", \"bar_time\": \"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"model_version\": \"" + MODEL_VERSION + "\"}"
 
-// A NaN quantity would break the JSON, so a bar without a size sends nothing.
-if not na(suggestedShares)
+// A NaN quantity or score would break the JSON, so such a bar sends nothing.
+if ready and not na(suggestedShares)
     if longSignal
         alert(webhookJson("BUY"), alert.freq_once_per_bar_close)
     if riskSignal or stopBreached
         alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
 
-// alertcondition() only takes a const string, so TradingView placeholders carry the live
-// values. Each condition is one side of the trade, which fixes its action.
 const string ALERT_FIELDS = ", \"signal_kind\": \"strategy\", \"signal_score\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"quantity\": {{plot(\"ZC Quantity\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}, \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"{{timenow}}\", \"exchange\": \"{{exchange}}\", \"timeframe\": \"{{interval}}\", \"bar_time\": \"{{time}}\", \"model_version\": \"" + MODEL_VERSION + "\"}"
 alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\"" + ALERT_FIELDS)
 alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
@@ -208,7 +283,7 @@ if showHud and barstate.islast
     hudRow(0, "SIGNAL / ACTION", action, color.white, actionBg)
     table.cell_set_text_size(hud, 0, 0, size.large)
     table.cell_set_text_size(hud, 1, 0, size.large)
-    hudRow(1, "SIGNAL SCORE", "Signal Score: " + str.tostring(score) + " / 100", color.yellow, C_BG)
+    hudRow(1, "SIGNAL SCORE", "Signal Score: " + (ready ? str.tostring(score) : "-") + " / 100 (" + MODEL_VERSION + ")", color.yellow, C_BG)
     hudRow(2, "POSITION SIZE", sizeText, color.white, C_BG)
     hudRow(3, "STOP LOSS", stopText, color.white, C_BG)
     hudRow(4, "MARKET VIBE", vibe, color.aqua, C_BG)

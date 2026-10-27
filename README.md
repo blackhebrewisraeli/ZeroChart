@@ -24,7 +24,7 @@ A TradingView Pine Script HUD that scores every bar, and a React + Supabase comm
 
 ## The ecosystem
 
-ZeroChart is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. On TradingView's `BINANCE:BTCUSDT` daily chart they agreed on every compared bar, but they are not identical: Pine computes on the chart's whole history with TradingView's built-in indicators, while the app re-scores the latest 200 daily candles, so flat prices, other timeframes and rounding ties can score differently. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
+ZeroChart is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. Like the app, the Pine script (model `1.0.0-pw200`) re-scores the latest 200 bars on every bar. On TradingView's `BINANCE:BTCUSDT` daily chart it matched every app decision at runtime, though not bit for bit, and other timeframes aren't comparable with the app's daily scores. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
 
 |                      | **ZeroChart Quant HUD**                                                                                    | **ZeroChart Command Center**                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -178,7 +178,7 @@ Open [http://localhost:8080](http://localhost:8080).
    ```
 
 2. In the app, open any asset and click **TradingView Indicator**, then click **Generate webhook token**. Copy the Pine Script after that: your token replaces `USER_SECRET_PLACEHOLDER` in its alert payloads.
-3. Add the indicator to a TradingView chart, create an alert with the condition **Any alert() function call**, and paste the webhook URL into it.
+3. Add the indicator to a TradingView chart on the daily (`1D`) timeframe, create an alert with the condition **Any alert() function call**, and paste the webhook URL into it. Signals from other timeframes are recorded but can't be executed.
 
 ### Scripts
 

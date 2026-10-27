@@ -10,6 +10,12 @@ on TradingView (section 4). Real Pine **refutes** the first-sample EMA part of h
 results below supersede the H1-based estimates where they differ. The Decimal matrix in section 2
 is kept unchanged as the pre-runtime model.
 
+**Promotion (1.0.0-pw200).** `pine/zerochart_quant_hud.pine` is now the candidate below, with
+only its comments, title and `MODEL_VERSION` (`1.0.0-pw200`) changed, and migration
+`20261027120000` lets `execute_tactical_signal` book it from daily alerts. In this document
+"production Pine" still means the `1.0.0` script that shipped until then; the harness's `prod`
+side models it.
+
 ## Runtime findings (TradingView, 2026-10-27)
 
 1. **The candidate matches the app on every compared bar.** Inside Pine, its readiness, score,
@@ -355,37 +361,36 @@ This change modifies no runtime code path:
   campaign stores are untouched. No campaign was initialized or activated. Historical evaluations,
   observations, outcomes and legacy schema-1 reproduction are unaffected.
 
-## 6. Rollout and rollback (future work)
+## 6. Rollout and rollback
 
-Each step needs the owner's approval.
+Each step needs the owner's approval. Steps 1 to 3 are done or in review. Steps 4 and 5 follow the
+merge.
 
 1. **Runtime acceptance** (section 4) on BTCUSDT `1D` and all five fixtures. **Met on
    2026-10-27 at the decision level.** Runtime also narrowed the case for switching: production
    Pine already matches the app except on flat RSI windows and rolling-window ties, and the
    candidate removes both.
-2. **Attribution decision.** The TypeScript model stays `1.0.0`. Pine-originated signals need to
-   say which Pine implementation produced them. Either:
-   - accept a distinct `model_version`, such as `1.0.0-pw200`, in `execute_tactical_signal`
-     through a new migration (a booking change, reviewed on its own), or
-   - add a separate implementation field to the `tv-webhook` payload and table.
-
-   Signal rows recorded before the switch stay `1.0.0` from the old implementation and are never
-   relabeled.
-
-3. **Promotion PR:** replace `pine/zerochart_quant_hud.pine` with the accepted candidate and update
-   `pineScriptTemplate` tests. Deploy the migration before the frontend ([RELEASE.md](RELEASE.md)).
-4. **Owner switch-over:** copy the new script, create a new alert on the intended timeframe
-   (`1D` if signals should match the app), confirm deliveries, then retire the old alert. This
-   is the first time the candidate's alert and webhook paths would run.
-   Whether a 60-minute alert should be executable at all is a separate decision, because
-   execution does not check the timeframe today.
+2. **Attribution decision (owner, 2026-10-27):** a distinct `model_version`, `1.0.0-pw200`,
+   accepted by `execute_tactical_signal` through a reviewed migration. The TypeScript model stays
+   `1.0.0`. Signal rows recorded before the switch stay `1.0.0` and are never relabeled.
+3. **Promotion PR:** production Pine becomes the candidate (a test proves the code is unchanged),
+   and migration `20261027120000` accepts `1.0.0-pw200` only when the timeframe is `1D` or `D`.
+   `1.0.0` stays executable on any timeframe during the switch-over (expand). The Action Center
+   applies the same rule. Before merging, re-run the self-check on TradingView, then apply the
+   migration and check the release contract ([RELEASE.md](RELEASE.md)).
+4. **Owner switch-over:** copy the new script, create a new alert on a `1D` chart, confirm the
+   first `1.0.0-pw200` signal shows in the Action Center and executes as a paper trade, then
+   stop the old 60-minute alert. This is the first time the candidate's alert and webhook paths
+   run. A later migration may stop executing `1.0.0` signals (contract).
 5. **Evidence:** app campaigns score TypeScript only, so their evidence is unaffected. Any study
    of TradingView signals starts a new campaign ID after the switch. `private-2026q4-001`
    stays frozen.
 
-**Rollback:** re-copy `pine/zerochart_quant_hud.pine` from the previous commit and recreate the
-alert. Stored candidate signals keep their attribution. If a migration accepted the new
-version, a follow-up migration withdraws it. No rows are deleted or rewritten.
+**Rollback:** roll the frontend back with Vercel Instant Rollback (the migration only adds). For
+Pine, re-copy the `1.0.0` script from the previous commit and recreate the alert. To stop
+booking `1.0.0-pw200`, write a follow-up migration that withdraws it; pending pw200 signals then
+stay non-executable. Stored signals keep their attribution, and no rows are deleted or
+rewritten.
 
 ## 7. Limitations
 

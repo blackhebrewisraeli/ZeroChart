@@ -263,14 +263,16 @@ describe('Pine export comparison', () => {
   });
 });
 
-describe('production path and candidate isolation (source checks, not runtime evidence)', () => {
+describe('production Pine, the tested candidate and diagnostics (source checks, not runtime evidence)', () => {
   const read = (path: string) => readFileSync(path, 'utf8');
+  const production = read('pine/zerochart_quant_hud.pine');
   const candidate = read('pine/candidates/zerochart_quant_hud_w200.pine');
   const harness = read('pine/diagnostics/zerochart_parity_harness.pine');
 
-  it('still ships the unchanged production script to users', () => {
-    expect(buildPineScript()).toBe(read('pine/zerochart_quant_hud.pine'));
-    expect(buildPineScript()).toContain('ta.macd(close, 12, 26, 9)');
+  it('ships the promoted window-200 script to users', () => {
+    expect(buildPineScript()).toBe(production);
+    expect(production).toContain('zcMacdHist(close, windowLength)');
+    expect(production).not.toContain('ta.macd(');
     const sources = (dir: string): string[] =>
       readdirSync(dir).flatMap((name) => {
         const path = join(dir, name);
@@ -281,10 +283,29 @@ describe('production path and candidate isolation (source checks, not runtime ev
     }
   });
 
-  it('gives the candidate a distinct attribution the execution gate does not accept', () => {
+  it('promotes the candidate that ran on TradingView, changing only comments, title and version', () => {
+    // docs/PINE_PARITY_ASSESSMENT.md section 4 records this hash for the candidate that ran.
+    expect(
+      createHash('sha256')
+        .update(readFileSync('pine/candidates/zerochart_quant_hud_w200.pine'))
+        .digest('hex'),
+    ).toBe('014af558bd9215e494a38028def2c54101c73459d7be3522c095b0354b436842');
+    const code = (source: string) =>
+      source
+        .split('\n')
+        .filter(
+          (line) =>
+            !line.startsWith('//') && !/^indicator\(|^const string MODEL_VERSION/.test(line),
+        )
+        .join('\n');
+    expect(code(production)).toBe(code(candidate));
+    expect(production).toContain(`const string MODEL_VERSION = "${CANONICAL_MODEL_VERSION}-pw200"`);
+  });
+
+  it("keeps the candidate's .c1 attribution distinct from the promoted version", () => {
     const version = candidate.match(/const string MODEL_VERSION = "([^"]+)"/)?.[1];
     expect(version).toBe('1.0.0-pw200.c1');
-    expect(version).not.toBe(CANONICAL_MODEL_VERSION);
+    expect(version).not.toBe(`${CANONICAL_MODEL_VERSION}-pw200`);
     const parsed = parseSignal({
       signal_kind: 'strategy',
       ticker: 'BTCUSDT',
@@ -302,8 +323,8 @@ describe('production path and candidate isolation (source checks, not runtime ev
     expect(parsed).toMatchObject({ ok: true, signal: { model_version: '1.0.0-pw200.c1' } });
   });
 
-  it('declares the app window contract in the candidate and harness', () => {
-    for (const source of [candidate, harness]) {
+  it('declares the app window contract in production, the candidate and the harness', () => {
+    for (const source of [production, candidate, harness]) {
       expect(source).toMatch(new RegExp(`int MODEL_WINDOW\\s+= ${MODEL_WINDOW}\\b`));
       expect(source).toMatch(new RegExp(`int MIN_CANDLES\\s+= ${MIN_CANDLES}\\b`));
     }

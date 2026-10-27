@@ -2,14 +2,17 @@
 
 ZeroChart is a TanStack Start (React 19, SSR) app deployed on Vercel, backed by
 Supabase (Postgres + RLS, pg_cron, Deno Edge Functions), plus a TradingView Pine
-Script HUD that runs the same scoring model on the chart.
+Script HUD that ports the scoring model to the chart (close to, but not identical with, the
+app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 
 ## File tree
 
 ```text
 .
 ├── pine/
-│   └── zerochart_quant_hud.pine      Pine Script v6 HUD; inlined into the app via ?raw
+│   ├── zerochart_quant_hud.pine      Pine Script v6 HUD; inlined into the app via ?raw
+│   ├── candidates/                   Unverified, unserved correction candidates (never copied by the app)
+│   └── diagnostics/                  Parity harness: plots Pine readings for `npm run parity`
 ├── public/                           Static files served as-is (favicons, robots.txt)
 ├── src/
 │   ├── routes/                       File-based routes (TanStack Start); see routes/README.md
@@ -52,6 +55,8 @@ Script HUD that runs the same scoring model on the chart.
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)
+│   ├── pine-parity.ts                `npm run parity`: TypeScript-versus-Pine checks and discrepancy matrix
+│   ├── generate-pine-parity-fixtures.py      Independent parity fixtures (docs/pine-parity-fixtures.json)
 │   └── generate-quant-reference-fixtures.py  Independent fixtures for the canonical model
 ├── docs/                             Architecture notes, roadmaps, audits, contracts; *.json are
 │                                     versioned specs and fixtures read by tests and scripts
@@ -70,26 +75,26 @@ local, git-ignored stores written by `npm run evaluate`.
 
 ## Where things live
 
-| Concern                    | Code                                                                                                                    |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Signal Score (0–100)       | `src/lib/canonicalModel.ts`: the single scoring model; `pine/` mirrors it, `docs/QUANT_MODEL_VERIFICATION.md` checks it |
-| Indicators                 | `src/lib/indicators.ts`, run off the main thread by `financeClient.ts` → `finance.worker.ts` → `financeCompute.ts`      |
-| Candle input contract      | `src/lib/candleValidation.ts` (`docs/CANDLE_INPUT_CONTRACT.md`)                                                         |
-| Market data in the browser | `src/lib/assets.ts` (assets_status), `binance.ts` (REST candles), `hooks/useBinanceWebSocket.ts` → `livePriceStore.ts`  |
-| Data freshness             | `src/lib/freshness.ts`, `components/FreshnessBadge.tsx`                                                                 |
-| Server-side market data    | `supabase/functions/{crypto-price-feed,equity-forex-price-feed,market-analytics}`                                       |
-| TradingView signals        | `supabase/functions/tv-webhook` → `trading_signals`; shown in `components/ActionCenter.tsx`, `TacticalSignals.tsx`      |
-| Paper trading              | `components/PaperTradingTerminal.tsx`, `lib/brokers/`, `lib/tradeLedger.ts`, `hooks/usePaperRisk.ts`, `lib/risk.ts`     |
-| Portfolio accounting       | `src/lib/portfolioAccounting.ts`, `portfolioStore.tsx` (state), `db.ts` + `hydrationStore.ts` (cloud sync)              |
-| Robo advisor / rebalancing | `src/lib/roboAdvisor.ts`, `portfolioBuilder.ts`, `rebalance.ts`, `allocation.ts`, `dca.ts`                              |
-| Backtesting                | `src/lib/backtestManager.ts`, `components/BacktestChart.tsx`                                                            |
-| Price alerts               | `src/lib/alertEngine.ts` (pure), `alertsStore.ts`, `priceAlerts.ts`, `hooks/useAlertEngine.ts`                          |
-| Shared portfolios          | `src/lib/sharedPortfolio.ts`, route `p/$portfolioId.tsx`                                                                |
-| Auth and plans             | `src/lib/authStore.tsx`, `components/AuthModal.tsx`, `PricingModal.tsx`, `lib/adManager.ts`                             |
-| Supabase client            | `src/lib/supabaseClient.ts` (the only browser client), `supabaseConfig.ts` (env resolution)                             |
-| Release gate               | `src/lib/dbContract.ts` + `scripts/check-db-contract.ts`                                                                |
-| Strategy evaluation        | `src/lib/evaluationLab.ts` (pure) + `scripts/` CLIs (`docs/STRATEGY_VALIDATION.md`)                                     |
-| SSR error handling         | `src/server.ts`, `src/lib/error-capture.ts`, `error-page.ts`                                                            |
+| Concern                    | Code                                                                                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signal Score (0–100)       | `src/lib/canonicalModel.ts`: the single scoring model; `pine/` ports it within the bounds of `docs/PINE_PARITY_ASSESSMENT.md`; `docs/QUANT_MODEL_VERIFICATION.md` checks it |
+| Indicators                 | `src/lib/indicators.ts`, run off the main thread by `financeClient.ts` → `finance.worker.ts` → `financeCompute.ts`                                                          |
+| Candle input contract      | `src/lib/candleValidation.ts` (`docs/CANDLE_INPUT_CONTRACT.md`)                                                                                                             |
+| Market data in the browser | `src/lib/assets.ts` (assets_status), `binance.ts` (REST candles), `hooks/useBinanceWebSocket.ts` → `livePriceStore.ts`                                                      |
+| Data freshness             | `src/lib/freshness.ts`, `components/FreshnessBadge.tsx`                                                                                                                     |
+| Server-side market data    | `supabase/functions/{crypto-price-feed,equity-forex-price-feed,market-analytics}`                                                                                           |
+| TradingView signals        | `supabase/functions/tv-webhook` → `trading_signals`; shown in `components/ActionCenter.tsx`, `TacticalSignals.tsx`                                                          |
+| Paper trading              | `components/PaperTradingTerminal.tsx`, `lib/brokers/`, `lib/tradeLedger.ts`, `hooks/usePaperRisk.ts`, `lib/risk.ts`                                                         |
+| Portfolio accounting       | `src/lib/portfolioAccounting.ts`, `portfolioStore.tsx` (state), `db.ts` + `hydrationStore.ts` (cloud sync)                                                                  |
+| Robo advisor / rebalancing | `src/lib/roboAdvisor.ts`, `portfolioBuilder.ts`, `rebalance.ts`, `allocation.ts`, `dca.ts`                                                                                  |
+| Backtesting                | `src/lib/backtestManager.ts`, `components/BacktestChart.tsx`                                                                                                                |
+| Price alerts               | `src/lib/alertEngine.ts` (pure), `alertsStore.ts`, `priceAlerts.ts`, `hooks/useAlertEngine.ts`                                                                              |
+| Shared portfolios          | `src/lib/sharedPortfolio.ts`, route `p/$portfolioId.tsx`                                                                                                                    |
+| Auth and plans             | `src/lib/authStore.tsx`, `components/AuthModal.tsx`, `PricingModal.tsx`, `lib/adManager.ts`                                                                                 |
+| Supabase client            | `src/lib/supabaseClient.ts` (the only browser client), `supabaseConfig.ts` (env resolution)                                                                                 |
+| Release gate               | `src/lib/dbContract.ts` + `scripts/check-db-contract.ts`                                                                                                                    |
+| Strategy evaluation        | `src/lib/evaluationLab.ts` (pure) + `scripts/` CLIs (`docs/STRATEGY_VALIDATION.md`)                                                                                         |
+| SSR error handling         | `src/server.ts`, `src/lib/error-capture.ts`, `error-page.ts`                                                                                                                |
 
 ## Rules of thumb
 

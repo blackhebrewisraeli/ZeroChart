@@ -24,7 +24,7 @@ A TradingView Pine Script HUD that scores every bar, and a React + Supabase comm
 
 ## The ecosystem
 
-ZeroChart is two products running one quant engine. The same RSI / MACD / ATR model is implemented in TypeScript for the web app and ported 1:1 to Pine Script, so the score on your TradingView chart matches the score in the app.
+ZeroChart is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. The two agree closely on a long daily chart, but they are not identical: Pine computes on the chart's whole history with TradingView's built-in indicators, while the app re-scores the latest 200 daily candles, so short histories, flat prices, other timeframes and rounding ties can score differently. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
 
 |                      | **ZeroChart Quant HUD**                                                                                    | **ZeroChart Command Center**                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -68,7 +68,7 @@ flowchart TB
 
 - Scores every asset 0–100 by blending three normalized factors: **RSI** mean reversion (40%), **MACD** momentum (40%), and **ATR** volatility regime (20%).
 - Detects the market regime (high volatility, trending, mean-reverting, or neutral) and tilts the weights toward the factor that regime rewards.
-- One canonical engine, [`canonicalModel.ts`](./src/lib/canonicalModel.ts), scores every surface (Scanner, Portfolio, Quant Analyzer, Tactical Signals, shared snapshots) from candle history and matches the Pine HUD. An asset with fewer than 34 daily candles reports `INSUFFICIENT_DATA` and shows "Not Enough Data", never a guessed score.
+- One canonical engine, [`canonicalModel.ts`](./src/lib/canonicalModel.ts), scores every surface (Scanner, Portfolio, Quant Analyzer, Tactical Signals, shared snapshots) from the latest 200 closed daily candles. The Pine HUD shares its factor math, within the bounds in [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md). An asset with fewer than 34 daily candles reports `INSUFFICIENT_DATA` and shows "Not Enough Data", never a guessed score.
 - Every score is explainable: sub-scores, applied weights, regime, and a one-line rationale.
 - Heavy math (SMA, RSI, MACD, ATR, full backtests) runs off the main thread in [`finance.worker.ts`](./src/lib/finance.worker.ts), with results cached and served through the async [`financeClient.ts`](./src/lib/financeClient.ts) API, so charts never freeze the UI.
 

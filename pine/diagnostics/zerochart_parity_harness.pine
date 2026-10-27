@@ -1,0 +1,212 @@
+//@version=6
+// ZeroChart parity harness - DIAGNOSTIC ONLY. Sends no alerts and is not a trading
+// indicator. It plots, bar by bar, what the production HUD's built-ins compute
+// (zc_prod_*) and what the window-200 candidate computes (zc_cand_*), on chart
+// bars or on the deterministic fixtures in docs/pine-parity-fixtures.json.
+// Export the chart ("Export chart data") and run:
+//     npm run parity -- --pine-export FILE.csv [--case NAME]
+// See docs/PINE_PARITY_ASSESSMENT.md. Not compiled or run by the change that added it.
+indicator("ZeroChart Parity Harness", shorttitle = "ZC Parity", overlay = false, max_bars_back = 300, precision = 10)
+
+barSource = input.string("Chart", "Bars", options = ["Chart", "rising", "falling", "flat", "irregular", "threshold"])
+
+int MODEL_WINDOW = 200
+int MIN_CANDLES = 34
+float K12 = 2.0 / 13.0
+float K26 = 2.0 / 27.0
+float K9  = 2.0 / 10.0
+// provenance.thresholdClose in docs/pine-parity-fixtures.json.
+float THRESHOLD_CLOSE = 2309.467490240423
+
+// ===== Fixture bars: scripts/generate-pine-parity-fixtures.py, bar for bar =====
+var int lcgState = 1
+var int lcgTicks = 8000
+float fh = na
+float fl = na
+float fc = na
+if barSource == "rising" and bar_index < 320
+    fc := 100.0 + 0.5 * bar_index
+    fh := fc + 0.25
+    fl := fc - 0.25
+else if barSource == "falling" and bar_index < 320
+    fc := 300.0 + -0.5 * bar_index
+    fh := fc + 0.25
+    fl := fc - 0.25
+else if barSource == "flat" and bar_index < 320
+    fc := 100.0
+    fh := 100.0
+    fl := 100.0
+else if (barSource == "irregular" and bar_index < 320) or (barSource == "threshold" and bar_index < 261)
+    if bar_index > 0
+        lcgState := (75 * lcgState + 74) % 65537
+        int mult = barSource == "irregular" and bar_index >= 150 and bar_index < 200 ? 6 : 1
+        lcgTicks += (lcgState % 257 - 128) * mult
+    int half = 1 + lcgState % 16
+    fh := (lcgTicks + half) / 4.0
+    fl := (lcgTicks - half) / 4.0
+    fc := lcgTicks / 4.0
+    if barSource == "threshold" and bar_index == 260
+        fc := THRESHOLD_CLOSE
+        fh := THRESHOLD_CLOSE + 0.25
+        fl := THRESHOLD_CLOSE - 0.25
+
+bool fixture = barSource != "Chart"
+float h = fixture ? fh : high
+float l = fixture ? fl : low
+float c = fixture ? fc : close
+
+// ===== Shared factor math (pine/zerochart_quant_hud.pine) =====
+rsiFactorScore(float r) =>
+    float x = math.max(0.0, math.min(100.0, r))
+    float s = 0.0
+    if x <= 30.0
+        s := 100.0 + (95.0 - 100.0) * (x / 30.0)
+    else if x <= 50.0
+        s := 95.0 + (55.0 - 95.0) * ((x - 30.0) / 20.0)
+    else if x <= 70.0
+        s := 55.0 + (15.0 - 55.0) * ((x - 50.0) / 20.0)
+    else
+        s := 15.0 + (0.0 - 15.0) * ((x - 70.0) / 30.0)
+    s
+
+momentumFactorScore(float m) =>
+    math.max(0.0, math.min(100.0, 50.0 + 50.0 * (m / 0.01)))
+
+volatilityFactorScore(float v) =>
+    math.max(0.0, math.min(100.0, 100.0 * (1.0 - (v - 0.005) / (0.055 - 0.005))))
+
+// The production composite, including its renormalization over factors that have
+// data. Regime codes: 0 NEUTRAL, 1 TRENDING, 2 MEAN_REVERTING, 3 HIGH_VOLATILITY.
+composite(float r, float m, float v) =>
+    bool hasR = not na(r)
+    bool hasM = not na(m)
+    bool hasV = not na(v)
+    int regime = 0
+    float wR = 0.4
+    float wM = 0.4
+    float wV = 0.2
+    if hasV and v >= 0.04
+        regime := 3
+        wR := 0.35
+        wM := 0.35
+        wV := 0.3
+    else if hasM and math.abs(m) >= 0.005
+        regime := 1
+        wR := 0.3
+        wM := 0.5
+    else if hasR and (r <= 30.0 or r >= 70.0)
+        regime := 2
+        wR := 0.5
+        wM := 0.3
+    float active = (hasR ? wR : 0.0) + (hasM ? wM : 0.0) + (hasV ? wV : 0.0)
+    float total = (hasR ? wR * rsiFactorScore(r) : 0.0) + (hasM ? wM * momentumFactorScore(m) : 0.0) + (hasV ? wV * volatilityFactorScore(v) : 0.0)
+    float weighted = active == 0.0 ? 0.0 : total / active
+    [math.round(math.max(0.0, math.min(100.0, weighted))), regime]
+
+// ===== Window indicators: copied from pine/candidates/zerochart_quant_hud_w200.pine =====
+zcRsi(float src, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float avgGain = 0.0
+        float avgLoss = 0.0
+        for i = 1 to 14
+            float change = src[n - 1 - i] - src[n - i]
+            if change >= 0
+                avgGain += change
+            else
+                avgLoss -= change
+        avgGain /= 14
+        avgLoss /= 14
+        for i = 15 to n - 1
+            float change = src[n - 1 - i] - src[n - i]
+            float gain = change > 0 ? change : 0.0
+            float loss = change < 0 ? -change : 0.0
+            avgGain := (avgGain * 13 + gain) / 14
+            avgLoss := (avgLoss * 13 + loss) / 14
+        result := avgLoss == 0 ? (avgGain == 0 ? 50.0 : 100.0) : avgGain == 0 ? 0.0 : 100 - 100 / (1 + avgGain / avgLoss)
+    result
+
+zcMacdHist(float src, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float fast = 0.0
+        float slow = 0.0
+        for i = 0 to 11
+            fast += src[n - 1 - i]
+        fast /= 12
+        for i = 12 to 25
+            fast += K12 * (src[n - 1 - i] - fast)
+        for i = 0 to 25
+            slow += src[n - 1 - i]
+        slow /= 26
+        float line = fast - slow
+        float signal = line
+        for i = 26 to 33
+            float v = src[n - 1 - i]
+            fast += K12 * (v - fast)
+            slow += K26 * (v - slow)
+            line := fast - slow
+            signal += line
+        signal /= 9
+        if n > 34
+            for i = 34 to n - 1
+                float v = src[n - 1 - i]
+                fast += K12 * (v - fast)
+                slow += K26 * (v - slow)
+                line := fast - slow
+                signal += K9 * (line - signal)
+        result := line - signal
+    result
+
+zcAtr(float hi, float lo, float cl, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float seed = hi[n - 1] - lo[n - 1]
+        for i = 1 to 13
+            float prevClose = cl[n - i]
+            seed += math.max(hi[n - 1 - i] - lo[n - 1 - i], math.abs(hi[n - 1 - i] - prevClose), math.abs(lo[n - 1 - i] - prevClose))
+        float previous = seed / 14
+        for i = 14 to n - 1
+            float prevClose = cl[n - i]
+            float trueRange = math.max(hi[n - 1 - i] - lo[n - 1 - i], math.abs(hi[n - 1 - i] - prevClose), math.abs(lo[n - 1 - i] - prevClose))
+            previous := (previous * 13 + trueRange) / 14
+        result := previous
+    result
+
+// ===== Production semantics: the HUD's built-ins, ATR Period 14 =====
+float prodRsi = ta.rsi(c, 14)
+[prodLine, prodSignal, prodHist] = ta.macd(c, 12, 26, 9)
+// ta.atr reads the chart's bars, so fixtures use its documented equivalent, ta.rma(ta.tr(true)).
+float trueRangeValue = na(c[1]) ? h - l : math.max(h - l, math.abs(h - c[1]), math.abs(l - c[1]))
+float fixtureAtr = ta.rma(trueRangeValue, 14)
+float chartAtr = ta.atr(14)
+float prodAtr = fixture ? fixtureAtr : chartAtr
+bool prodReady = not na(prodRsi) and not na(prodHist / c) and not na(prodAtr / c)
+[prodScore, prodRegime] = composite(prodRsi, prodHist / c, prodAtr / c)
+
+// ===== Candidate: last min(200, bars) bars, re-seeded every bar =====
+int windowLength = math.min(bar_index + 1, MODEL_WINDOW)
+float candRsi = zcRsi(c, windowLength)
+float candHist = zcMacdHist(c, windowLength)
+float candAtr = zcAtr(h, l, c, windowLength)
+bool candReady = windowLength >= MIN_CANDLES and not na(candRsi) and not na(candHist) and not na(candAtr) and c > 0
+[candScore, candRegime] = composite(candRsi, candHist / c, candAtr / c)
+
+// ===== Export columns: scripts/pine-parity.ts reads these titles =====
+plot(bar_index, "zc_bar", display = display.data_window)
+plot(barstate.isconfirmed ? 1 : 0, "zc_confirmed", display = display.data_window)
+plot(h, "zc_high", display = display.data_window)
+plot(l, "zc_low", display = display.data_window)
+plot(c, "zc_close", display = display.data_window)
+plot(prodReady ? 1 : 0, "zc_prod_ready", display = display.data_window)
+plot(prodRsi, "zc_prod_rsi", display = display.data_window)
+plot(prodHist, "zc_prod_hist", display = display.data_window)
+plot(prodAtr, "zc_prod_atr", display = display.data_window)
+plot(prodScore, "zc_prod_score", color = color.orange)
+plot(prodRegime, "zc_prod_regime", display = display.data_window)
+plot(candReady ? 1 : 0, "zc_cand_ready", display = display.data_window)
+plot(candRsi, "zc_cand_rsi", display = display.data_window)
+plot(candHist, "zc_cand_hist", display = display.data_window)
+plot(candAtr, "zc_cand_atr", display = display.data_window)
+plot(candReady ? candScore : na, "zc_cand_score", color = color.aqua)
+plot(candReady ? candRegime : na, "zc_cand_regime", display = display.data_window)

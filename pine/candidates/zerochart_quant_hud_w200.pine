@@ -1,0 +1,288 @@
+//@version=6
+// ZeroChart Quant HUD - window-200 CORRECTION CANDIDATE (pw200.c1). NOT PRODUCTION.
+// The app copies pine/zerochart_quant_hud.pine; nothing serves this file. It has
+// never been compiled or run on TradingView by the change that added it, so its
+// parity with the TypeScript model is UNVERIFIED until the runtime acceptance in
+// docs/PINE_PARITY_ASSESSMENT.md passes.
+//
+// Only the score inputs differ from production: RSI(14), MACD(12, 26, 9) and
+// ATR(14) are recomputed on every bar over the last min(200, bars) bars with
+// src/lib/indicators.ts's seeds and operation order, and the score needs the
+// same 34 bars as canonicalModel.ts. The ATR Period input now drives only sizing
+// and the trailing stop. Alerts carry model_version "1.0.0-pw200.c1", which
+// tv-webhook stores and execute_tactical_signal refuses (it accepts "1.0.0").
+indicator("ZeroChart Quant HUD (w200 candidate)", shorttitle = "ZC Quant c1", overlay = true, max_bars_back = 300)
+
+// ===== Inputs =====
+accountCapital   = input.float(10000, "Account Capital ($)", minval = 1.0, group = "Risk Engine")
+riskPct          = input.float(2.0, "Risk per Trade (%)", minval = 0.01, maxval = 100.0, step = 0.25, group = "Risk Engine")
+atrPeriod        = input.int(14, "ATR Period", minval = 1, group = "Risk Engine")
+atrStopMult      = input.float(2.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
+showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "Display")
+hudPosition      = input.string("Top Right", "HUD Position", options = ["Top Right", "Bottom Right", "Bottom Left", "Top Left"], group = "Display")
+showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")
+showSignals      = input.bool(true, "Show High-Conviction Signal Labels", group = "Display")
+
+// ===== Semantic tokens =====
+color C_BG     = #101828
+color C_BORDER = #1e293b
+color C_BRAND  = #00e5ff
+color C_GREEN  = #00e676
+color C_RED    = #ff5252
+
+hudPos = hudPosition == "Bottom Right" ? position.bottom_right : hudPosition == "Bottom Left" ? position.bottom_left : hudPosition == "Top Left" ? position.top_left : position.top_right
+
+// ===== Model constants (canonicalModel.ts) =====
+float MOMENTUM_SATURATION      = 0.01   // +/-1% of price saturates the momentum score
+float LOW_VOLATILITY           = 0.005  // ATR/price <= 0.5% reads as maximally quiet
+float HIGH_VOLATILITY          = 0.055  // ATR/price >= 5.5% reads as maximally blown-out
+float REGIME_HIGH_VOLATILITY   = 0.04   // ATR/price >= 4% -> HIGH_VOLATILITY regime
+float REGIME_TRENDING_MOMENTUM = 0.005  // |MACD hist|/price >= 0.5% -> TRENDING regime
+// Targets canonical model 1.0.0; the suffix attributes this unverified Pine implementation.
+const string MODEL_VERSION = "1.0.0-pw200.c1"
+int MODEL_WINDOW               = 200    // roboAdvisor.ts / evaluationLab: last 200 closed candles
+int MIN_CANDLES                = 34     // canonicalModel.ts MIN_CANDLES
+float FLAT_MOMENTUM            = 0.0005 // momentum inside +/-0.05% reads as "flat"
+float RSI_OVERSOLD             = 30.0
+float RSI_OVERBOUGHT           = 70.0
+float K12 = 2.0 / 13.0
+float K26 = 2.0 / 27.0
+float K9  = 2.0 / 10.0
+
+// ===== Factor scores (0-100) =====
+// Mean reversion: piecewise-linear through (0,100) (30,95) (50,55) (70,15) (100,0).
+rsiFactorScore(float r) =>
+    float x = math.max(0.0, math.min(100.0, r))
+    float s = 0.0
+    if x <= 30.0
+        s := 100.0 + (95.0 - 100.0) * (x / 30.0)
+    else if x <= 50.0
+        s := 95.0 + (55.0 - 95.0) * ((x - 30.0) / 20.0)
+    else if x <= 70.0
+        s := 55.0 + (15.0 - 55.0) * ((x - 50.0) / 20.0)
+    else
+        s := 15.0 + (0.0 - 15.0) * ((x - 70.0) / 30.0)
+    s
+
+// Momentum: 0 -> neutral 50, saturates at +/-1% of price.
+momentumFactorScore(float m) =>
+    math.max(0.0, math.min(100.0, 50.0 + 50.0 * (m / MOMENTUM_SATURATION)))
+
+// Volatility regime: 0.5% -> 100, 5.5% -> 0.
+volatilityFactorScore(float v) =>
+    math.max(0.0, math.min(100.0, 100.0 * (1.0 - (v - LOW_VOLATILITY) / (HIGH_VOLATILITY - LOW_VOLATILITY))))
+
+fmtShares(float s) =>
+    str.tostring(s, s >= 100 ? "0.0" : s >= 1 ? "0.00" : "0.0000")
+
+// ===== Window indicators: indicators.ts, operation for operation =====
+// Window index i (0 = oldest) is src[n - 1 - i]. Each call re-seeds on the
+// current window, like the app re-scoring its latest 200 candles.
+// ponytail: O(window) loops per bar; restrict to the last bars if TradingView's time limit trips.
+zcRsi(float src, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float avgGain = 0.0
+        float avgLoss = 0.0
+        for i = 1 to 14
+            float change = src[n - 1 - i] - src[n - i]
+            if change >= 0
+                avgGain += change
+            else
+                avgLoss -= change
+        avgGain /= 14
+        avgLoss /= 14
+        for i = 15 to n - 1
+            float change = src[n - 1 - i] - src[n - i]
+            float gain = change > 0 ? change : 0.0
+            float loss = change < 0 ? -change : 0.0
+            avgGain := (avgGain * 13 + gain) / 14
+            avgLoss := (avgLoss * 13 + loss) / 14
+        result := avgLoss == 0 ? (avgGain == 0 ? 50.0 : 100.0) : avgGain == 0 ? 0.0 : 100 - 100 / (1 + avgGain / avgLoss)
+    result
+
+// SMA-seeded EMA(12) and EMA(26), MACD line from window index 25, SMA-seeded
+// EMA(9) signal from index 33; returns the histogram on the window's last bar.
+zcMacdHist(float src, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float fast = 0.0
+        float slow = 0.0
+        for i = 0 to 11
+            fast += src[n - 1 - i]
+        fast /= 12
+        for i = 12 to 25
+            fast += K12 * (src[n - 1 - i] - fast)
+        for i = 0 to 25
+            slow += src[n - 1 - i]
+        slow /= 26
+        float line = fast - slow
+        float signal = line
+        for i = 26 to 33
+            float v = src[n - 1 - i]
+            fast += K12 * (v - fast)
+            slow += K26 * (v - slow)
+            line := fast - slow
+            signal += line
+        signal /= 9
+        // Pine counts down when `to` < `from`, so a 34-bar window must skip this loop.
+        if n > 34
+            for i = 34 to n - 1
+                float v = src[n - 1 - i]
+                fast += K12 * (v - fast)
+                slow += K26 * (v - slow)
+                line := fast - slow
+                signal += K9 * (line - signal)
+        result := line - signal
+    result
+
+// Wilder ATR(14) with the first true range high - low, seeded by the mean of TR 0..13.
+zcAtr(float h, float l, float c, int n) =>
+    float result = na
+    if n >= MIN_CANDLES
+        float seed = h[n - 1] - l[n - 1]
+        for i = 1 to 13
+            float prevClose = c[n - i]
+            seed += math.max(h[n - 1 - i] - l[n - 1 - i], math.abs(h[n - 1 - i] - prevClose), math.abs(l[n - 1 - i] - prevClose))
+        float previous = seed / 14
+        for i = 14 to n - 1
+            float prevClose = c[n - i]
+            float trueRange = math.max(h[n - 1 - i] - l[n - 1 - i], math.abs(h[n - 1 - i] - prevClose), math.abs(l[n - 1 - i] - prevClose))
+            previous := (previous * 13 + trueRange) / 14
+        result := previous
+    result
+
+// ===== Core indicators (normalized by price) =====
+int windowLength = math.min(bar_index + 1, MODEL_WINDOW)
+float rsiValue = zcRsi(close, windowLength)
+float macdHist = zcMacdHist(close, windowLength)
+float scoreAtr = zcAtr(high, low, close, windowLength)
+float momentumPct = macdHist / close
+float volatilityPct = scoreAtr / close
+// canonicalModel.ts: INSUFFICIENT_DATA below 34 candles or on any non-finite reading.
+bool ready = windowLength >= MIN_CANDLES and not na(rsiValue) and not na(macdHist) and not na(scoreAtr) and close > 0
+
+// ===== Regime detection + regime-tilted weights (first match wins) =====
+string regime = "NEUTRAL"
+float wRsi = 0.4
+float wMomentum = 0.4
+float wVolatility = 0.2
+if volatilityPct >= REGIME_HIGH_VOLATILITY
+    regime := "HIGH_VOLATILITY"
+    wRsi := 0.35
+    wMomentum := 0.35
+    wVolatility := 0.3
+else if math.abs(momentumPct) >= REGIME_TRENDING_MOMENTUM
+    regime := "TRENDING"
+    wRsi := 0.3
+    wMomentum := 0.5
+else if rsiValue <= RSI_OVERSOLD or rsiValue >= RSI_OVERBOUGHT
+    regime := "MEAN_REVERTING"
+    wRsi := 0.5
+    wMomentum := 0.3
+
+// ===== Composite score: no score until every factor is defined =====
+float activeWeight = wRsi + wMomentum + wVolatility
+float weightedSum = wRsi * rsiFactorScore(rsiValue) + wMomentum * momentumFactorScore(momentumPct) + wVolatility * volatilityFactorScore(volatilityPct)
+int score = ready ? math.round(math.max(0.0, math.min(100.0, weightedSum / activeWeight))) : na
+
+// ===== Dynamic position sizing (risk.ts) =====
+float atrValue = ta.atr(atrPeriod)
+float riskDollars = accountCapital * (riskPct / 100.0)
+float stopDistance = atrValue * atrStopMult
+float riskShares = stopDistance > 0 ? riskDollars / stopDistance : na
+float budgetShares = accountCapital / close
+// Notional never exceeds the account: quiet assets would otherwise size past 100% of capital.
+float suggestedShares = math.min(riskShares, budgetShares)
+bool sizeCapped = riskShares > budgetShares
+float notional = suggestedShares * close
+float stopPrice = math.max(0.0, close - stopDistance)
+
+// ===== Adaptive ATR trailing stop =====
+var float trailStop = na
+var int trailDir = 1
+if not na(stopDistance)
+    float longStop = close - stopDistance
+    float shortStop = close + stopDistance
+    if na(trailStop)
+        trailStop := longStop
+    else if trailDir == 1
+        if close < trailStop
+            trailDir := -1
+            trailStop := shortStop
+        else
+            trailStop := math.max(trailStop, longStop)
+    else
+        if close > trailStop
+            trailDir := 1
+            trailStop := longStop
+        else
+            trailStop := math.min(trailStop, shortStop)
+
+bool stopBreached = trailDir == -1 and trailDir[1] == 1
+color trailColor = trailDir == 1 ? (ready and score >= 60 ? C_GREEN : C_BRAND) : C_RED
+// Break the line on the flip bar instead of drawing a vertical jump.
+plot(showTrailingStop and trailDir == trailDir[1] ? trailStop : na, "ZC ATR Trailing Stop", color = trailColor, linewidth = 2, style = plot.style_linebr)
+
+// ===== High-conviction signals (fire on transitions only) =====
+bool bullishMomentum = ready and momentumPct >= FLAT_MOMENTUM
+bool longSetup = ready and score >= 78 and bullishMomentum
+bool riskSetup = ready and (score <= 28 or regime == "HIGH_VOLATILITY")
+bool longSignal = longSetup and not longSetup[1]
+bool riskSignal = riskSetup and not riskSetup[1]
+bool highConviction = ready and score >= 80
+bool isHighVolatility = ready and regime == "HIGH_VOLATILITY"
+
+plotshape(showSignals and longSignal, "ZC LONG", shape.labelup, location.belowbar, color = C_GREEN, text = "ZC LONG", textcolor = C_BG, size = size.tiny)
+plotshape(showSignals and riskSignal, "ZC RISK", shape.labeldown, location.abovebar, color = C_RED, text = "ZC RISK", textcolor = color.white, size = size.tiny)
+bgcolor(longSignal ? color.new(C_GREEN, 90) : riskSignal ? color.new(C_RED, 90) : na, title = "ZC Signal Highlight")
+
+// ===== Plain-English action (score bands) =====
+string action = not ready ? "NOT ENOUGH DATA" : score >= 78 ? "STRONG BUY" : score >= 60 ? "BUY" : score > 28 ? "WAIT" : score > 15 ? "RISK/TRIM" : "STRONG SELL"
+color actionBg = action == "STRONG BUY" or action == "BUY" ? C_GREEN : action == "WAIT" or action == "NOT ENOUGH DATA" ? color.gray : C_RED
+string vibe = not ready ? "-" : regime == "HIGH_VOLATILITY" ? "High Volatility" : regime == "TRENDING" ? (momentumPct >= 0 ? "Strong Bull Trend" : "Strong Bear Trend") : regime == "MEAN_REVERTING" ? "Mean Reverting" : math.abs(momentumPct) < FLAT_MOMENTUM ? "Flat/Ranging" : "Quiet Tape"
+string sizeVerb = action == "STRONG SELL" or action == "RISK/TRIM" ? "Sell" : "Buy"
+string sizeText = na(suggestedShares) ? "-" : sizeVerb + " $" + str.tostring(math.round(notional)) + " (" + fmtShares(suggestedShares) + " " + syminfo.ticker + ")" + (sizeCapped ? " capped" : "")
+string stopText = na(stopDistance) ? "-" : "Exit at $" + str.tostring(stopPrice, format.mintick)
+
+// Hidden plots so {{plot("…")}} placeholders in alertcondition JSON resolve.
+plot(score, "ZC Score", display = display.none)
+plot(suggestedShares, "ZC Quantity", display = display.none)
+plot(stopPrice, "ZC Stop", display = display.none)
+
+// ===== Webhook alerts: the tv-webhook JSON contract =====
+// quantity is in units (shares / coins), never dollars. Nothing substitutes a token
+// into this candidate; USER_SECRET_PLACEHOLDER stays unless the owner edits it.
+const string WEBHOOK_SECRET = "USER_SECRET_PLACEHOLDER"
+
+webhookJson(string side) =>
+    "{\"signal_kind\": \"strategy\", \"ticker\": \"" + syminfo.ticker + "\", \"action\": \"" + side + "\", \"signal_score\": " + str.tostring(score) + ", \"price\": " + str.tostring(close) + ", \"quantity\": " + str.tostring(suggestedShares) + ", \"stop_loss\": " + str.tostring(stopPrice) + ", \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"" + str.format_time(timenow, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"exchange\": \"" + syminfo.prefix + "\", \"timeframe\": \"" + timeframe.period + "\", \"bar_time\": \"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"model_version\": \"" + MODEL_VERSION + "\"}"
+
+// A NaN quantity or score would break the JSON, so such a bar sends nothing.
+if ready and not na(suggestedShares)
+    if longSignal
+        alert(webhookJson("BUY"), alert.freq_once_per_bar_close)
+    if riskSignal or stopBreached
+        alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
+
+const string ALERT_FIELDS = ", \"signal_kind\": \"strategy\", \"signal_score\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"quantity\": {{plot(\"ZC Quantity\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}, \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"{{timenow}}\", \"exchange\": \"{{exchange}}\", \"timeframe\": \"{{interval}}\", \"bar_time\": \"{{time}}\", \"model_version\": \"" + MODEL_VERSION + "\"}"
+alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\"" + ALERT_FIELDS)
+alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
+alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
+
+// ===== On-chart terminal HUD =====
+var table hud = table.new(position.top_right, 2, 5, bgcolor = C_BG, frame_color = C_BORDER, frame_width = 1, border_color = C_BORDER, border_width = 1)
+
+hudRow(int row, string label, string value, color valueColor, color rowBg) =>
+    table.cell(hud, 0, row, label, text_color = color.aqua, text_halign = text.align_left, text_size = size.normal, text_font_family = font.family_monospace, bgcolor = rowBg)
+    table.cell(hud, 1, row, value, text_color = valueColor, text_halign = text.align_right, text_size = size.normal, text_font_family = font.family_monospace, bgcolor = rowBg)
+
+if showHud and barstate.islast
+    table.set_position(hud, hudPos)
+    hudRow(0, "SIGNAL / ACTION", action, color.white, actionBg)
+    table.cell_set_text_size(hud, 0, 0, size.large)
+    table.cell_set_text_size(hud, 1, 0, size.large)
+    hudRow(1, "SIGNAL SCORE", "Signal Score: " + (ready ? str.tostring(score) : "-") + " / 100 (" + MODEL_VERSION + ")", color.yellow, C_BG)
+    hudRow(2, "POSITION SIZE", sizeText, color.white, C_BG)
+    hudRow(3, "STOP LOSS", stopText, color.white, C_BG)
+    hudRow(4, "MARKET VIBE", vibe, color.aqua, C_BG)

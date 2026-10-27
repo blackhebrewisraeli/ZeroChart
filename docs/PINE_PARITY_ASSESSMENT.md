@@ -390,14 +390,15 @@ Each step needs the owner's approval. Steps 1 to 3 are done: #95 merged, migrati
    - Create the alert on `BINANCE:BTCUSDT` `1D` with the `ZC Quant pw200` condition "Any
      alert() function call" and the same webhook URL as the hourly alert. A price alert is not a
      substitute.
-   - While both alerts run, 00:00Z closes both bars. Stored hourly signals carry the bar-close
-     second as `event_id` (`…T14:00:00Z`), so both alerts are expected to send the same
-     `event_id` then. `ingest_tradingview_signal` keeps one row per user, ticker, action and
-     `event_id`: when both send the same action, the later one is answered `duplicate` and not
-     stored, whichever version it is. After each 00:00Z fire, compare both alerts' fire times
-     with the stored rows.
-   - Both versions' pending signals are separate rows and both executable, so booking both
-     doubles the paper position.
+   - While both alerts run, 00:00Z closes both bars and both may send the same provider
+     `event_id`. Migration `20261027130000` replaces that collision-prone key for complete modern
+     payloads with the versioned logical-event contract in
+     [TRADINGVIEW_EVENT_IDENTITY.md](TRADINGVIEW_EVENT_IDENTITY.md). Hourly and daily rows are then
+     stored separately even when their delivery ID and action match. Until that migration is
+     applied in an environment, the #96 collision remains there.
+   - Both versions' pending signals may be valid separate rows. Ingestion preserves them but does
+     not decide whether executing both is appropriate; booking both can still double the paper
+     position.
 5. **Evidence:** app campaigns score TypeScript only, so their evidence is unaffected. Any study
    of TradingView signals starts a new campaign ID after the switch. `private-2026q4-001`
    stays frozen.

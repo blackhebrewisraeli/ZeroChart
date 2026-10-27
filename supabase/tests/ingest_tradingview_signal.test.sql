@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(26);
 
 insert into auth.users (id) values
   ('00000000-0000-4000-8000-000000000011'),
@@ -144,6 +144,47 @@ select is(
   ),
   'accepted',
   'the same event for another user remains isolated'
+);
+-- Each key field alone must separate events; the cases above change several at once.
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "next-hour", "bar_time": "2026-10-21T00:00:00Z"}' from delivery)
+  ),
+  'accepted',
+  'another bar of the same series is a separate signal'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "same-open", "timeframe": "1D", "bar_time": "2026-10-21T00:00:00Z"}' from delivery)
+  ),
+  'accepted',
+  'hourly and daily bars with the same open time remain separate'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "other-exchange", "exchange": "COINBASE"}' from delivery)
+  ),
+  'accepted',
+  'the same instrument on another exchange remains separate'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "transport", "signal_kind": "transport_test"}' from delivery)
+  ),
+  'accepted',
+  'a transport test never deduplicates a strategy event'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "lower-case", "exchange": "binance"}' from delivery)
+  ),
+  'duplicate',
+  'exchange case does not change the logical event'
 );
 
 reset role;

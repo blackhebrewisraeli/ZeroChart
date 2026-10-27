@@ -30,4 +30,19 @@ A delivery missing any modern source field keeps the historical `(user_id, ticke
 
 Apply the append-only migration before deploying the updated `tv-webhook` handler. The old handler understands the migration's normal `accepted` and `duplicate` results, while the new handler is needed to expose a conflicting modern retry as HTTP 409. No frontend or Pine release is required.
 
+The migration refuses to run if an environment already holds two complete rows for one logical event: creating `trading_signals_logical_event_idx` fails, the transaction rolls back, and every row and the old index stay as they were. Check first; this must return 0:
+
+```sql
+select count(*) from (
+  select 1 from public.trading_signals
+  where exchange is not null and timeframe is not null and bar_time is not null and model_version is not null
+  group by user_id, signal_kind, upper(exchange), upper(ticker),
+    case when upper(timeframe) in ('D', '1D') then '1D' else upper(timeframe) end,
+    model_version, action, bar_time
+  having count(*) > 1
+) collisions;
+```
+
+A non-zero count needs an owner decision about which rows are real. Do not delete or merge them to get the migration through.
+
 Database rollback is forward-only. Do not drop or rewrite signal rows. Reinstating the old global event-ID index can fail after distinct cross-timeframe rows share an attempt ID, so rollback should use a follow-up migration that restores compatible function behavior while retaining both new indexes and all evidence. Production migration application and live alert behavior are not verified by repository tests.

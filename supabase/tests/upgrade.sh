@@ -27,6 +27,9 @@ trap cleanup_base EXIT
 base=$(git ls-tree --name-only "$BASE_REF" supabase/migrations/ | sed -En 's#.*/([0-9]{14})_.*#\1#p' | tail -1)
 echo "# base $BASE_REF is at migration $base"
 git archive "$BASE_REF" supabase | tar -x -C "$BASE_WORKDIR"
+if [[ -n "${SUPABASE_WORKDIR:-}" ]]; then
+  cp "$SUPABASE_WORKDIR/supabase/config.toml" "$BASE_WORKDIR/supabase/config.toml"
+fi
 supabase db reset --workdir "$BASE_WORKDIR" --local --version "$base" >/dev/null
 
 sql() {
@@ -48,9 +51,9 @@ insert into public.paper_transactions (user_id, action, ticker, quantity, price,
   ('$USER_ID', 'DEPOSIT', null, 5000, null, 0),
   ('$USER_ID', 'BUY', 'UPGRADECOIN', 10, 200, 5),
   ('$USER_ID', 'SELL', 'UPGRADECOIN', 4, 200, 2);
-insert into public.trading_signals (user_id, ticker, action, signal_score, quantity, price, event_id, status) values
-  ('$USER_ID', 'UPGRADECOIN', 'SELL', 20, 6, 200, 'upgrade-pending', 'PENDING'),
-  ('$USER_ID', 'UPGRADECOIN', 'BUY', 90, 10, 200, 'upgrade-done', 'EXECUTED');
+insert into public.trading_signals (id, user_id, ticker, action, signal_score, quantity, price, event_id, status) values
+  ('40000000-0000-4000-8000-0000000000e1', '$USER_ID', 'UPGRADECOIN', 'SELL', 20, 6, 200, 'upgrade-pending', 'PENDING'),
+  ('40000000-0000-4000-8000-0000000000e2', '$USER_ID', 'UPGRADECOIN', 'BUY', 90, 10, 200, 'upgrade-done', 'EXECUTED');
 "
 
 supabase migration up "${WORKDIR[@]}" --local >/dev/null
@@ -60,6 +63,8 @@ check "every fill survived" \
 check "every signal survived with its status" \
   "$(sql "select string_agg(status, ',' order by event_id) from public.trading_signals where user_id = '$USER_ID'")" \
   'EXECUTED,PENDING'
+check "legacy signal identifiers survived unchanged" \
+  "$(sql "select count(*) from public.trading_signals where id in ('40000000-0000-4000-8000-0000000000e1', '40000000-0000-4000-8000-0000000000e2')")" 2
 # 100,000 + 5,000 - (2,000 + 5) + (800 - 2): the book replays the old ledger unchanged.
 check "the new account book replays the old ledger" \
   "$(sql "select cash from public.paper_account_book('$USER_ID')")" 103793
@@ -76,6 +81,9 @@ SQL
 check "a missing signal_kind is rejected after upgrade" \
   "$(grep -o 'signal_kind must be strategy or transport_test' <<<"$rejected")" \
   'signal_kind must be strategy or transport_test'
+check "a legacy event retry keeps its original identity behavior" \
+  "$(sql "select public.ingest_tradingview_signal(encode(sha256(convert_to('tok-upgrade', 'UTF8')), 'hex'), '{\"signal_kind\":\"strategy\",\"ticker\":\"UPGRADECOIN\",\"action\":\"SELL\",\"signal_score\":21,\"price\":201,\"quantity\":6,\"event_id\":\"upgrade-pending\"}'::jsonb)")" \
+  duplicate
 executed=$(psql "$DB" -X -q -At 2>&1 <<SQL || true
 begin;
 set local role authenticated;

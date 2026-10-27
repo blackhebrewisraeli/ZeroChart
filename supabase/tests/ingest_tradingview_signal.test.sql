@@ -2,14 +2,15 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(21);
 
-insert into auth.users (id) values ('00000000-0000-4000-8000-000000000011');
+insert into auth.users (id) values
+  ('00000000-0000-4000-8000-000000000011'),
+  ('00000000-0000-4000-8000-000000000012');
 insert into public.signal_webhook_tokens (user_id, token_hash)
-values (
-  '00000000-0000-4000-8000-000000000011',
-  encode(sha256(convert_to('tok-ingest', 'UTF8')), 'hex')
-);
+values
+  ('00000000-0000-4000-8000-000000000011', encode(sha256(convert_to('tok-ingest', 'UTF8')), 'hex')),
+  ('00000000-0000-4000-8000-000000000012', encode(sha256(convert_to('tok-other', 'UTF8')), 'hex'));
 
 create temporary table delivery as
 select jsonb_build_object(
@@ -79,18 +80,88 @@ select is(
   'TradingView redelivering the same event is acknowledged as a duplicate'
 );
 
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || jsonb_build_object(
+      'timeframe', '1D',
+      'bar_time', '2026-10-21T00:00:00.000Z',
+      'model_version', '1.0.0-pw200'
+    ) from delivery)
+  ),
+  'accepted',
+  'a daily model event at the same delivery second is a separate signal'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "retry-after-uncertain-response"}' from delivery)
+  ),
+  'duplicate',
+  'a retry with a new delivery id still resolves to the saved logical event'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || jsonb_build_object(
+      'event_id', 'daily-alias',
+      'timeframe', 'D',
+      'bar_time', '2026-10-21T00:00:00.000Z',
+      'model_version', '1.0.0-pw200'
+    ) from delivery)
+  ),
+  'duplicate',
+  'D and 1D identify the same logical timeframe'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "other-model", "model_version": "2.0.0"}' from delivery)
+  ),
+  'accepted',
+  'different model implementations at the same close remain separate'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "opposite-action", "action": "BUY"}' from delivery)
+  ),
+  'accepted',
+  'BUY and SELL events remain separate'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "changed-content", "price": 84001}' from delivery)
+  ),
+  'conflict',
+  'changed content for one modern logical identity is refused'
+);
+select is(
+  public.ingest_tradingview_signal(
+    encode(sha256(convert_to('tok-other', 'UTF8')), 'hex'),
+    (select signal from delivery)
+  ),
+  'accepted',
+  'the same event for another user remains isolated'
+);
+
 reset role;
 
 select is(
-  (select count(*)::integer from public.trading_signals where event_id = '2026-10-22T00:00:22Z'),
-  1,
-  'the duplicate delivery creates no second signal'
+  (select count(*)::integer from public.trading_signals
+   where user_id = '00000000-0000-4000-8000-000000000011'
+     and event_id = '2026-10-22T00:00:22Z'),
+  2,
+  'the retry is deduplicated without collapsing the distinct daily signal'
 );
 select results_eq(
   $$
     select user_id, status, signal_kind, exchange, timeframe, bar_time, model_version
     from public.trading_signals
     where event_id = '2026-10-22T00:00:22Z'
+      and user_id = '00000000-0000-4000-8000-000000000011'
+      and timeframe = '60'
   $$,
   $$
     values (
@@ -112,6 +183,20 @@ select is(
   ),
   'accepted',
   'alerts without source context are still accepted'
+);
+select is(
+  public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal - 'exchange' - 'timeframe' - 'bar_time' - 'model_version'
+      || '{"event_id": "legacy", "price": 84001}' from delivery)
+  ),
+  'duplicate',
+  'legacy alerts retain event-id retry behavior even when content changes'
+);
+select is(
+  (select count(*)::integer from public.paper_transactions),
+  0,
+  'ingestion creates no fills or cash-ledger mutations'
 );
 
 select ok(

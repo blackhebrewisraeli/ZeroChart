@@ -3063,7 +3063,8 @@ body {
   filter: brightness(1.08);
 }
 .action-center-execute:disabled,
-.action-center-dismiss:disabled {
+.action-center-execute[aria-disabled='true'],
+.action-center-dismiss[aria-disabled='true'] {
   cursor: progress;
   opacity: 0.6;
 }

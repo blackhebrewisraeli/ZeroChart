@@ -43,6 +43,15 @@ function findAsset(assets: Asset[], ticker: string): Asset | undefined {
   });
 }
 
+/** The signal's booked fill price, if any: execute_tactical_signal links exactly one row to it. */
+async function bookedPrice(signalId: string): Promise<number | null> {
+  const { data } = await supabase
+    .from('paper_transactions')
+    .select('price')
+    .eq('signal_id', signalId);
+  return data?.[0]?.price ?? null;
+}
+
 /** Appends fetched rows that aren't already listed or known to be resolved. */
 function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>): Signal[] {
   const seen = new Set([...resolved, ...list.map((s) => s.id)]);
@@ -173,7 +182,10 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         user_id: userId,
         execution_price: price,
       });
-      if (error) throw new Error(error.message);
+      // A dropped connection can hide a committed fill, and a retry of it is
+      // refused as no longer waiting: the fill row says whether it booked.
+      const filled = error ? await bookedPrice(signal.id) : price;
+      if (filled === null) throw new Error(error?.message);
       forget(signal.id);
       try {
         replacePaperLedger(await loadPaperTransactions(userId));
@@ -181,9 +193,9 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         toast.warning('Trade executed; Paper Trading is still syncing');
       }
       toast.success(
-        `${buying ? 'Bought' : 'Sold'} ${formatPrice(shares * price)} of ${asset.ticker}`,
+        `${buying ? 'Bought' : 'Sold'} ${formatPrice(shares * filled)} of ${asset.ticker}`,
         {
-          description: `${formatShares(shares)} units at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
+          description: `${formatShares(shares)} units at ${formatPrice(filled)} — simulated fill in your Paper Trading ledger.`,
         },
       );
     } catch (error) {
@@ -262,20 +274,27 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           : 'Source details are incomplete. Verify this alert in TradingView before simulating it.'}
       </p>
       <div className="action-center-actions">
+        {/* aria-disabled while busy: a disabled button drops keyboard focus to
+            <body>, and the next queued signal reuses these buttons. */}
         <button
           type="button"
           className="action-center-execute"
-          disabled={busy || executionBlocked !== null}
+          disabled={executionBlocked !== null}
+          aria-disabled={busy || undefined}
           aria-describedby={executionBlocked ? 'action-center-rejection' : undefined}
-          onClick={() => void execute(signal)}
+          onClick={() => {
+            if (!busy) void execute(signal);
+          }}
         >
           Execute Trade (Paper)
         </button>
         <button
           type="button"
           className="action-center-dismiss"
-          disabled={busy}
-          onClick={() => void dismiss(signal.id)}
+          aria-disabled={busy || undefined}
+          onClick={() => {
+            if (!busy) void dismiss(signal.id);
+          }}
         >
           Dismiss
         </button>

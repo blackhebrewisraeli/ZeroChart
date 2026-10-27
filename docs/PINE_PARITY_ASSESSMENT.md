@@ -363,8 +363,9 @@ This change modifies no runtime code path:
 
 ## 6. Rollout and rollback
 
-Each step needs the owner's approval. Steps 1 to 3 are done or in review. Steps 4 and 5 follow the
-merge.
+Each step needs the owner's approval. Steps 1 to 3 are done: #95 merged, migration
+`20261027120000` was applied, and production has served `1.0.0-pw200` since about 02:30Z on
+2026-10-27. Step 4 is the owner's.
 
 1. **Runtime acceptance** (section 4) on BTCUSDT `1D` and all five fixtures. **Met on
    2026-10-27 at the decision level.** Runtime also narrowed the case for switching: production
@@ -382,6 +383,19 @@ merge.
    first `1.0.0-pw200` signal shows in the Action Center and executes as a paper trade, then
    stop the old 60-minute alert. This is the first time the candidate's alert and webhook paths
    run. A later migration may stop executing `1.0.0` signals (contract).
+   - Copy the script from the app's Pine Script dialog, not from GitHub. Only the app fills in
+     the webhook token; an alert that sends `USER_SECRET_PLACEHOLDER` is refused with 401.
+   - Create the alert on `BINANCE:BTCUSDT` `1D` with the `ZC Quant pw200` condition "Any
+     alert() function call" and the same webhook URL as the hourly alert. A price alert is not a
+     substitute.
+   - While both alerts run, 00:00Z closes both bars. Stored hourly signals carry the bar-close
+     second as `event_id` (`…T14:00:00Z`), so both alerts are expected to send the same
+     `event_id` then. `ingest_tradingview_signal` keeps one row per user, ticker, action and
+     `event_id`: when both send the same action, the later one is answered `duplicate` and not
+     stored, whichever version it is. After each 00:00Z fire, compare both alerts' fire times
+     with the stored rows.
+   - Both versions' pending signals are separate rows and both executable, so booking both
+     doubles the paper position.
 5. **Evidence:** app campaigns score TypeScript only, so their evidence is unaffected. Any study
    of TradingView signals starts a new campaign ID after the switch. `private-2026q4-001`
    stays frozen.

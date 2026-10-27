@@ -195,22 +195,7 @@ Open [http://localhost:8080](http://localhost:8080).
 
 ## Project structure
 
-```text
-pine/                     ZeroChart Quant HUD (Pine Script v6)
-src/
-├── components/           Workspace shell, Action Center, charts, dashboards, modals
-│   └── ui/               shadcn/ui primitives
-├── hooks/                Binance WebSocket, alert engine, price flash, session timeout
-├── integrations/         Supabase client re-exports, generated DB types, auth middleware
-├── lib/                  Pure engines: indicators, canonicalModel, risk, backtest, accounting
-│   └── finance.worker.ts Web Worker for heavy indicator and backtest math
-├── routes/               TanStack Start file-based routes
-└── test/                 Vitest suites
-supabase/
-├── functions/tv-webhook/ TradingView alert ingestion (Deno Edge Function)
-└── migrations/           The whole database schema, oldest first
-docs/                     Architecture, roadmap, and audit documents
-```
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the file tree (app, edge functions, scripts, database tests) and a map of where each feature lives.
 
 ## Quality gates
 
@@ -228,6 +213,7 @@ Vercel production builds also check that the production database has every migra
 
 | Document                                                 | What's inside                                                                                                  |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [Architecture](./ARCHITECTURE.md)                        | File tree and where each feature lives                                                                         |
 | [Hybrid architecture](./docs/hybrid-architecture.md)     | Target architecture, reusable engine inventory, and the path from JSONB snapshots to a normalized domain model |
 | [Hybrid roadmap](./docs/hybrid-roadmap.md)               | Milestone 1 and 2 plans, execution checkpoints, and open questions                                             |
 | [Roadmap](./docs/roadmap.md)                             | Completed launch milestones                                                                                    |

@@ -8,8 +8,8 @@
  * across environments. All browser-side entry points resolve configuration
  * here and share the single canonical client in `@/lib/supabaseClient`.
  *
- * NOTE: server-only code (`client.server.ts`, service-role) intentionally does
- * NOT import this module so browser env resolution never leaks server-side.
+ * NOTE: a future server-only (service-role) client must not import this
+ * module, so browser env resolution never leaks server-side.
  */
 
 /** Whether a value is one of the newer opaque Supabase API keys (not a legacy anon JWT). */

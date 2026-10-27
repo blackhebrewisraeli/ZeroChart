@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { response, range } = vi.hoisted(() => ({ response: vi.fn(), range: vi.fn() }));
-vi.mock('@/lib/supabase', () => ({
+vi.mock('@/lib/supabaseClient', () => ({
   supabase: {
     from: () => ({
       select: () => ({

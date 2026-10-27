@@ -1,5 +1,5 @@
 import { createMiddleware } from '@tanstack/react-start';
-import { supabase } from './client';
+import { supabase } from '@/lib/supabaseClient';
 
 // Must be registered as a global `functionMiddleware` in `src/start.ts`; otherwise
 // the browser never attaches the bearer token to serverFn RPCs.

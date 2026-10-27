@@ -288,15 +288,6 @@ function scoredDecision(
   };
 }
 
-export function createEvaluationConfig(
-  input: Omit<EvaluationConfig, 'configurationId'> & { configurationId?: string },
-): EvaluationConfig {
-  return {
-    ...input,
-    configurationId: input.configurationId ?? 'unhashed-configuration',
-  };
-}
-
 export function normalizeEvaluationInput(input: EvaluationInput): EvaluationInput {
   return {
     evaluationTime: input.evaluationTime,

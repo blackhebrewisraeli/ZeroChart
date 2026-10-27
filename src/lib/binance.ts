@@ -123,12 +123,3 @@ export async function fetchHistoricalCandles(
   if (!isBinanceCrypto(ticker)) return [];
   return parseCandles(await fetchRawKlines(ticker, interval, limit));
 }
-
-/**
- * Fetches one year (365 days) of daily candles for a crypto asset from
- * Binance's public REST API. Returns an empty array for non-crypto tickers
- * without making a network request.
- */
-export async function fetchYearlyKlines(ticker: string): Promise<Kline[]> {
-  return fetchHistoricalKlines(ticker, '1d', 365);
-}

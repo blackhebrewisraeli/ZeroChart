@@ -19,6 +19,7 @@ import {
 } from '@/lib/tradeLedger';
 import { mergeLivePrices, useLivePrices } from '@/lib/livePriceStore';
 import { formatShares, MAX_PORTFOLIO_RISK_PERCENT } from '@/lib/risk';
+import { Shares } from '@/components/Shares';
 import { ActionCenter } from '@/components/ActionCenter';
 import { SignalDiagnostics } from '@/components/SignalDiagnostics';
 import { AssetChart } from '@/components/AssetChart';
@@ -111,7 +112,9 @@ function PositionRow({
           {position.ticker}
         </button>
       </td>
-      <td>{formatShares(position.shares)}</td>
+      <td>
+        <Shares value={position.shares} />
+      </td>
       <td>{formatPrice(position.buyPrice)}</td>
       <td className={priceFlash}>{hasPrice ? formatPrice(price) : '—'}</td>
       <td>{hasPrice ? formatPrice(price * position.shares) : '—'}</td>
@@ -310,7 +313,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
       return;
     }
     toast.success(`${side === 'buy' ? 'Added to' : 'Trimmed'} ${position.ticker}`, {
-      description: `${formatShares(shares)} at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
+      description: `${formatShares(shares)} ${position.ticker} at ${formatPrice(price)} — simulated fill in your Paper Trading ledger.`,
     });
   }
 

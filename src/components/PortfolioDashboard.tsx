@@ -45,7 +45,7 @@ import {
   frictionBps,
   tradeLedgerCsv,
 } from '@/lib/tradeLedger';
-import { formatShares } from '@/lib/risk';
+import { Shares } from '@/components/Shares';
 import { useAuth } from '@/lib/authStore';
 import {
   mergeLivePrices,
@@ -343,7 +343,9 @@ function HoldingRow({
           <span className="holding-name">{asset?.name ?? position.ticker}</span>
         </div>
         <div className="holding-cell holding-cell-secondary">
-          <span className="holding-cell-value">{formatShares(position.shares)}</span>
+          <span className="holding-cell-value">
+            <Shares value={position.shares} />
+          </span>
           <span className="holding-cell-label">Shares</span>
         </div>
         <div className="holding-cell holding-cell-secondary">
@@ -575,9 +577,11 @@ export function TradeLedger({
                         </td>
                         <td>{transaction.ticker ?? '—'}</td>
                         <td>
-                          {transaction.shares !== undefined
-                            ? formatShares(transaction.shares)
-                            : '—'}
+                          {transaction.shares === undefined ? (
+                            '—'
+                          ) : (
+                            <Shares value={transaction.shares} />
+                          )}
                         </td>
                         <td>
                           {transaction.price !== undefined ? formatPrice(transaction.price) : '—'}

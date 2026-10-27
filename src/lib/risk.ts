@@ -5,6 +5,8 @@
  * for the O(1) sizing helpers — never blocking renders with heavy loops.
  */
 
+import { exceedsHolding, heldShares, type PortfolioContainer } from '@/lib/portfolioAccounting';
+
 /** Fraction of capital risked per trade by default (2%). */
 export const DEFAULT_RISK_PERCENT = 0.02;
 
@@ -235,6 +237,24 @@ const percent = (fraction: number) =>
   fraction.toLocaleString('en-US', { style: 'percent', maximumFractionDigits: 1 });
 
 /**
+ * The pre-trade gate for a SELL of `shares` of `ticker`: no more than the
+ * holding, by the same rule as applySellTransaction and check_paper_transaction.
+ * It never shortens the order. `price` adds what the holding is worth.
+ */
+export function checkSell(
+  container: PortfolioContainer,
+  ticker: string,
+  shares: number,
+  price?: number,
+): EntryCheck {
+  const held = heldShares(container, ticker);
+  if (held <= 0) return { ok: false, reason: `No open ${ticker} position to sell.` };
+  if (!exceedsHolding(shares, held)) return { ok: true };
+  const worth = price ? ` (${usd(held * price)})` : '';
+  return { ok: false, reason: `Only ${formatShares(held)} ${ticker} available to sell${worth}.` };
+}
+
+/**
  * The portfolio risk manager's pre-trade gate for a new entry (a BUY). Denies it when
  *   1. its cost (notional + fee) is more than the free cash, or
  *   2. Aggregate Open Risk plus the order's own (entry − stop) × quantity would
@@ -265,13 +285,20 @@ export function checkNewEntry(
   return { ok: true };
 }
 
-/** Formats a share quantity for display, trimming to sensible precision. */
+/** Units are booked to 1e-8: execute_paper_portfolio floors every order to it. */
+const SHARE_DECIMALS = 8;
+
+/**
+ * A unit quantity at the ledger's 1e-8 precision with trailing zeros trimmed,
+ * so a planned or booked quantity reads as booked (1.99501247, never "2").
+ * A browser-side value finer than that reads "≈", and positive dust reads
+ * "<0.00000001", never 0.
+ */
 export function formatShares(shares: number): string {
   if (!Number.isFinite(shares) || shares <= 0) return '—';
-  let decimals = 4;
-  if (shares >= 100) decimals = 1;
-  else if (shares >= 1) decimals = 2;
-  return Number(shares.toFixed(decimals)).toLocaleString('en-US', {
-    maximumFractionDigits: 4,
-  });
+  const rounded = Number(shares.toFixed(SHARE_DECIMALS));
+  if (rounded === 0) return '<0.00000001';
+  const text = rounded.toLocaleString('en-US', { maximumFractionDigits: SHARE_DECIMALS });
+  // Float noise (19.211316359999998) is not precision worth flagging.
+  return Math.abs(rounded - shares) > shares * 1e-12 ? `≈${text}` : text;
 }

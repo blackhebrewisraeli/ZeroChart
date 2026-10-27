@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { formatPrice, scoreTone, type Asset } from '@/lib/assets';
+import type { PortfolioReceipt } from '@/lib/db';
 import { PricingModal } from '@/components/PricingModal';
 import { type Allocation, type RiskProfile } from '@/lib/portfolioBuilder';
 import { useAuth } from '@/lib/authStore';
@@ -21,7 +22,7 @@ import {
   RISK_PROFILE_POLICIES,
   type PortfolioBuildDiagnostics,
 } from '@/lib/roboAdvisor';
-import { formatShares } from '@/lib/risk';
+import { Shares } from '@/components/Shares';
 import { MIN_CANDLES, REGIME_LABELS } from '@/lib/canonicalModel';
 import { ANNUAL_RETURN_BY_RISK, projectWealth } from '@/lib/dca';
 import { usePortfolio } from '@/lib/portfolioStore';
@@ -73,44 +74,101 @@ function formatWeight(weight: number) {
 }
 
 type Proposal = ReturnType<typeof useProposalExecution>;
+type PlanOrder = PortfolioReceipt['orders'][number];
+
+/** What a repriced order was before, when its units or price moved; `added` when it is new. */
+function orderChange(order: PlanOrder, prior: PortfolioReceipt | null) {
+  if (!prior) return null;
+  const before = prior.orders.find((o) => o.ticker === order.ticker);
+  if (!before) return 'added' as const;
+  return before.quantity === order.quantity && before.price === order.price ? null : before;
+}
+
+/** After a reprice: whether the plan moved, so the owner reviews it before confirming. */
+function RepriceNote({
+  plan,
+  prior,
+}: Readonly<{ plan: PortfolioReceipt; prior: PortfolioReceipt }>) {
+  const dropped = prior.orders
+    .filter((before) => !plan.orders.some((order) => order.ticker === before.ticker))
+    .map((before) => before.ticker);
+  const moved = dropped.length > 0 || plan.orders.some((order) => orderChange(order, prior));
+  return (
+    <p className={cn('robo-plan-repriced', moved && 'is-changed')} role="status">
+      {moved
+        ? 'Repriced: this plan changed since you last saw it. Review the marked rows before you confirm.'
+        : 'Repriced: nothing changed since the plan you last saw.'}
+      {dropped.length > 0 && ` No longer in the plan: ${dropped.join(', ')}.`}
+    </p>
+  );
+}
 
 /** The orders the server will book, or the receipt once it has. */
 function PlanDetails({ proposal }: Readonly<{ proposal: Proposal }>) {
-  const { plan, planError, execution } = proposal;
+  const { plan, planError, priorPlan, execution } = proposal;
   if (planError) {
     return (
-      <p className="robo-error" role="alert">
-        Can't book this proposal: {planError}
-      </p>
+      <>
+        <p className="robo-error" role="alert">
+          Can't book this proposal: {planError}
+        </p>
+        {proposal.reprice && (
+          <p className="robo-hint">
+            Your budget, risk profile and holdings are kept. Reprice once the data is current;
+            nothing books until you confirm the new plan.
+          </p>
+        )}
+      </>
     );
   }
   if (!plan) {
     return <output className="robo-hint">Checking prices and Paper Cash on the server…</output>;
   }
   const sized = Number.isFinite(plan.planned_risk);
+  const booked = execution.state === 'completed';
   return (
     <>
+      {priorPlan && <RepriceNote plan={plan} prior={priorPlan} />}
       <div className="robo-plan-scroll">
         <table className="robo-plan-table">
           <thead>
             <tr>
               <th scope="col">Asset</th>
-              <th scope="col">Units</th>
+              <th scope="col">{booked ? 'Booked units' : 'Planned units'}</th>
               <th scope="col">Price</th>
               <th scope="col">Fee</th>
               <th scope="col">Cost</th>
             </tr>
           </thead>
           <tbody>
-            {plan.orders.map((order) => (
-              <tr key={order.ticker}>
-                <th scope="row">{order.ticker}</th>
-                <td>{formatShares(order.quantity)}</td>
-                <td>{formatPrice(order.price)}</td>
-                <td>{formatPrice(order.fees)}</td>
-                <td>{formatPrice(order.cost)}</td>
-              </tr>
-            ))}
+            {plan.orders.map((order) => {
+              const change = orderChange(order, priorPlan);
+              const before = change === 'added' ? null : change;
+              return (
+                <tr key={order.ticker} className={cn(change && 'is-changed')}>
+                  <th scope="row">
+                    {order.ticker}
+                    {change === 'added' && <span className="robo-plan-was">new</span>}
+                  </th>
+                  <td>
+                    <Shares value={order.quantity} />
+                    {before && before.quantity !== order.quantity && (
+                      <span className="robo-plan-was">
+                        was <Shares value={before.quantity} />
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {formatPrice(order.price)}
+                    {before && before.price !== order.price && (
+                      <span className="robo-plan-was">was {formatPrice(before.price)}</span>
+                    )}
+                  </td>
+                  <td>{formatPrice(order.fees)}</td>
+                  <td>{formatPrice(order.cost)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -187,11 +245,27 @@ function ExecutionNote({ proposal }: Readonly<{ proposal: Proposal }>) {
 }
 
 function ProposalOrders({ proposal }: Readonly<{ proposal: Proposal }>) {
+  const { reprice, repriceReady } = proposal;
   return (
     <section className="robo-plan" aria-labelledby="robo-plan-title">
-      <h3 id="robo-plan-title" className="robo-plan-title">
-        {proposal.execution.state === 'completed' ? 'Receipt' : 'Orders'}
-      </h3>
+      <div className="robo-plan-head">
+        <h3 id="robo-plan-title" className="robo-plan-title">
+          {proposal.execution.state === 'completed' ? 'Receipt' : 'Orders'}
+        </h3>
+        {/* aria-disabled, not disabled, while it prices: the pressed button
+            keeps keyboard focus. */}
+        {reprice && (
+          <button
+            type="button"
+            className="robo-reprice"
+            aria-disabled={!repriceReady || undefined}
+            title="Price this proposal again with current server data. Nothing books until you confirm."
+            onClick={reprice}
+          >
+            <RefreshCw size={13} aria-hidden="true" /> Reprice
+          </button>
+        )}
+      </div>
       <PlanDetails proposal={proposal} />
       <ExecutionNote proposal={proposal} />
     </section>
@@ -241,6 +315,12 @@ function ProposalFooter({
   );
 }
 
+/** The browser's estimate until the server prices it, then what books, then what booked. */
+function sizeLabel(priced: boolean, booked: boolean) {
+  if (!priced) return 'Suggested size';
+  return booked ? 'Booked' : 'Planned';
+}
+
 function AllocationList({
   result,
   assetByTicker,
@@ -265,11 +345,10 @@ function AllocationList({
         const score = allocation.score ?? null;
         // Once priced, the size is what the order books, so the row
         // and the orders table never show two quantities.
-        const shares =
-          proposal.plan?.orders.find((order) => order.ticker === allocation.ticker.toUpperCase())
-            ?.quantity ??
-          allocation.suggestedShares ??
-          null;
+        const planned = proposal.plan?.orders.find(
+          (order) => order.ticker === allocation.ticker.toUpperCase(),
+        )?.quantity;
+        const shares = planned ?? allocation.suggestedShares ?? null;
         const hasInsights = Boolean(
           allocation.regime || allocation.rationale || allocation.components,
         );
@@ -348,9 +427,17 @@ function AllocationList({
                 className="robo-size"
                 title="Suggested position size — risks up to 2% of total capital on a 2×ATR(14) stop, capped at this holding's allocation"
               >
-                <span className="robo-size-label">Suggested size</span>
+                <span className="robo-size-label">
+                  {sizeLabel(planned !== undefined, proposal.execution.state === 'completed')}
+                </span>
                 <span className="robo-size-value">
-                  {shares !== null ? `${formatShares(shares)} shares` : '—'}
+                  {shares === null ? (
+                    '—'
+                  ) : (
+                    <>
+                      <Shares value={shares} /> units
+                    </>
+                  )}
                 </span>
               </span>
             </div>

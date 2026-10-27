@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 import type { Asset } from '@/lib/assets';
@@ -12,11 +12,16 @@ vi.mock('@/lib/supabaseClient', () => ({
     },
   },
 }));
-vi.mock('@/lib/db', () => ({
-  loadPortfolio: vi.fn(),
-  savePortfolioStateV3: vi.fn(),
-  PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
-}));
+vi.mock('@/lib/db', async () => {
+  const { paperDb } = await import('./paperDbFake');
+  return {
+    loadPortfolio: vi.fn(),
+    savePortfolioStateV3: vi.fn(),
+    insertPaperTransaction: paperDb.insertPaperTransaction,
+    loadPaperTransactions: paperDb.loadPaperTransactions,
+    PortfolioNotHydratedError: class PortfolioNotHydratedError extends Error {},
+  };
+});
 vi.mock('sonner', () => ({
   toast: { dismiss: vi.fn(), error: vi.fn(), info: vi.fn(), success: vi.fn() },
 }));
@@ -38,7 +43,8 @@ vi.mock('@/components/AuthModal', () => ({ AuthModal: () => null }));
 vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => new Map() }));
 
 import { AuthProvider } from '@/lib/authStore';
-import { PortfolioProvider } from '@/lib/portfolioStore';
+import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
+import { paperDb } from './paperDbFake';
 import type { CorePortfolioType } from '@/lib/portfolioAccounting';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { TradeTicket } from '@/components/TradeTicket';
@@ -245,5 +251,99 @@ describe('tactical Trade Ticket on the zone ledger', () => {
 
     expect(toast.error).not.toHaveBeenCalled();
     expect(screen.getByText('No simulation positions')).toBeInTheDocument();
+  });
+});
+
+describe('Paper Trading SELL review in the Trade Ticket', () => {
+  let store: ReturnType<typeof usePortfolio>;
+  function Probe() {
+    store = usePortfolio();
+    return null;
+  }
+  const buyAapl = (shares: number) =>
+    act(async () => {
+      await store.executePaperTrade({ side: 'buy', ticker: 'AAPL', shares, price: 100, fee: 0.25 });
+    });
+
+  /** Opens the paper ticket on Sell with `amount` USD; returns its submit button. */
+  function sellTicket(amount: string) {
+    fireEvent.click(screen.getByRole('button', { name: 'Paper trade' }));
+    const ticket = within(screen.getByRole('dialog', { name: 'Trade AAPL' }));
+    fireEvent.click(ticket.getByRole('button', { name: 'Sell' }));
+    fireEvent.change(ticket.getByLabelText('Order amount (USD)'), { target: { value: amount } });
+    return { ticket, submit: ticket.getByRole('button', { name: 'Sell AAPL' }) };
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    paperDb.rows.length = 0;
+    vi.clearAllMocks();
+    render(
+      <PortfolioProvider>
+        <TradeTicket
+          asset={aapl(100)}
+          portfolioType="paper_trading"
+          intent="tactical"
+          label="Paper trade"
+        />
+        <Probe />
+      </PortfolioProvider>,
+    );
+  });
+  afterEach(cleanup);
+
+  it('shows a SELL above the holding before it is sent, and updates with the holding', async () => {
+    await buyAapl(1);
+    const { ticket, submit } = sellTicket('150');
+
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAccessibleDescription('Only 1 AAPL available to sell ($100.00).');
+    // The estimate is the order as typed, never shortened to fit.
+    expect(ticket.getByText('≈ 1.5 AAPL')).toBeInTheDocument();
+
+    // The holding grows while the ticket is open.
+    await buyAapl(1);
+    expect(submit).toBeEnabled();
+    expect(submit).not.toHaveAttribute('aria-describedby');
+
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Sold AAPL', {
+        description:
+          '1.5 AAPL ($150.00) at $100.00 · fee $0.375 — recorded in your Paper Trading ledger.',
+      }),
+    );
+    expect(store.portfolios.paper_trading.positions[0]?.shares).toBeCloseTo(0.5, 9);
+  });
+
+  it('keeps the ticket open with the server refusal when a SELL the browser allowed is refused', async () => {
+    act(() => store.switchScope('user-1'));
+    await buyAapl(1);
+    expect(paperDb.rows).toHaveLength(1);
+    // Another tab sold it first; this tab's ledger hasn't caught up.
+    paperDb.insertPaperTransaction.mockRejectedValueOnce(new Error('Insufficient shares'));
+
+    const { submit } = sellTicket('100');
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Insufficient shares'));
+    expect(screen.getByRole('dialog', { name: 'Trade AAPL' })).toBeInTheDocument();
+    expect(paperDb.rows).toHaveLength(1);
+    expect(store.portfolios.paper_trading.positions[0]?.shares).toBe(1);
+  });
+
+  it('books a paper SELL once when Sell is pressed twice', async () => {
+    act(() => store.switchScope('user-1'));
+    await buyAapl(1);
+    const { submit } = sellTicket('50');
+
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    expect(paperDb.insertPaperTransaction).toHaveBeenCalledTimes(2); // the BUY, then one SELL
+    expect(store.portfolios.paper_trading.positions[0]?.shares).toBeCloseTo(0.5, 9);
   });
 });

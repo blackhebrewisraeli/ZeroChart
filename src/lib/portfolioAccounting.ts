@@ -158,6 +158,19 @@ function normalizeTicker(ticker: string): string {
   return ticker.trim().toUpperCase();
 }
 
+/** Units of `ticker` across the container's positions (0 when none is open). */
+export function heldShares(container: PortfolioContainer, ticker: string): number {
+  const wanted = normalizeTicker(ticker);
+  return container.positions
+    .filter((position) => normalizeTicker(position.ticker) === wanted)
+    .reduce((sum, position) => sum + position.shares, 0);
+}
+
+/** A sell takes at most what is held, within check_paper_transaction's 1e-9: no short selling. */
+export function exceedsHolding(shares: number, held: number): boolean {
+  return shares - held > ZERO_SHARE_EPSILON;
+}
+
 function deterministicId(
   prefix: string,
   ticker: string,
@@ -466,7 +479,7 @@ export function applySellTransaction(
   if (!position) return { ok: false, container, error: 'Position not found' };
 
   const normalized = normalizePositionLots(position);
-  if (input.shares - normalized.shares > ZERO_SHARE_EPSILON) {
+  if (exceedsHolding(input.shares, normalized.shares)) {
     return { ok: false, container, error: 'Insufficient shares' };
   }
 

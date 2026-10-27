@@ -310,12 +310,13 @@ describe('RoboAdvisor results', () => {
     expect(scorePills[0]).toHaveTextContent('92');
     expect(scorePills[1]).toHaveTextContent('78');
 
-    // Suggested position size per holding (ATR model, 2% risk).
-    expect(screen.getAllByText('Suggested size')).toHaveLength(2);
+    // Position size per holding (ATR model, 2% risk). Signed out, the browser
+    // plan prices it right away, so the row reads what the guest ledger books.
+    expect(screen.getAllByText('Planned')).toHaveLength(2);
     const sizeTooltips = screen.getAllByTitle(/Suggested position size/);
     expect(sizeTooltips).toHaveLength(2);
-    expect(sizeTooltips[0]).toHaveTextContent('0.05 shares');
-    expect(sizeTooltips[1]).toHaveTextContent('0.5 shares');
+    expect(sizeTooltips[0]).toHaveTextContent('0.05 units');
+    expect(sizeTooltips[1]).toHaveTextContent('0.5 units');
 
     // White-box breakdown: regime badge, one-line thesis, and factor sub-scores.
     expect(screen.getByText('Trending')).toHaveAttribute('data-regime', 'TRENDING');
@@ -371,6 +372,6 @@ describe('RoboAdvisor results', () => {
     await waitFor(() => expect(screen.queryByText('Unlock the full quant stack')).toBeNull());
     // closeModal animates out before unmounting, so assert it never started.
     expect(document.querySelector('.robo-overlay')).not.toHaveClass('is-closing');
-    expect(screen.getAllByText('Suggested size')).toHaveLength(2);
+    expect(screen.getAllByText('Planned')).toHaveLength(2);
   });
 });

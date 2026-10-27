@@ -9,6 +9,7 @@ import {
 import {
   aggregateOpenRisk,
   checkNewEntry,
+  checkSell,
   DEFAULT_ATR_STOP_MULTIPLIER,
   DEFAULT_RISK_PERCENT,
   formatShares,
@@ -286,12 +287,67 @@ describe('checkNewEntry (portfolio risk manager)', () => {
 });
 
 describe('formatShares', () => {
-  it('formats share quantities at sensible precision', () => {
+  it("shows a quantity at the ledger's 1e-8 precision, trailing zeros trimmed", () => {
     expect(formatShares(25)).toBe('25');
-    expect(formatShares(66.6667)).toBe('66.67');
-    expect(formatShares(1234.567)).toBe('1,234.6');
+    expect(formatShares(66.6667)).toBe('66.6667');
+    expect(formatShares(1234.567)).toBe('1,234.567');
     expect(formatShares(0.5)).toBe('0.5');
     expect(formatShares(0)).toBe('—');
+    expect(formatShares(-1)).toBe('—');
     expect(formatShares(Number.NaN)).toBe('—');
+  });
+
+  it('never rounds a quantity near a whole number into it', () => {
+    // The acceptance pass: 1.99501247 ZCTB read "2" next to its $100.00 cost.
+    expect(formatShares(1.99501247)).toBe('1.99501247');
+    expect(formatShares(1.99999999)).toBe('1.99999999');
+    expect(formatShares(2.00000001)).toBe('2.00000001');
+    expect(formatShares(99.99999999)).toBe('99.99999999');
+    expect(formatShares(124.6882793)).toBe('124.6882793');
+  });
+
+  it('keeps a very small positive holding visible instead of showing 0', () => {
+    expect(formatShares(0.00000001)).toBe('0.00000001');
+    expect(formatShares(0.00004)).toBe('0.00004');
+    expect(formatShares(4e-9)).toBe('<0.00000001');
+  });
+
+  it('marks real rounding with ≈, and not float noise', () => {
+    expect(formatShares(44.42263272 - 25)).toBe('19.42263272'); // 19.422632720000003
+    expect(formatShares(0.1 + 0.2)).toBe('0.3');
+    // Browser-side quantities finer than 1e-8, e.g. a $100 ticket at $50.123.
+    expect(formatShares(100 / 50.123)).toBe('≈1.99509207');
+    expect(formatShares(10 / 3)).toBe('≈3.33333333');
+  });
+});
+
+describe('checkSell', () => {
+  const holding = (shares: number) =>
+    applyBuyTransaction(freshPaperContainer(), { ticker: 'ZCTA-USD', shares, price: 100 })
+      .container;
+
+  it('allows a sell of up to the whole holding, within the server tolerance', () => {
+    expect(checkSell(holding(19.21131636), 'ZCTA-USD', 19.21131636)).toEqual({ ok: true });
+    expect(checkSell(holding(19.21131636), 'zcta-usd', 5)).toEqual({ ok: true });
+    // check_paper_transaction allows held + 1e-9.
+    expect(checkSell(holding(1), 'ZCTA-USD', 1 + 5e-10)).toEqual({ ok: true });
+  });
+
+  it('names what is held, never shortening the order, when the sell is larger', () => {
+    expect(checkSell(holding(19.21131636), 'ZCTA-USD', 25, 103)).toEqual({
+      ok: false,
+      reason: 'Only 19.21131636 ZCTA-USD available to sell ($1,978.77).',
+    });
+    expect(checkSell(holding(0.00000001), 'ZCTA-USD', 0.00000002)).toEqual({
+      ok: false,
+      reason: 'Only 0.00000001 ZCTA-USD available to sell.',
+    });
+  });
+
+  it('refuses a sell with no open position: no short selling', () => {
+    expect(checkSell(freshPaperContainer(), 'ZCTA-USD', 1)).toEqual({
+      ok: false,
+      reason: 'No open ZCTA-USD position to sell.',
+    });
   });
 });

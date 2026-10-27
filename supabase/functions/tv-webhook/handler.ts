@@ -3,7 +3,7 @@
 import { parseSignal, readToken, sha256Hex, type SignalInsert } from './payload.ts';
 
 /** The RPC's answer; 'authorized' only comes back for a null signal. */
-export type Ingested = 'accepted' | 'duplicate' | 'unauthorized' | 'authorized';
+export type Ingested = 'accepted' | 'duplicate' | 'conflict' | 'unauthorized' | 'authorized';
 
 export interface WebhookDeps {
   /** One database round trip: authenticates the token digest and, given a signal, records it. */
@@ -17,6 +17,7 @@ export interface WebhookDeps {
 export type Outcome =
   | 'accepted'
   | 'duplicate'
+  | 'identity_conflict'
   | 'auth_missing'
   | 'auth_invalid'
   | 'validation_failed'
@@ -93,6 +94,8 @@ export async function handleWebhook(req: Request, deps: WebhookDeps): Promise<Re
     return done('auth_invalid', 401, { error: 'Invalid secret_token' });
   if (!parsed.ok) return done('validation_failed', 400, { error: parsed.error }, parsed.error);
   if (result === 'duplicate') return done('duplicate', 200, { ok: true, duplicate: true });
+  if (result === 'conflict')
+    return done('identity_conflict', 409, { error: 'Conflicting delivery for saved event' });
   if (result === 'accepted') return done('accepted', 201, { ok: true });
   return done('db_error', 500, { error: 'Could not record signal' }, `unexpected ${result}`);
 }

@@ -59,6 +59,13 @@ describe('tv-webhook handler', () => {
     expect(log[0]).toMatchObject({ outcome: 'duplicate' });
   });
 
+  it('refuses changed content for an existing logical event', async () => {
+    const { status, body, log } = await deliver(alert, 'conflict');
+    expect(status).toBe(409);
+    expect(body).toEqual({ error: 'Conflicting delivery for saved event' });
+    expect(log[0]).toMatchObject({ outcome: 'identity_conflict' });
+  });
+
   it('rejects an unknown token before revealing validation errors', async () => {
     const { status, body, ingest, log } = await deliver(
       { ...alert, action: 'HOLD' },

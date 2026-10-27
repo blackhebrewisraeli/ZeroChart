@@ -24,7 +24,7 @@ A TradingView Pine Script HUD that scores every bar, and a React + Supabase comm
 
 ## The ecosystem
 
-ZeroChart is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. The two agree closely on a long daily chart, but they are not identical: Pine computes on the chart's whole history with TradingView's built-in indicators, while the app re-scores the latest 200 daily candles, so short histories, flat prices, other timeframes and rounding ties can score differently. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
+ZeroChart is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. On TradingView's `BINANCE:BTCUSDT` daily chart they agreed on every compared bar, but they are not identical: Pine computes on the chart's whole history with TradingView's built-in indicators, while the app re-scores the latest 200 daily candles, so flat prices, other timeframes and rounding ties can score differently. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
 
 |                      | **ZeroChart Quant HUD**                                                                                    | **ZeroChart Command Center**                                                                             |
 | -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "description": "Pine Logs captured verbatim from pine/diagnostics/zerochart_parity_selfcheck.pine running on TradingView. Real Pine runtime output; compare with npm test (scripts/pine-parity.test.ts).",
+  "capturedAt": "2026-10-27T01:13:00Z/2026-10-27T01:22:30Z",
+  "runtime": "TradingView web, Pine Script v6, Essential plan (Export chart data unavailable), new layout 'ZC Parity Harness', BINANCE:BTCUSDT 1D, script added unsaved; no alert created or edited",
+  "script": {
+    "path": "pine/diagnostics/zerochart_parity_selfcheck.pine",
+    "commit": "e573224912c5346b6c4417110ef41f20b68d22e6",
+    "sha256": "8b59c2a9e8829bac46d212829f8f24b8f406fabdd79951d03a2c7c6be5e49180",
+    "editorReadback": "byte-identical (47,114 bytes)"
+  },
+  "harnessFirstRun": "pine/diagnostics/zerochart_parity_harness.pine (sha256 9d59750f6390bf971309c659eeb6e5092e4b1d057eb23da7533117c628e9cdc7) compiled and ran on the same chart with no compile or runtime error",
+  "runs": {
+    "Chart": [
+      "[2026-10-26T00:00:00.000-00:00]: zc_kp case=Chart bar=1099 cand=41.69275544278769|-364.86790893826446|2022.6362339894056 prod=41.692752867194876|-364.86795985427983|2022.636273012358",
+      "[2026-10-26T00:00:00.000-00:00]: zc_selfcheck case=Chart compared=365 candVsApp=0 prodVsPd=0 prodVsApp=0 h1ProdVsApp=0 inputs=564/564 firstCand=[] firstProd=[] firstInput=[]"
+    ],
+    "rising": [
+      "[2017-09-19T00:00:00.000-00:00]: zc_kp case=rising bar=33 cand=100|0|0.7459438098547908 prod=100|0|0.7459438098547908",
+      "[2017-11-24T00:00:00.000-00:00]: zc_kp case=rising bar=99 cand=100|0|0.7499695260182548 prod=100|0|0.7499695260182548",
+      "[2018-03-04T00:00:00.000-00:00]: zc_kp case=rising bar=199 cand=100|0|0.7499999815727355 prod=100|0|0.7499999815727355",
+      "[2018-03-05T00:00:00.000-00:00]: zc_kp case=rising bar=200 cand=100|0|0.7499999815727355 prod=100|0|0.7499999828889686",
+      "[2018-07-02T00:00:00.000-00:00]: zc_kp case=rising bar=319 cand=100|0|0.7499999815727355 prod=100|0|0.7499999999974689",
+      "[2026-10-26T00:00:00.000-00:00]: zc_selfcheck case=rising compared=320 candVsApp=0 prodVsPd=306 prodVsApp=0 h1ProdVsApp=306 inputs=0/0 firstCand=[] firstProd=[ 14:-/41MB 15:-/41MB 16:-/41MB] firstInput=[]"
+    ],
+    "falling": [
+      "[2017-09-19T00:00:00.000-00:00]: zc_kp case=falling bar=33 cand=0|0|0.7459438098547908 prod=0|0|0.7459438098547908",
+      "[2017-11-24T00:00:00.000-00:00]: zc_kp case=falling bar=99 cand=0|0|0.7499695260182548 prod=0|0|0.7499695260182548",
+      "[2018-03-04T00:00:00.000-00:00]: zc_kp case=falling bar=199 cand=0|0|0.7499999815727355 prod=0|0|0.7499999815727355",
+      "[2018-03-05T00:00:00.000-00:00]: zc_kp case=falling bar=200 cand=0|0|0.7499999815727355 prod=0|0|0.7499999828889686",
+      "[2018-07-02T00:00:00.000-00:00]: zc_kp case=falling bar=319 cand=0|0|0.7499999815727355 prod=0|0|0.7499999999974689",
+      "[2026-10-26T00:00:00.000-00:00]: zc_selfcheck case=falling compared=320 candVsApp=0 prodVsPd=31 prodVsApp=0 h1ProdVsApp=31 inputs=0/0 firstCand=[] firstProd=[ 14:-/83MN 15:-/83MN 16:-/83MN] firstInput=[]"
+    ],
+    "flat": [
+      "[2017-09-19T00:00:00.000-00:00]: zc_kp case=flat bar=33 cand=50|0|0 prod=100|0|0",
+      "[2017-11-24T00:00:00.000-00:00]: zc_kp case=flat bar=99 cand=50|0|0 prod=100|0|0",
+      "[2018-03-04T00:00:00.000-00:00]: zc_kp case=flat bar=199 cand=50|0|0 prod=100|0|0",
+      "[2018-03-05T00:00:00.000-00:00]: zc_kp case=flat bar=200 cand=50|0|0 prod=100|0|0",
+      "[2018-07-02T00:00:00.000-00:00]: zc_kp case=flat bar=319 cand=50|0|0 prod=100|0|0",
+      "[2026-10-26T00:00:00.000-00:00]: zc_selfcheck case=flat compared=320 candVsApp=0 prodVsPd=19 prodVsApp=287 h1ProdVsApp=306 inputs=0/0 firstCand=[] firstProd=[ 14:-/35MN 15:-/35MN 16:-/35MN] firstInput=[]"
+    ],
+    "irregular": [
+      "[2017-09-19T00:00:00.000-00:00]: zc_kp case=irregular bar=33 cand=50.58750410072062|5.5230432420073114|16.33763759478116 prod=50.58750410072062|5.5230432420073114|16.33763759478116",
+      "[2017-11-24T00:00:00.000-00:00]: zc_kp case=irregular bar=99 cand=45.48149592730595|-4.31878187999342|19.92303619464852 prod=45.48149592730595|-4.31878187999342|19.92303619464852",
+      "[2018-03-04T00:00:00.000-00:00]: zc_kp case=irregular bar=199 cand=52.63067952036575|24.143027803770345|109.33466296597058 prod=52.63067952036575|24.143027803770252|109.33466296597058",
+      "[2018-03-05T00:00:00.000-00:00]: zc_kp case=irregular bar=200 cand=53.632531318588455|27.33167016332839|103.79290240090658 prod=53.63253152662178|27.33166951319556|103.79290132554411",
+      "[2018-07-02T00:00:00.000-00:00]: zc_kp case=irregular bar=319 cand=42.80399952528815|-7.97666301172378|17.051116132006708 prod=42.80399530705106|-7.9766332365111685|17.051119216392824",
+      "[2026-10-26T00:00:00.000-00:00]: zc_selfcheck case=irregular compared=320 candVsApp=0 prodVsPd=44 prodVsApp=0 h1ProdVsApp=44 inputs=0/0 firstCand=[] firstProd=[ 14:-/57NN 15:-/58NN 16:-/56NN] firstInput=[]"
+    ],
+    "threshold": [
+      "[2017-09-19T00:00:00.000-00:00]: zc_kp case=threshold bar=33 cand=50.58750410072062|5.5230432420073114|16.33763759478116 prod=50.58750410072062|5.5230432420073114|16.33763759478116",
+      "[2017-11-24T00:00:00.000-00:00]: zc_kp case=threshold bar=99 cand=45.48149592730595|-4.31878187999342|19.92303619464852 prod=45.48149592730595|-4.31878187999342|19.92303619464852",
+      "[2018-03-04T00:00:00.000-00:00]: zc_kp case=threshold bar=199 cand=52.89973165189792|3.435254799769434|20.7187796971192 prod=52.89973165189792|3.435254799769434|20.7187796971192",
+      "[2018-03-05T00:00:00.000-00:00]: zc_kp case=threshold bar=200 cand=58.21050171532227|5.604438090377276|21.50672507983032 prod=58.21050309414501|5.604437440244552|21.506724004467827",
+      "[2018-05-04T00:00:00.000-00:00]: zc_kp case=threshold bar=260 cand=77.64203732053683|14.562713503122197|38.20922317077719 prod=77.64203139345506|14.56271379360956|38.209225394091554",
+      "[2026-10-26T00:00:00.000-00:00]: zc_selfcheck case=threshold compared=261 candVsApp=0 prodVsPd=44 prodVsApp=1 h1ProdVsApp=45 inputs=0/0 firstCand=[] firstProd=[ 14:-/57NN 15:-/58NN 16:-/56NN] firstInput=[]"
+    ]
+  }
+}

@@ -1,10 +1,12 @@
 // @vitest-environment node
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import fixturesJson from '../docs/pine-parity-fixtures.json';
 import snapshotJson from '../docs/pine-parity-btcusdt-1d.json';
+import runtimeJson from '../docs/pine-parity-runtime-2026-10-27.json';
 import { CANONICAL_MODEL_VERSION, MIN_CANDLES } from '@/lib/canonicalModel';
 import { buildPineScript } from '@/lib/pineScriptTemplate';
 import { parseSignal } from '../supabase/functions/tv-webhook/payload';
@@ -16,6 +18,7 @@ import {
   decisions,
   parsePineExport,
   readWindow,
+  selfCheckPine,
   snapshotCandles,
   verifyAgainstReference,
   type ParityFixtures,
@@ -82,6 +85,79 @@ describe('discrepancy matrix claims (Decimal models, not Pine runtime evidence)'
     const custom = threshold.perBar.customInit.at(-1);
     expect([app, custom].map((compact) => Number(compact?.slice(0, -2))).sort()).toEqual([59, 60]);
     expect(decisions(app ?? null)[1]).not.toBe(decisions(custom ?? null)[1]);
+  });
+});
+
+describe('Pine runtime evidence (TradingView, 2026-10-27, docs/pine-parity-runtime-2026-10-27.json)', () => {
+  const runs = runtimeJson.runs as Record<string, string[]>;
+  const fixtureFor = (run: string) =>
+    fixtures.cases.find((item) => (run === 'Chart' ? !item.candles : item.name === run))!;
+  const summary = (run: string) =>
+    Object.fromEntries(
+      [...runs[run]!.at(-1)!.matchAll(/(\w+)=(\d+)(?:\/(\d+))?/g)].map((match) => [
+        match[1]!,
+        Number(match[2]),
+      ]),
+    );
+  const keyPoints = Object.entries(runs).flatMap(([run, lines]) =>
+    lines.flatMap((line) => {
+      const match = line.match(/bar=(\d+) cand=(\S+) prod=(\S+)/);
+      if (!match) return [];
+      const values = (text: string) => {
+        const [rsi, histogram, atr] = text.split('|').map(Number);
+        return { rsi: rsi!, histogram: histogram!, atr: atr! };
+      };
+      return [{ run, bar: Number(match[1]), cand: values(match[2]!), prod: values(match[3]!) }];
+    }),
+  );
+  const relative = (a: number, b: number) => (a === b ? 0 : Math.abs(a - b) / Math.abs(b));
+
+  it('ran the committed self-check, byte for byte', () => {
+    const source = readFileSync('pine/diagnostics/zerochart_parity_selfcheck.pine');
+    expect(createHash('sha256').update(source).digest('hex')).toBe(runtimeJson.script.sha256);
+  });
+
+  it('the candidate reproduced every app reading in Pine, and Pine saw the snapshot bars', () => {
+    for (const run of Object.keys(runs)) {
+      expect(summary(run), run).toMatchObject({
+        compared: fixtureFor(run).perBar.app.length,
+        candVsApp: 0,
+      });
+    }
+    expect(runs['Chart']!.at(-1)).toContain('inputs=564/564');
+  });
+
+  it('candidate indicators equal production TypeScript within 1e-14, not always bit for bit', () => {
+    const errors = keyPoints.flatMap(({ run, bar, cand }) => {
+      const candles = fixtureFor(run).candles;
+      const start = bar - MODEL_WINDOW + 1;
+      const window = candles
+        ? candles.closes.slice(Math.max(0, start), bar + 1).map((close, offset) => ({
+            high: candles.highs[Math.max(0, start) + offset]!,
+            low: candles.lows[Math.max(0, start) + offset]!,
+            close,
+          }))
+        : snapshot.slice(start, bar + 1);
+      const ts = readWindow(window);
+      return (['rsi', 'histogram', 'atr'] as const).map((key) => relative(cand[key], ts[key]));
+    });
+    expect(errors).toHaveLength(26 * 3);
+    expect(Math.max(...errors)).toBeLessThan(1e-14);
+    // Same operation order, yet two histograms differ in the last bits at runtime.
+    expect(errors.filter((error) => error > 0)).toHaveLength(2);
+  });
+
+  it('production Pine follows SMA-seeded EMAs on continuous history, with RSI 100 when flat', () => {
+    for (const { run, bar, prod } of keyPoints) {
+      const { customInit, pineDocumented } = fixtureFor(run).keyPoints[String(bar)]!;
+      const rsi = run === 'flat' ? 100 : customInit!.rsi;
+      expect(relative(prod.rsi, rsi), `${run} ${bar}`).toBeLessThan(1e-13);
+      expect(relative(prod.histogram, customInit!.histogram), `${run} ${bar}`).toBeLessThan(1e-13);
+      expect(relative(prod.atr, customInit!.atr), `${run} ${bar}`).toBeLessThan(1e-13);
+      // Hypothesis H1's first-sample EMA is refuted during the transient.
+      if (run === 'rising' && bar === 33) expect(pineDocumented!.histogram).toBeGreaterThan(0.2);
+    }
+    expect(Object.keys(runs).map((run) => summary(run)['prodVsApp'])).toEqual([0, 0, 0, 287, 0, 1]);
   });
 });
 
@@ -238,5 +314,20 @@ describe('production path and candidate isolation (source checks, not runtime ev
 
   it('keeps the harness free of alerts and secrets', () => {
     expect(harness).not.toMatch(/alert(condition)?\(|USER_SECRET_PLACEHOLDER|secret_token/);
+  });
+
+  it('keeps the committed self-check generated from the harness and the fixtures', () => {
+    const selfCheck = read('pine/diagnostics/zerochart_parity_selfcheck.pine');
+    expect(selfCheck).toBe(selfCheckPine(harness, fixtures, snapshot));
+    expect(selfCheck.startsWith(harness)).toBe(true);
+    expect(selfCheck).not.toMatch(/alert(condition)?\(|USER_SECRET_PLACEHOLDER|secret_token/);
+    // Every case's expected app readings reach Pine complete and in bar order.
+    const branches = selfCheck.split(/\n {4}(?:else )?if barSource == "[^"]+"\n/).slice(1);
+    for (const [index, fixture] of fixtures.cases.entries()) {
+      const app = [...branches[index]!.matchAll(/array\.concat\(expApp, str\.split\("([^"]*)"/g)];
+      expect(app.flatMap((match) => match[1]!.split(','))).toEqual(
+        fixture.perBar.app.map((value) => value ?? '-'),
+      );
+    }
   });
 });

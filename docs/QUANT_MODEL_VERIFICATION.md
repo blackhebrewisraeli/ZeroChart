@@ -12,7 +12,9 @@ review. It is not evidence of predictive value, profitability, or suitability fo
   ranking, per-asset caps, and retained cash.
 - **B — Intentional convention difference:** ZeroChart MACD composes independently seeded
   fast and slow EMAs. TA-Lib's composite MACD aligns both seed windows to the slow EMA;
-  TradingView EMA starts its recurrence from the first sample. ZeroChart ATR defines the
+  TradingView's documentation describes an EMA started from the first sample, but at runtime
+  (2026-10-27) `ta.macd` followed ZeroChart's SMA seeds ([Pine parity
+  assessment](PINE_PARITY_ASSESSMENT.md)). ZeroChart ATR defines the
   first true range as `high - low`; TA-Lib ATR consumes a previous close and therefore first
   publishes one bar later. These are initialization conventions, not universal mathematical
   errors.
@@ -22,6 +24,10 @@ review. It is not evidence of predictive value, profitability, or suitability fo
   This PR does not change scores under model `1.0.0`; correcting either side would require a
   new model version, Pine parity changes, and a new campaign. Existing campaign evidence must
   remain labeled `1.0.0` and must not be rewritten.
+  **Runtime correction (2026-10-27):** the MACD part of this defect did not occur on
+  TradingView. Production Pine still differs from TypeScript on flat RSI windows (`ta.rsi`
+  returns 100, TypeScript 50) and once the 200-candle window rolls
+  ([Pine parity assessment](PINE_PARITY_ASSESSMENT.md)).
 - **D — Resolved at ingestion:** the pure OHLC model remains deliberately mathematical, while
   the shared `binance-daily-v1` boundary now sorts valid unordered input and rejects duplicate
   timestamps, missing daily intervals, invalid timestamp/close-time semantics, nonpositive or
@@ -63,8 +69,9 @@ signal and histogram (`MACD - signal`) first exist at index 33, so 34 closes are
 
 This exact composition is verified by the independent Decimal generator. It should not be
 called "TA-Lib MACD" without qualification: TA-Lib CLASSIC also uses SMA seeds, but its fast
-seed window is aligned to the end of the slow seed window. It also does not exactly reproduce
-TradingView `ta.macd()` during warm-up because TradingView EMA uses a first-sample seed.
+seed window is aligned to the end of the slow seed window. TradingView's documentation suggests
+a first-sample EMA seed, but at runtime on 2026-10-27 `ta.macd()` matched this composition
+through the warm-up ([Pine parity assessment](PINE_PARITY_ASSESSMENT.md)).
 
 ### Wilder ATR(14)
 
@@ -199,6 +206,8 @@ is required for the corrected version. Existing observations remain valid eviden
 `1.0.0` actually decided and must not be relabeled or rewritten.
 
 The follow-up [Pine parity assessment](PINE_PARITY_ASSESSMENT.md) takes the first option without
-changing TypeScript: an isolated, unverified Pine candidate recomputes the score on the app's
-200-candle window. It also shows that porting the seeds alone is not enough, because the app
+changing TypeScript: an isolated Pine candidate recomputes the score on the app's 200-candle
+window, and on 2026-10-27 it matched every app decision at runtime. Runtime also showed that
+TradingView's `ta.macd` already uses SMA seeds, so the second option would have created a
+difference rather than removed one. It also shows that porting the seeds alone is not enough, because the app
 re-seeds its rolling window daily while Pine keeps one continuous recurrence.

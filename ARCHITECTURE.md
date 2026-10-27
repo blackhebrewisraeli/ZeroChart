@@ -11,8 +11,8 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 .
 ├── pine/
 │   ├── zerochart_quant_hud.pine      Pine Script v6 HUD; inlined into the app via ?raw
-│   ├── candidates/                   Unverified, unserved correction candidates (never copied by the app)
-│   └── diagnostics/                  Parity harness: plots Pine readings for `npm run parity`
+│   ├── candidates/                   Unserved correction candidates (never copied by the app); runtime status in the parity doc
+│   └── diagnostics/                  Parity harness (export path) and generated in-Pine self-check
 ├── public/                           Static files served as-is (favicons, robots.txt)
 ├── src/
 │   ├── routes/                       File-based routes (TanStack Start); see routes/README.md

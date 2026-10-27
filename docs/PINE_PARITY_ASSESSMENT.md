@@ -4,7 +4,34 @@ Baseline: `main` at `a53b871`, canonical model `1.0.0`, production Pine
 [`pine/zerochart_quant_hud.pine`](../pine/zerochart_quant_hud.pine) unchanged. This is a
 numerical and decision-contract assessment. It says nothing about predictive value.
 
-## Findings
+**Runtime update (2026-10-27).** The harness, an in-Pine self-check and the candidate then ran
+on TradingView (section 4). Real Pine **refutes** the first-sample EMA part of hypothesis H1 and
+**confirms** its flat-RSI part, and the candidate reproduced every app decision. The runtime
+results below supersede the H1-based estimates where they differ. The Decimal matrix in section 2
+is kept unchanged as the pre-runtime model.
+
+## Runtime findings (TradingView, 2026-10-27)
+
+1. **The candidate matches the app on every compared bar.** Inside Pine, its readiness, score,
+   regime and momentum class equal the independent Decimal app reference on all 1,906 bars: 365
+   BTCUSDT days and all five fixtures. Its RSI, MACD histogram and ATR equal production
+   TypeScript at 24 of 26 key points bit for bit, and within `6.2e-15` relative at the other two.
+   That is decision-level parity, not bit-for-bit parity.
+2. **Production Pine follows ZeroChart's seeds, not a first-sample EMA.** `ta.macd` matched the
+   app's SMA-seeded MACD through the transient, and production Pine became ready at bar 33, the
+   app's first ready bar, not bar 14. Its indicators equal the `customInit` model within `5e-14`
+   relative at every key point, except on flat prices.
+3. **Flat prices change decisions.** `ta.rsi` returned 100 on a flat series, where the app
+   returns 50. Production Pine scored 35 against the app's 62 on all 287 ready bars of the
+   `flat` fixture, which flips conservative and moderate eligibility.
+4. **The rolling window still changes a tie.** On the `threshold` fixture's bar 260, production
+   Pine rounded to 60 and the app to 59, as the continuous-history model predicted. On 365
+   BTCUSDT days, the rising, falling and irregular fixtures, production Pine and the app
+   agreed on every bar.
+5. **TradingView's bars were the snapshot's bars.** High, low and close for `BINANCE:BTCUSDT`
+   `1D` from 2025-04-11 to 2026-10-26 (564 bars) equaled the Binance Spot snapshot exactly.
+
+## Pre-runtime findings (Decimal models, H1)
 
 1. **The production TypeScript model meets its own contract.** On all 1,906 evaluated bars
    (five synthetic cases and 365 real BTCUSDT days), production `evaluateCandles` reproduces the
@@ -23,36 +50,36 @@ numerical and decision-contract assessment. It says nothing about predictive val
    ready from bar 14, while the app reports `INSUFFICIENT_DATA` until bar 33. Through bar 199,
    the first-sample EMA moves the weighted score by up to 13.9 points (24 of 167 irregular bars
    round differently). A flat series scores 62 in the app, which is eligible, and 35 under the
-   documented RSI convention, which is not. Both results depend on hypothesis H1 below and are
-   unverified at runtime.
+   documented RSI convention, which is not. Both results depend on hypothesis H1 below.
+   **Runtime: the short-history part is refuted** (Pine is ready at bar 33 and has no
+   first-sample transient); **the flat part is confirmed.**
 5. **A Pine port of the seeds alone is insufficient.** It is exact while the chart and the app
    see the same finite window (bars 33-199). Once the window rolls, it drifts by up to `1.05e-4`
    points, and a constructed tie at bar 260 rounds to 60 in Pine but 59 in the app, which
    changes eligibility. 200 candles bound the drift. They do not guarantee convergence.
 6. **The isolated correction candidate**
    [`pine/candidates/zerochart_quant_hud_w200.pine`](../pine/candidates/zerochart_quant_hud_w200.pine)
-   recomputes the score on the app's window. Its equivalence to the app holds by construction,
-   but **it has not been compiled or run on TradingView. Pine runtime behavior, for production
-   and candidate alike, is unverified.**
+   recomputes the score on the app's window. **Runtime: it compiled, ran on the full BTCUSDT
+   `1D` history and matched every app decision (runtime finding 1).**
 
 ## 1. Comparison contract
 
 A Pine score and an app score are comparable only when every row of this table matches. A
 difference outside this contract is not a defect.
 
-| Dimension                 | App (`canonicalModel.ts`)                                                                                        | Production Pine HUD                                                                                                                                                                                              | Comparison rule                                                                                                    |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Exchange and instrument   | Binance Spot `GET /api/v3/klines`, symbol `BTCUSDT` (`toBinanceSymbol`)                                          | The chart symbol. `toTradingViewSymbol` maps crypto to `BINANCE:<base>USDT`                                                                                                                                      | `BINANCE:BTCUSDT` against Binance Spot `BTCUSDT`. Another venue, `BTCUSD` or a perpetual is a different instrument |
-| Timeframe and boundaries  | `1d`, open at `00:00:00.000Z`, close `open + 86,399,999 ms` ([candle contract](CANDLE_INPUT_CONTRACT.md))        | The chart resolution. The active alert uses `60`                                                                                                                                                                 | `1D` only. Hourly bars have no app contract, and the daily validator is never applied to them                      |
-| Closed bars               | Closed candles only. Open candles are excluded                                                                   | Historical bars are closed. The realtime bar recomputes on every tick. `alert()` uses `alert.freq_once_per_bar_close`. An `alertcondition` alert follows the trigger frequency chosen when the alert was created | Confirmed bars only (`barstate.isconfirmed`, exported as `zc_confirmed`)                                           |
-| History and anchor        | The latest `min(200, n)` closed candles, re-seeded on every evaluation. Fewer than 34 means `INSUFFICIENT_DATA`  | One recurrence from the chart's first loaded bar (the 2017 listing for daily BTCUSDT). The anchor depends on the history TradingView loads                                                                       | Identical only on the same finite window. Otherwise apply the bounded contract in section 2                        |
-| Input validation          | `binance-daily-v1`: gaps, duplicates and inconsistent OHLC are `DATA_INVALID`                                    | None                                                                                                                                                                                                             | Compare only windows that pass `binance-daily-v1`                                                                  |
-| RSI(14)                   | Wilder. The seed is the mean of the first 14 changes, first value at index 14. Flat (both averages 0) returns 50 | `ta.rsi(close, 14)`: Wilder through `ta.rma`, same seed. **Flat behavior is unverified.** H1 assumes 100, the `down == 0` guard used by TradingView's RSI indicator script; `ta.rsi` itself was not checked      | Identical except on flat windows, where the H1 convention diverges                                                 |
-| MACD(12, 26, 9)           | Independently SMA-seeded EMAs. Histogram from index 33 ([verification](QUANT_MODEL_VERIFICATION.md))             | `ta.macd`: TradingView EMA, documented as seeded by the first sample (H1). **Warm-up publication is unverified**                                                                                                 | Seed convention class B, decaying as `(25/27)^k` (slow EMA) and `0.8^k` (signal)                                   |
-| ATR(14)                   | First TR `high - low`, SMA seed of TR 0-13 at index 13, then Wilder                                              | `ta.atr(atrPeriod)` = `ta.rma(ta.tr(true), atrPeriod)`, the same convention **when ATR Period is 14**                                                                                                            | ATR Period must be 14. In production it moves the score, the size and the stop. The active alert uses 14           |
-| Factors, regime, rounding | Piecewise RSI curve, ±1% momentum saturation, 0.5%-5.5% volatility band, first-match regimes, `Math.round` once  | The same operations in the same order. `math.round` rounds ties up, which equals `Math.round` for nonnegative scores                                                                                             | Identical arithmetic. Last-bit differences in the Wilder/EMA recurrences can matter only at exact ties             |
-| Readiness                 | `INSUFFICIENT_DATA` below 34 candles or on a non-finite reading                                                  | `ready` once RSI, the MACD histogram and ATR are non-na (bar 14 under H1). Before that, `ZC Score` plots a score renormalized over the available factors                                                         | Pine's early bars have no app counterpart                                                                          |
-| Floating point            | IEEE-754 binary64                                                                                                | Assumed binary64 (unverified)                                                                                                                                                                                    | Tolerance `1e-12` relative for the reference check. Decisions compare exactly                                      |
+| Dimension                 | App (`canonicalModel.ts`)                                                                                        | Production Pine HUD                                                                                                                                                                                                 | Comparison rule                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Exchange and instrument   | Binance Spot `GET /api/v3/klines`, symbol `BTCUSDT` (`toBinanceSymbol`)                                          | The chart symbol. `toTradingViewSymbol` maps crypto to `BINANCE:<base>USDT`                                                                                                                                         | `BINANCE:BTCUSDT` against Binance Spot `BTCUSDT`. Another venue, `BTCUSD` or a perpetual is a different instrument |
+| Timeframe and boundaries  | `1d`, open at `00:00:00.000Z`, close `open + 86,399,999 ms` ([candle contract](CANDLE_INPUT_CONTRACT.md))        | The chart resolution. The active alert uses `60`                                                                                                                                                                    | `1D` only. Hourly bars have no app contract, and the daily validator is never applied to them                      |
+| Closed bars               | Closed candles only. Open candles are excluded                                                                   | Historical bars are closed. The realtime bar recomputes on every tick. `alert()` uses `alert.freq_once_per_bar_close`. An `alertcondition` alert follows the trigger frequency chosen when the alert was created    | Confirmed bars only (`barstate.isconfirmed`, exported as `zc_confirmed`)                                           |
+| History and anchor        | The latest `min(200, n)` closed candles, re-seeded on every evaluation. Fewer than 34 means `INSUFFICIENT_DATA`  | One recurrence from the chart's first loaded bar (the 2017 listing for daily BTCUSDT). The anchor depends on the history TradingView loads                                                                          | Identical only on the same finite window. Otherwise apply the bounded contract in section 2                        |
+| Input validation          | `binance-daily-v1`: gaps, duplicates and inconsistent OHLC are `DATA_INVALID`                                    | None                                                                                                                                                                                                                | Compare only windows that pass `binance-daily-v1`                                                                  |
+| RSI(14)                   | Wilder. The seed is the mean of the first 14 changes, first value at index 14. Flat (both averages 0) returns 50 | `ta.rsi(close, 14)`: Wilder through `ta.rma`, same seed. **Flat returns 100 (runtime, 2026-10-27)**                                                                                                                 | Identical except on flat windows, where Pine reads 100 and the app 50                                              |
+| MACD(12, 26, 9)           | Independently SMA-seeded EMAs. Histogram from index 33 ([verification](QUANT_MODEL_VERIFICATION.md))             | `ta.macd`: **runtime matches the app's SMA-seeded composition, histogram from index 33** (H1's first-sample seed is refuted)                                                                                        | Identical through the transient; differs only once the app's window rolls                                          |
+| ATR(14)                   | First TR `high - low`, SMA seed of TR 0-13 at index 13, then Wilder                                              | `ta.atr(atrPeriod)` = `ta.rma(ta.tr(true), atrPeriod)`, the same convention **when ATR Period is 14**                                                                                                               | ATR Period must be 14. In production it moves the score, the size and the stop. The active alert uses 14           |
+| Factors, regime, rounding | Piecewise RSI curve, ±1% momentum saturation, 0.5%-5.5% volatility band, first-match regimes, `Math.round` once  | The same operations in the same order. `math.round` rounds ties up, which equals `Math.round` for nonnegative scores                                                                                                | Identical arithmetic. Last-bit differences in the Wilder/EMA recurrences can matter only at exact ties             |
+| Readiness                 | `INSUFFICIENT_DATA` below 34 candles or on a non-finite reading                                                  | `ready` once RSI, the MACD histogram and ATR are non-na: **bar 33 at runtime**, the app's first ready bar. Before that, `ZC Score` plots a score renormalized over RSI and ATR, and every setup is gated on `ready` | Same first ready bar. Pine's partial pre-33 `ZC Score` has no app counterpart and drives no signal                 |
+| Floating point            | IEEE-754 binary64                                                                                                | Runtime values agree with TypeScript within `6.2e-15` relative, but not always bit for bit, even with the same operation order                                                                                      | Tolerance `1e-12` relative for the reference check. Decisions compare exactly                                      |
 
 ### What is compared, and what is not
 
@@ -78,11 +105,11 @@ The generator uses Python `Decimal` arithmetic and imports no TypeScript. It reu
 recurrences from `generate-quant-reference-fixtures.py`, which PR #88 verified independently.
 Every bar of every case is scored under three models:
 
-| Model            | Definition                                                                                                                                                                               | Status                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `app`            | ZeroChart contract: the last `min(200, n)` candles, SMA seeds, RSI 50 when flat, a 34-candle minimum                                                                                     | Production TypeScript matches it on every bar (`npm run parity`) |
-| `pineDocumented` | **Hypothesis H1**: first-sample `ta.ema`, SMA-seeded `ta.rma`, `ta.tr(true)`, continuous history from bar 0, RSI 100 when the average loss is 0, ready when RSI, MACD and ATR are non-na | A model of the documentation. **Not runtime evidence**           |
-| `customInit`     | ZeroChart's seeds on continuous history from bar 0, without the rolling window                                                                                                           | What a Pine port of the initialization alone computes            |
+| Model            | Definition                                                                                                                                                                               | Status                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `app`            | ZeroChart contract: the last `min(200, n)` candles, SMA seeds, RSI 50 when flat, a 34-candle minimum                                                                                     | Production TypeScript matches it on every bar (`npm run parity`)  |
+| `pineDocumented` | **Hypothesis H1**: first-sample `ta.ema`, SMA-seeded `ta.rma`, `ta.tr(true)`, continuous history from bar 0, RSI 100 when the average loss is 0, ready when RSI, MACD and ATR are non-na | A model of the documentation. **Runtime refuted its EMA seed**    |
+| `customInit`     | ZeroChart's seeds on continuous history from bar 0, without the rolling window                                                                                                           | **Runtime: production Pine follows it, except RSI 100 when flat** |
 
 Cases:
 
@@ -150,6 +177,26 @@ eligibility). In `btcusdt-1d`, both continuous models start at the snapshot's fi
 bars before the first evaluated bar, instead of at the 2017 listing. Earlier history moves their
 values by far less than the differences shown.
 
+### Runtime matrix (real Pine, 2026-10-27)
+
+Tallies logged by [`zerochart_parity_selfcheck.pine`](../pine/diagnostics/zerochart_parity_selfcheck.pine)
+on TradingView, verbatim in [`pine-parity-runtime-2026-10-27.json`](pine-parity-runtime-2026-10-27.json).
+A mismatch is any difference in readiness, rounded score, regime or momentum class on a confirmed
+bar. "H1 predicted" is the production-versus-app count if H1 had held.
+
+| Case       | Bars | Candidate ≠ app | Production ≠ app | H1 predicted | Production ≠ H1 | Production differences                                                 |
+| ---------- | ---: | --------------: | ---------------: | -----------: | --------------: | ---------------------------------------------------------------------- |
+| BTCUSDT 1D |  365 |               0 |                0 |            0 |               0 | None. Inputs equal the snapshot on 564/564 bars                        |
+| rising     |  320 |               0 |                0 |          306 |             306 | None. H1's early readiness and EMA transient do not occur              |
+| falling    |  320 |               0 |                0 |           31 |              31 | None                                                                   |
+| flat       |  320 |               0 |              287 |          306 |              19 | RSI 100 vs 50 on every ready bar: score 35 vs 62                       |
+| irregular  |  320 |               0 |                0 |           44 |              44 | None                                                                   |
+| threshold  |  261 |               0 |                1 |           45 |              44 | Bar 260 rounds to 60 vs 59 (rolling window), as `customInit` predicted |
+
+The 19 flat mismatches against H1 are bars 14 to 32, where H1 expected Pine to be ready. Key-point
+values (bars 33, 99, 199, 200 and the last bar of each case) are in the evidence file, and
+`npm test` checks every number in this table against it.
+
 ### Separating tolerance from decisions
 
 - **Numerical only:** after the window rolls, every difference is below `1.1e-4` weighted
@@ -158,7 +205,8 @@ values by far less than the differences shown.
 - **Changed decisions** come from three sources: Pine is ready before the app (bars 14-32);
   first-sample EMA transients through bar ~199, if H1 holds; and the flat-RSI convention, if
   H1 holds. A constructed tie shows the fourth source, rounding near a threshold, which no window
-  length removes.
+  length removes. **At runtime only the flat-RSI convention and the tie occurred.** The first
+  two sources do not exist on TradingView.
 
 ### Bounded-equivalence contract for production Pine
 
@@ -168,8 +216,9 @@ Production Pine and the app agree on a decision at a bar only when **all** of th
    ATR Period 14.
 2. The app's 200-candle window passes `binance-daily-v1`, and no averaged RSI gain/loss pair is
    0/0 (flat).
-3. The chart has at least about 200 bars before the window starts, so the first-sample transient
-   has decayed below the drift in item 4.
+3. The bar is at least the 34th on the chart (bar index 33). Runtime showed no first-sample
+   transient, so no extra warm-up is needed. Through bar 199 the app's window is the chart's
+   whole history and the two agree.
 4. The app's weighted score is more than the drift `ε` away from every rounding boundary that
    moves a decision (28.5, 59.5, 70.5, 77.5, 79.5), and each regime input is more than its drift
    away from its threshold (volatility 0.04, |momentum| 0.005, RSI 30/70, momentum 0 and 0.0005).
@@ -187,8 +236,9 @@ The candidate keeps the TypeScript model unchanged. Pine meets an explicitly def
 input-window contract instead, so no canonical model version, campaign or stored evaluation has
 to change.
 
-**Why custom initialization is not enough.** Porting the SMA seeds into Pine (`customInit`)
-removes every difference while the chart and the app share one finite window. After that, Pine's
+**Why custom initialization is not enough.** Runtime showed production Pine already uses
+the SMA seeds, so porting them changes nothing except the flat RSI. Seeds alone (`customInit`)
+remove every difference while the chart and the app share one finite window. After that, Pine's
 single recurrence keeps memory the app discards when it re-seeds each day. The matrix shows that
 drift, and the threshold case shows it changing eligibility. Exact agreement requires Pine to
 discard the same history the app does.
@@ -211,79 +261,85 @@ discard the same history the app does.
 **What it cannot fix:** the realtime bar is intrabar until it closes; Pine has no candle
 validation, so a gap the app would reject is still scored; sizing uses Pine's continuous
 `ta.atr(atrPeriod)`, not the app's windowed ATR; the timeframe is whatever the chart shows.
-Several hundred loop iterations per bar may approach TradingView's execution limits on
-long charts. That is unverified (see the `ponytail:` note in the script).
+The several hundred loop iterations per bar stayed inside TradingView's limits on the full
+BTCUSDT `1D` history from 2017 (runtime, 2026-10-27).
 
-If IEEE-754 binary64 arithmetic and the transcribed operation order both hold, the candidate
-should match the app bit for bit on confirmed daily bars. That is a design property, **not
-verified parity**.
+**Runtime result.** The candidate matched every app decision on 1,906 bars (runtime finding 1).
+It is not bit for bit: two of 26 key-point histograms differ from production TypeScript by up to
+`6.2e-15` relative (at most `1.7e-13` absolute), although the operation order is the same, so the
+Pine runtime's arithmetic is not exactly V8's. Those differences move the weighted score by far
+less than `1e-12` points. Decisions can therefore differ only when the app's weighted score sits
+within about `1e-12` of a rounding boundary, against `1.05e-4` observed for production Pine.
 
 ## 4. Pine runtime evidence
 
-**Status: unverified.** In this assessment, nothing compiled or ran Pine.
+**Status: the candidate's decision-level parity is verified at runtime on BTCUSDT `1D` and all
+five fixtures (2026-10-27).** Verbatim logs:
+[`pine-parity-runtime-2026-10-27.json`](pine-parity-runtime-2026-10-27.json), checked by `npm test`.
 
-- The TradingView MCP available here returns market data, alert metadata and watchlists. It has
-  no Pine compilation, execution or export.
-- No TradingView chart or Pine Editor was opened, and no alert was created, edited or inspected
-  beyond list metadata (id, symbol, resolution, active state, name with inputs, creation,
-  expiration and last fire time). No alert message, log entry, payload or token was read or printed.
-- TradingView's reference manual did not render outside a browser session, so H1 rests on the
-  documentation already cited in [QUANT_MODEL_VERIFICATION.md](QUANT_MODEL_VERIFICATION.md).
+### How it ran
 
-| Evidence                                                                  | Status                                                                                                                           |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Production TypeScript = independent Decimal `app` contract on 1,906 bars  | **Verified** (`npm run parity`, `scripts/pine-parity.test.ts`)                                                                   |
-| TradingView `BINANCE:BTCUSDT` bars = Binance Spot klines                  | **Verified, sampled only**: 5 closed `1D` and 3 closed `1h` bars matched exactly on 2026-10-27. The forming bar differed by 0.01 |
-| Active alert symbol, resolution and inputs                                | **Verified** from allowlisted metadata                                                                                           |
-| H1: first-sample `ta.ema`, flat `ta.rsi` = 100, Pine ready from bar 14    | **Unverified**                                                                                                                   |
-| Production Pine values on real bars                                       | **Unverified**                                                                                                                   |
-| Candidate compiles, stays inside TradingView's limits and matches the app | **Unverified**                                                                                                                   |
-| Pine floats are binary64                                                  | **Unverified**                                                                                                                   |
+- TradingView web, Pine Script v6, in the owner's browser with the owner's approval, on an
+  Essential plan. The scripts ran on a **new** layout, `ZC Parity Harness`, on `BINANCE:BTCUSDT`
+  `1D`. The layout that holds alert `5917202050` was not changed. No alert was created, edited or
+  opened, and no alert message, log, payload or token was read.
+- The harness compiled and ran without errors. Its export path was unavailable, because
+  "Download chart data" needs a higher plan, and no plan was purchased.
+- Instead, [`zerochart_parity_selfcheck.pine`](../pine/diagnostics/zerochart_parity_selfcheck.pine),
+  which `npm run parity -- --emit-selfcheck` generates, is the harness plus the Decimal fixtures'
+  per-bar readings and the snapshot's 564 input bars. Pine compares its own readings on every
+  confirmed bar and writes tallies and key-point values to Pine Logs. Six runs switched the
+  **Bars** input, and their log lines were copied verbatim.
+- Each script was fetched from GitHub at a pinned commit and read back from the editor. The
+  self-check (`e573224`, SHA-256 `8b59c2a9…`) and the candidate (`a5032d3`, SHA-256 `014af558…`)
+  were byte-identical to the repository.
+- The full candidate script then compiled and ran on the same chart with no compile or time-limit
+  error. Its HUD showed `Signal Score: 52 / 100 (1.0.0-pw200.c1)` on the forming bar, the same
+  as the harness's candidate reading.
 
-### Owner verification steps
+| Evidence                                                                     | Status                                                                                   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Production TypeScript = independent Decimal `app` contract on 1,906 bars     | **Verified** (`npm run parity`, `scripts/pine-parity.test.ts`)                           |
+| TradingView `BINANCE:BTCUSDT` `1D` bars = Binance Spot klines                | **Verified at runtime**: high, low and close equal on 564 bars, 2025-04-11 to 2026-10-26 |
+| Active alert symbol, resolution and inputs                                   | **Verified** from allowlisted metadata                                                   |
+| H1: first-sample `ta.ema`, Pine ready from bar 14                            | **Refuted at runtime**: `ta.macd` is SMA-seeded, and Pine is ready from bar 33           |
+| H1: flat `ta.rsi` = 100                                                      | **Confirmed at runtime**                                                                 |
+| Production Pine readings on real and fixture bars                            | **Measured at runtime** (runtime matrix and key points)                                  |
+| Candidate compiles, stays inside TradingView's limits, matches app decisions | **Verified at runtime** on BTCUSDT `1D` and all five fixtures                            |
+| Candidate equals the app bit for bit                                         | **Refuted**: within `6.2e-15` relative; 2 of 26 key-point histograms are not identical   |
+| Candidate alerts, webhook JSON and delivery                                  | **Not exercised**: no alert was created                                                  |
 
-The harness [`pine/diagnostics/zerochart_parity_harness.pine`](../pine/diagnostics/zerochart_parity_harness.pine)
-sends no alerts. It plots production-semantics readings (`zc_prod_*`) and candidate readings
-(`zc_cand_*`) side by side.
+### Reproduce
 
-1. In TradingView, open a **new** chart layout on `BINANCE:BTCUSDT`, `1D`. Leave the layout
-   that holds alert `5917202050` alone, and create no alerts.
-2. Pine Editor → New indicator → paste the harness → Add to chart. Note any compile error
-   verbatim. A compile error means the candidate code needs fixing too, since the window functions
-   are shared.
-3. Keep **Bars = Chart**. Chart menu → Export chart data (all bars, UNIX or ISO time). Then run:
+Self-check (any TradingView plan):
 
-   ```bash
-   npm run parity -- --pine-export ~/Downloads/<file>.csv
-   ```
+1. Open a **new** chart layout on `BINANCE:BTCUSDT`, `1D`. Leave the layout that holds alert
+   `5917202050` alone, and create no alerts.
+2. Pine Editor → New indicator → paste
+   [`pine/diagnostics/zerochart_parity_selfcheck.pine`](../pine/diagnostics/zerochart_parity_selfcheck.pine)
+   (the same as `npm run parity -- --emit-selfcheck`) → Add to chart.
+3. Open Pine Logs. For each **Bars** value (`Chart`, `rising`, `falling`, `flat`, `irregular`,
+   `threshold`), read the `zc_selfcheck` line. Pass: `candVsApp=0`, `compared` equals the case's
+   bar count, and `inputs=564/564` on `Chart`. The `Chart` run compares only the snapshot's bars,
+   which end on 2026-10-26.
 
-   Expected: `candidate.readinessMismatches`, `scoreMismatches` and `regimeMismatches` are 0
-   (exit code 0). `production.*` is the first runtime measurement of the current discrepancy.
+Export (plans with "Download chart data"): add the harness
+[`pine/diagnostics/zerochart_parity_harness.pine`](../pine/diagnostics/zerochart_parity_harness.pine)
+instead, export each **Bars** setting with UNIX time, and run:
 
-4. For each of `rising`, `falling`, `flat`, `irregular` and `threshold`: set **Bars** to the
-   case, export, and run:
+```bash
+npm run parity -- --pine-export ~/Downloads/<file>.csv [--case <name>]
+```
 
-   ```bash
-   npm run parity -- --pine-export ~/Downloads/<file>.csv --case <name>
-   ```
-
-   Expected: `fixtureInputMismatches` is 0 (Pine regenerated the inputs exactly), and the
-   candidate mismatches are 0. `hypothesisH1Mismatches` tests H1: 0 confirms TradingView's
-   documented conventions on that case. Anything else is the runtime behavior to record,
-   especially for `flat` (RSI convention) and bars 0-33 (EMA warm-up and readiness).
-
-5. Record in the PR: export date, chart history start, plan-imposed bar limits, the command
-   output, and any compile or time-limit errors.
-
-Comparison fields: `zc_bar`, `zc_confirmed`, `zc_high/low/close`, and for both `prod` and
-`cand`: `ready`, `rsi`, `hist`, `atr`, `score`, `regime` (0 NEUTRAL, 1 TRENDING,
-2 MEAN_REVERTING, 3 HIGH_VOLATILITY). Score, regime and readiness are integers and compare
-exactly. Indicator values are reported as maximum absolute differences, because the precision
-of TradingView's export is itself unverified.
+Pass: `candidate.readinessMismatches`, `scoreMismatches` and `regimeMismatches` are 0 (exit code
+0). Export columns: `zc_bar`, `zc_confirmed`, `zc_high/low/close`, and for `prod` and `cand`:
+`ready`, `rsi`, `hist`, `atr`, `score`, `regime` (0 NEUTRAL, 1 TRENDING, 2 MEAN_REVERTING,
+3 HIGH_VOLATILITY). This path has not run, because the export was unavailable.
 
 **Acceptance:** zero candidate readiness, score and regime mismatches on every confirmed bar of
-the BTCUSDT export and all five fixtures, with no compile or time-limit error. Until then, the
-candidate is "unverified" in every document and PR.
+BTCUSDT `1D` and all five fixtures, with no compile or time-limit error. **Met on 2026-10-27
+through the self-check.** Re-run it before any promotion, because TradingView can change its
+built-ins.
 
 ## 5. Preserved behavior
 
@@ -294,15 +350,19 @@ This change modifies no runtime code path:
 - `pine/zerochart_quant_hud.pine`, the script the app copies, is byte-identical, and a test
   asserts that `buildPineScript()` still serves it. Nothing under `src/` references the
   candidate or the harness.
+- The self-check and the runtime evidence file are diagnostics. Nothing under `src/` reads them.
 - `tv-webhook`, migrations, `execute_tactical_signal`, booking, alert `5917202050` and the
   campaign stores are untouched. No campaign was initialized or activated. Historical evaluations,
   observations, outcomes and legacy schema-1 reproduction are unaffected.
 
 ## 6. Rollout and rollback (future work)
 
-Not started. Each step needs the owner's approval.
+Each step needs the owner's approval.
 
-1. **Runtime acceptance** (section 4) on BTCUSDT `1D` and all five fixtures.
+1. **Runtime acceptance** (section 4) on BTCUSDT `1D` and all five fixtures. **Met on
+   2026-10-27 at the decision level.** Runtime also narrowed the case for switching: production
+   Pine already matches the app except on flat RSI windows and rolling-window ties, and the
+   candidate removes both.
 2. **Attribution decision.** The TypeScript model stays `1.0.0`. Pine-originated signals need to
    say which Pine implementation produced them. Either:
    - accept a distinct `model_version`, such as `1.0.0-pw200`, in `execute_tactical_signal`
@@ -315,7 +375,8 @@ Not started. Each step needs the owner's approval.
 3. **Promotion PR:** replace `pine/zerochart_quant_hud.pine` with the accepted candidate and update
    `pineScriptTemplate` tests. Deploy the migration before the frontend ([RELEASE.md](RELEASE.md)).
 4. **Owner switch-over:** copy the new script, create a new alert on the intended timeframe
-   (`1D` if signals should match the app), confirm deliveries, then retire the old alert.
+   (`1D` if signals should match the app), confirm deliveries, then retire the old alert. This
+   is the first time the candidate's alert and webhook paths would run.
    Whether a 60-minute alert should be executable at all is a separate decision, because
    execution does not check the timeframe today.
 5. **Evidence:** app campaigns score TypeScript only, so their evidence is unaffected. Any study
@@ -328,11 +389,16 @@ version, a follow-up migration withdraws it. No rows are deleted or rewritten.
 
 ## 7. Limitations
 
-- H1 models TradingView's documentation, not its runtime. It may be wrong about EMA warm-up or
-  the flat RSI.
-- Only eight bars were compared between TradingView and Binance.
-- The real-data continuous models start in 2023, not 2017.
-- Synthetic cases are 320 bars or fewer. Real charts run longer, which helps continuous models
-  converge but cannot remove tie risk.
-- The candidate and harness are hand-transcribed Pine that has never been compiled. Source-level
-  tests only check isolation and constants.
+- Runtime evidence comes from one session on one day, in TradingView web on an Essential plan.
+- Pine compared readiness, score, regime and momentum class on every bar, but raw indicator
+  values only at 26 key points, because no full export was available.
+- The real-data comparison covers the snapshot: 365 evaluated days and 564 input bars.
+- The Decimal matrix's `pineDocumented` rows model a hypothesis that runtime partly refuted. They
+  stay as the pre-runtime record, and the runtime matrix supersedes them.
+- Synthetic cases are 320 bars or fewer. Longer charts cannot remove production Pine's tie risk.
+- The candidate's alerts, webhook JSON, sizing and intrabar realtime behavior were not exercised,
+  and only `1D` was run.
+- The Pine runtime's arithmetic differs from V8 in the last bits for the same operation order.
+  The cause is unknown, so equivalence is bounded, not exact.
+- The candidate's and harness's header comments predate the runtime run. They were left
+  unchanged so the files that ran keep their recorded hashes.

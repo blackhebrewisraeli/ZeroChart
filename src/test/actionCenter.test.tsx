@@ -10,6 +10,8 @@ const db = vi.hoisted(() => ({
   // Error the status update resolves with (a failed claim).
   updateError: null as { message: string } | null,
   rpcError: null as { message: string } | null,
+  // The RPC commits its fill, then the response never arrives.
+  dropResponse: false,
   rows: [] as Array<Record<string, unknown>>,
   insert: vi.fn(),
   update: vi.fn(),
@@ -76,10 +78,17 @@ vi.mock('@/lib/supabaseClient', () => {
             signal_id: source.id,
           });
         }
+        if (db.dropResponse)
+          return { data: null, error: { message: 'TypeError: Failed to fetch' } };
         return { data: db.rows.at(-1) ?? null, error: null };
       },
-      from: () => ({
-        select: () => query(() => db.pending),
+      from: (table: string) => ({
+        select: () =>
+          table === 'paper_transactions'
+            ? query(() =>
+                db.rows.filter((row) => db.eq.mock.calls.at(-1)?.[1] === row['signal_id']),
+              )
+            : query(() => db.pending),
         update: (values: unknown) => {
           db.update(values);
           return query(
@@ -179,6 +188,7 @@ describe('Action Center', () => {
     db.claimed = [{ id: 'sig-1' }];
     db.updateError = null;
     db.rpcError = null;
+    db.dropResponse = false;
     db.hold = false;
     db.status = 'SUBSCRIBED';
     db.holdStatus = false;
@@ -361,6 +371,26 @@ describe('Action Center', () => {
     expect(db.rows).toHaveLength(0);
   });
 
+  it('shows a fill the server committed when its response was lost, without booking it again', async () => {
+    db.pending = [signal()];
+    db.dropResponse = true;
+    renderSignedIn();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Execute Trade (Paper)' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull());
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringContaining('Bought'),
+      expect.anything(),
+    );
+    expect(store.portfolios.paper_trading.positions[0]).toMatchObject({
+      ticker: 'BTC-USD',
+      shares: 0.01,
+    });
+    expect(db.rpc).toHaveBeenCalledTimes(1);
+    expect(db.rows).toHaveLength(1);
+  });
+
   it('shows an unaffordable BUY with Execute disabled and the reason, without consuming it', async () => {
     db.pending = [signal({ quantity: (PAPER_STARTING_CASH * 2) / btc.current_price! })];
     renderSignedIn();
@@ -401,6 +431,26 @@ describe('Action Center', () => {
 
     expect(db.update).toHaveBeenCalledWith({ status: 'DISMISSED' });
     expect(store.portfolios.paper_trading.transactions.some((t) => t.type === 'buy')).toBe(false);
+  });
+
+  it('keeps the pressed button focusable while a request is out, so focus stays on the queue', async () => {
+    db.pending = [signal(), signal({ id: 'sig-2', action: 'SELL', ticker: 'BTC-USD' })];
+    renderSignedIn();
+
+    expect(await screen.findByText('+1 more waiting')).toBeInTheDocument();
+    db.hold = true;
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    fireEvent.click(dismiss);
+    fireEvent.click(dismiss);
+    // A disabled button drops keyboard focus to <body>; aria-disabled keeps it.
+    expect(dismiss).not.toBeDisabled();
+    expect(dismiss).toHaveAttribute('aria-disabled', 'true');
+    expect(db.update).toHaveBeenCalledTimes(1);
+
+    db.hold = false;
+    await act(async () => db.release());
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('SELL SIGNAL'));
+    expect(dismiss).not.toHaveAttribute('aria-disabled');
   });
 });
 

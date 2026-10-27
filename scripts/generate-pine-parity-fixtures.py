@@ -123,6 +123,15 @@ def rsi_factor(rsi: Decimal) -> Decimal:
     return ZERO
 
 
+def momentum_class(momentum: Decimal) -> str:
+    """Pine's bullish threshold (FLAT_MOMENTUM) and the aggressive profile's strict > 0 gate."""
+    if momentum >= D("0.0005"):
+        return "B"
+    if momentum > 0:
+        return "P"
+    return "N"
+
+
 def reading(rsi: Decimal, histogram: Decimal, atr: Decimal, close: Decimal) -> dict:
     momentum = histogram / close
     volatility = atr / close
@@ -141,7 +150,6 @@ def reading(rsi: Decimal, histogram: Decimal, atr: Decimal, close: Decimal) -> d
         regime = "N"
     weights = WEIGHTS[regime]
     weighted = clamp(sum(w * c for w, c in zip(weights, components)) / sum(weights), ZERO, HUNDRED)
-    momentum_class = "B" if momentum >= D("0.0005") else "P" if momentum > 0 else "N"
     return {
         "rsi": rsi,
         "histogram": histogram,
@@ -152,7 +160,7 @@ def reading(rsi: Decimal, histogram: Decimal, atr: Decimal, close: Decimal) -> d
         "weighted": weighted,
         "score": int(weighted.to_integral_value(rounding=ROUND_HALF_UP)),
         "regime": regime,
-        "momentumClass": momentum_class,
+        "momentumClass": momentum_class(momentum),
     }
 
 
@@ -205,6 +213,37 @@ def number(value: Decimal | None) -> float | None:
     return None if value is None else float(value)
 
 
+def transitions(series: list, i: int) -> tuple[bool, bool]:
+    """Whether Pine's longSignal and riskSignal fire on evaluated bar i."""
+    now = decisions(series[i])
+    before = decisions(series[i - 1]) if i > 0 else (False,) * 6
+    return (now[3] and not before[3], now[4] and not before[4])
+
+
+def max_abs_differences(app: list, other: list, both: list[int]) -> dict | None:
+    if not both:
+        return None
+
+    def biggest(pick) -> float:
+        return float(max(abs(pick(other[i]) - pick(app[i])) for i in both))
+
+    return {
+        "rsi": biggest(lambda r: r["rsi"]),
+        "momentum": biggest(lambda r: r["momentum"]),
+        "volatility": biggest(lambda r: r["volatility"]),
+        "component": max(biggest(lambda r, k=k: r["components"][k]) for k in range(3)),
+        "weighted": biggest(lambda r: r["weighted"]),
+    }
+
+
+def classify(row: dict) -> str:
+    if sum(row[k] for k in row if k.endswith("Mismatches")):
+        return "DECISION_CHANGED"
+    if row["maxAbs"] is None or not any(row["maxAbs"].values()):
+        return "EXACT"
+    return "NUMERICAL_ONLY"
+
+
 def summarize(app: list, other: list, first_bar: int, segments) -> list[dict]:
     rows = []
     for segment, low, high in segments:
@@ -212,39 +251,18 @@ def summarize(app: list, other: list, first_bar: int, segments) -> list[dict]:
         if not indices:
             continue
         both = [i for i in indices if app[i] is not None and other[i] is not None]
-        max_abs = None
-        if both:
-            def biggest(pick):
-                return float(max(abs(pick(other[i]) - pick(app[i])) for i in both))
-
-            max_abs = {
-                "rsi": biggest(lambda r: r["rsi"]),
-                "momentum": biggest(lambda r: r["momentum"]),
-                "volatility": biggest(lambda r: r["volatility"]),
-                "component": max(biggest(lambda r, k=k: r["components"][k]) for k in range(3)),
-                "weighted": biggest(lambda r: r["weighted"]),
-            }
-
-        def transitions(series, i):
-            now, before = decisions(series[i]), decisions(series[i - 1]) if i > 0 else (False,) * 6
-            return (now[3] and not before[3], now[4] and not before[4])
-
         row = {
             "segment": segment,
             "bars": [first_bar + indices[0], first_bar + indices[-1]],
             "compared": len(both),
             "readinessMismatches": sum((app[i] is None) != (other[i] is None) for i in indices),
-            "maxAbs": max_abs,
+            "maxAbs": max_abs_differences(app, other, both),
             "regimeMismatches": sum(app[i]["regime"] != other[i]["regime"] for i in both),
             "scoreMismatches": sum(app[i]["score"] != other[i]["score"] for i in both),
             "decisionMismatches": sum(decisions(app[i]) != decisions(other[i]) for i in indices),
             "transitionMismatches": sum(transitions(app, i) != transitions(other, i) for i in indices),
         }
-        mismatches = sum(row[k] for k in row if k.endswith("Mismatches"))
-        exact = max_abs is None or not any(max_abs.values())
-        row["classification"] = (
-            "DECISION_CHANGED" if mismatches else "EXACT" if exact else "NUMERICAL_ONLY"
-        )
+        row["classification"] = classify(row)
         rows.append(row)
     return rows
 

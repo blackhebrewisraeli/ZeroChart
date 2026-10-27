@@ -72,9 +72,8 @@ export function readWindow(window: readonly EngineCandle[]): Reading {
   const result = evaluateCandles(window);
   let compact: string | null = null;
   if (result.status === 'OK') {
-    const momentum = histogram / result.close;
-    const momentumClass = momentum >= 0.0005 ? 'B' : momentum > 0 ? 'P' : 'N';
-    compact = `${result.signal_score}${REGIME_LETTER[result.regime]}${momentumClass}`;
+    const momentum = momentumClass(histogram / result.close);
+    compact = `${result.signal_score}${REGIME_LETTER[result.regime]}${momentum}`;
   }
   return {
     compact,
@@ -243,102 +242,107 @@ export function parsePineExport(csv: string): ExportRow[] {
   });
 }
 
-function exportCompact(score: number, regime: number, histogram: number, close: number) {
-  if (!Number.isFinite(score) || !Number.isFinite(regime)) return null;
-  const momentum = histogram / close;
-  return `${score}${REGIME_CODES[regime] ?? '?'}${momentum >= 0.0005 ? 'B' : momentum > 0 ? 'P' : 'N'}`;
+/** Pine's bullish threshold (FLAT_MOMENTUM) and the aggressive profile's strict > 0 gate. */
+function momentumClass(momentum: number): 'B' | 'P' | 'N' {
+  if (momentum >= 0.0005) return 'B';
+  if (momentum > 0) return 'P';
+  return 'N';
 }
 
-/**
- * Production TypeScript on the bars the Pine harness saw, against the harness's
- * production (`prod_*`) and candidate (`cand_*`) readings. Only confirmed bars count.
- */
-export function comparePineExport(
-  rows: readonly ExportRow[],
-  fixture?: ParityFixtures['cases'][number],
-) {
-  const confirmed = rows.filter((row) => row.zc_confirmed === 1);
-  const contiguous = confirmed.every(
-    (row, index) => index === 0 || row.zc_bar === confirmed[index - 1]!.zc_bar + 1,
-  );
-  if (!contiguous) throw new Error('Pine export bars must be contiguous; export the full chart');
-  const tally = (name: 'prod' | 'cand') => ({
-    name,
+type Side = 'prod' | 'cand';
+
+/** One harness side's reading on a bar, in the fixture's compact form; null when not ready. */
+function pineReading(row: ExportRow, side: Side): string | null {
+  const score = row[`zc_${side}_score`];
+  const regime = row[`zc_${side}_regime`];
+  if (row[`zc_${side}_ready`] !== 1 || !Number.isFinite(score) || !Number.isFinite(regime)) {
+    return null;
+  }
+  const momentum = row[`zc_${side}_hist`] / row.zc_close;
+  return `${score}${REGIME_CODES[regime] ?? '?'}${momentumClass(momentum)}`;
+}
+
+function emptyTally() {
+  return {
     bars: 0,
     readinessMismatches: 0,
     scoreMismatches: 0,
     regimeMismatches: 0,
     decisionMismatches: 0,
     maxAbs: { rsi: 0, histogram: 0, atr: 0 },
-  });
-  const results = { prod: tally('prod'), cand: tally('cand') };
-  let inputMismatches = 0;
-  let hypothesisMismatches = 0;
+  };
+}
+
+function tallyBar(tally: ReturnType<typeof emptyTally>, row: ExportRow, side: Side, ts: Reading) {
+  const pine = pineReading(row, side);
+  tally.bars += 1;
+  if ((pine === null) !== (ts.compact === null)) tally.readinessMismatches += 1;
+  if (!sameDecisions(pine, ts.compact)) tally.decisionMismatches += 1;
+  if (!pine || !ts.compact) return;
+  if (pine.slice(0, -2) !== ts.compact.slice(0, -2)) tally.scoreMismatches += 1;
+  if (pine.at(-2) !== ts.compact.at(-2)) tally.regimeMismatches += 1;
+  const pineValues = {
+    rsi: row[`zc_${side}_rsi`],
+    histogram: row[`zc_${side}_hist`],
+    atr: row[`zc_${side}_atr`],
+  };
+  for (const key of ['rsi', 'histogram', 'atr'] as const) {
+    tally.maxAbs[key] = Math.max(tally.maxAbs[key], Math.abs(pineValues[key] - ts[key]));
+  }
+}
+
+/**
+ * Production TypeScript on the bars the Pine harness saw, against the harness's
+ * production (`prod_*`) and candidate (`cand_*`) readings. Only confirmed bars count.
+ * With a fixture, also checks that Pine regenerated its inputs exactly and how
+ * production Pine compares with hypothesis H1.
+ */
+export function comparePineExport(
+  rows: readonly ExportRow[],
+  fixture?: ParityFixtures['cases'][number],
+): {
+  confirmedBars: number;
+  production: ReturnType<typeof emptyTally>;
+  candidate: ReturnType<typeof emptyTally>;
+  fixtureInputMismatches?: number;
+  hypothesisH1Mismatches?: number;
+} {
+  const confirmed = rows.filter((row) => row.zc_confirmed === 1);
+  const contiguous = confirmed.every(
+    (row, index) => index === 0 || row.zc_bar === confirmed[index - 1]!.zc_bar + 1,
+  );
+  if (!contiguous) throw new Error('Pine export bars must be contiguous; export the full chart');
+  const production = emptyTally();
+  const candidate = emptyTally();
 
   confirmed.forEach((row, index) => {
     const start = Math.max(0, index - MODEL_WINDOW + 1);
-    const window = confirmed.slice(start, index + 1).map((bar) => ({
-      high: bar.zc_high,
-      low: bar.zc_low,
-      close: bar.zc_close,
-    }));
-    const ts = readWindow(window);
-    for (const side of ['prod', 'cand'] as const) {
-      const tallied = results[side];
-      const score = row[`zc_${side}_score`];
-      const regime = row[`zc_${side}_regime`];
-      const ready = row[`zc_${side}_ready`] === 1;
-      const pine = ready
-        ? exportCompact(score, regime, row[`zc_${side}_hist`], row.zc_close)
-        : null;
-      tallied.bars += 1;
-      if ((pine === null) !== (ts.compact === null)) tallied.readinessMismatches += 1;
-      if (pine && ts.compact) {
-        if (pine.slice(0, -2) !== ts.compact.slice(0, -2)) tallied.scoreMismatches += 1;
-        if (pine.at(-2) !== ts.compact.at(-2)) tallied.regimeMismatches += 1;
-        for (const [key, value] of [
-          ['rsi', row[`zc_${side}_rsi`]],
-          ['histogram', row[`zc_${side}_hist`]],
-          ['atr', row[`zc_${side}_atr`]],
-        ] as const) {
-          tallied.maxAbs[key] = Math.max(tallied.maxAbs[key], Math.abs(value - ts[key]));
-        }
-      }
-      if (!sameDecisions(pine, ts.compact)) tallied.decisionMismatches += 1;
-    }
-
-    if (fixture?.candles) {
-      const bar = row.zc_bar;
-      const expected = [
-        fixture.candles.highs[bar],
-        fixture.candles.lows[bar],
-        fixture.candles.closes[bar],
-      ];
-      if (expected[0] !== undefined) {
-        if (
-          expected[0] !== row.zc_high ||
-          expected[1] !== row.zc_low ||
-          expected[2] !== row.zc_close
-        ) {
-          inputMismatches += 1;
-        }
-        const documented = fixture.perBar.pineDocumented[bar - fixture.evaluatedBars[0]];
-        const pine =
-          row.zc_prod_ready === 1
-            ? exportCompact(row.zc_prod_score, row.zc_prod_regime, row.zc_prod_hist, row.zc_close)
-            : null;
-        if (documented !== pine) hypothesisMismatches += 1;
-      }
-    }
+    const ts = readWindow(
+      confirmed
+        .slice(start, index + 1)
+        .map((bar) => ({ high: bar.zc_high, low: bar.zc_low, close: bar.zc_close })),
+    );
+    tallyBar(production, row, 'prod', ts);
+    tallyBar(candidate, row, 'cand', ts);
   });
 
+  const report = { confirmedBars: confirmed.length, production, candidate };
+  const candles = fixture?.candles;
+  if (!fixture || !candles) return report;
+  const fixtureRows = confirmed.filter((row) => candles.closes[row.zc_bar] !== undefined);
   return {
-    confirmedBars: confirmed.length,
-    production: results.prod,
-    candidate: results.cand,
-    ...(fixture
-      ? { fixtureInputMismatches: inputMismatches, hypothesisH1Mismatches: hypothesisMismatches }
-      : {}),
+    ...report,
+    fixtureInputMismatches: fixtureRows.filter(
+      (row) =>
+        candles.highs[row.zc_bar] !== row.zc_high ||
+        candles.lows[row.zc_bar] !== row.zc_low ||
+        candles.closes[row.zc_bar] !== row.zc_close,
+    ).length,
+    hypothesisH1Mismatches: fixtureRows.filter(
+      (row) =>
+        fixture.perBar.pineDocumented[row.zc_bar - fixture.evaluatedBars[0]] !==
+        pineReading(row, 'prod'),
+    ).length,
   };
 }
 
@@ -361,13 +365,8 @@ async function main(argv: string[]): Promise<number> {
     if (caseName && !fixture?.candles) throw new Error(`No synthetic fixture case "${caseName}"`);
     const report = comparePineExport(parsePineExport(await readFile(exportPath, 'utf8')), fixture);
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    const candidate = report.candidate;
-    return candidate.readinessMismatches +
-      candidate.scoreMismatches +
-      candidate.regimeMismatches ===
-      0
-      ? 0
-      : 1;
+    const { readinessMismatches, scoreMismatches, regimeMismatches } = report.candidate;
+    return readinessMismatches + scoreMismatches + regimeMismatches === 0 ? 0 : 1;
   }
 
   const verification = verifyAgainstReference(fixtures, snapshot);
@@ -384,11 +383,8 @@ async function main(argv: string[]): Promise<number> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
-    (error: unknown) => {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.exit(1);
-    },
-  );
+  process.exitCode = await main(process.argv.slice(2)).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    return 1;
+  });
 }

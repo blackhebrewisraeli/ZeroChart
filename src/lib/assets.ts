@@ -19,6 +19,9 @@ export interface AssetStatus {
   sma_200: number | null;
   change_24h: number | null;
   updated_at?: string | null;
+  /** Daily market-analytics ATR(14); the paper risk book's stop when it is under 48h old. */
+  atr_14?: number | null;
+  analytics_updated_at?: string | null;
 }
 export type Asset = AssetStatus;
 
@@ -29,7 +32,7 @@ export async function fetchAssets(): Promise<Asset[]> {
     const { data, error } = await supabase
       .from('assets_status')
       .select(
-        'ticker,current_price,change_24h,stable_signal,stable_explanation,radar_signal,radar_explanation,risk_pct,reward_pct,volume_spike,rsi_14,sma_50,sma_200,updated_at',
+        'ticker,current_price,change_24h,stable_signal,stable_explanation,radar_signal,radar_explanation,risk_pct,reward_pct,volume_spike,rsi_14,sma_50,sma_200,updated_at,atr_14,analytics_updated_at',
       )
       .order('ticker')
       .range(offset, offset + pageSize - 1)

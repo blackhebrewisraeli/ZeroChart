@@ -40,8 +40,9 @@ export interface PortfolioBuildDiagnostics {
 type ScoreAttempt = { result: CanonicalResult; networkFailed: boolean };
 
 /**
- * 200 daily candles from Binance: well past MIN_CANDLES, and long enough for
- * the Wilder/EMA smoothers to converge on TradingView's full-history values.
+ * 200 daily candles from Binance: well past MIN_CANDLES. The smoothers come
+ * close to TradingView's full-history values but never match them exactly
+ * (docs/PINE_PARITY_ASSESSMENT.md).
  * Stocks and forex have no candle source yet and resolve to `[]`.
  */
 const defaultDeps: QuantDeps = {

@@ -38,7 +38,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "evaluate": "tsx scripts/evaluate-canonical.ts"
+    "evaluate": "tsx scripts/evaluate-canonical.ts",
+    "parity": "tsx scripts/pine-parity.ts"
   },
   "overrides": {
     "rolldown": "1.2.1"

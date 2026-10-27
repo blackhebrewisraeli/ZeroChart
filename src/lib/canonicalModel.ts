@@ -103,7 +103,7 @@ export interface FactorInputs {
 }
 
 export interface FactorScore {
-  /** Composite 0–100 Signal Score — the same number Pine plots as "ZC Score". */
+  /** Composite 0–100 Signal Score. Pine plots its own as "ZC Score" (docs/PINE_PARITY_ASSESSMENT.md). */
   signal_score: number;
   /** Per-factor 0–100 sub-scores and the regime weights applied to them. */
   components: {
@@ -257,7 +257,8 @@ function buildRationale(inputs: FactorInputs, regime: MarketRegime): string {
 /**
  * Blends the three factor scores with the regime-tilted weights. Mirrors the
  * Pine composite operation for operation — including the division by the
- * weight sum — so a rounding tie can never land differently.
+ * weight sum — so equal indicator readings round the same way. Pine's readings
+ * themselves can differ (docs/PINE_PARITY_ASSESSMENT.md).
  */
 export function scoreFactors(inputs: FactorInputs): FactorScore {
   const regime = classifyRegime(inputs);

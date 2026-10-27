@@ -27,7 +27,7 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 - **Ledger updates are atomic.** Change a portfolio only through the pure transitions in [`portfolioAccounting.ts`](./src/lib/portfolioAccounting.ts) (`applyBuyTransaction`, `applySellTransaction`, `applyCashTransaction`). Never mutate positions, cash, or transactions separately.
 - **Keep the three ledgers isolated.** Live Tracking, Simulation, and Paper Trading never share positions or cash.
 - **Never present sample or simulated data as live market data.** Label previews explicitly.
-- **Keep the Pine HUD in parity.** [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine) ports `indicators.ts`, `canonicalModel.ts`, and `risk.ts` (its sizing adds a configurable ATR stop multiplier that defaults to `risk.ts`'s 1×). A change to the model in one place lands in both.
+- **Keep the Pine HUD in step.** [`pine/zerochart_quant_hud.pine`](./pine/zerochart_quant_hud.pine) ports `indicators.ts`, `canonicalModel.ts`, and `risk.ts` (its sizing adds a configurable ATR stop multiplier that defaults to `risk.ts`'s 1×). A change to the model in one place lands in both. The port is not exact: [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) defines when the two are comparable, and `npm run parity` measures the difference. Don't call a Pine change parity-verified without the runtime evidence that document describes.
 
 ### Supabase and security
 

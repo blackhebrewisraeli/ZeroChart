@@ -197,3 +197,8 @@ scores, eligibility, ranking, and allocation near the warm-up boundary; changing
 therefore requires a new canonical model version and matching Pine version. A fresh campaign
 is required for the corrected version. Existing observations remain valid evidence of what
 `1.0.0` actually decided and must not be relabeled or rewritten.
+
+The follow-up [Pine parity assessment](PINE_PARITY_ASSESSMENT.md) takes the first option without
+changing TypeScript: an isolated, unverified Pine candidate recomputes the score on the app's
+200-candle window. It also shows that porting the seeds alone is not enough, because the app
+re-seeds its rolling window daily while Pine keeps one continuous recurrence.

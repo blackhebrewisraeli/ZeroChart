@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(29);
 
 insert into auth.users (id)
 values
@@ -23,7 +23,13 @@ values
   ('10000000-0000-4000-8000-000000000006', '00000000-0000-4000-8000-000000000001', 'STALECOIN', 'BUY', 85, 1, 10, 'stale-price', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
   ('10000000-0000-4000-8000-000000000007', '00000000-0000-4000-8000-000000000002', 'AAPL', 'BUY', 85, 1, 100, 'other-account', 'strategy', 'NYSE', '1D', now(), '1.0.0'),
   ('10000000-0000-4000-8000-000000000008', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'transport-test', 'transport_test', null, null, null, null),
-  ('10000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'legacy', null, 'NYSE', '1D', now(), '1.0.0');
+  ('10000000-0000-4000-8000-000000000009', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'legacy', null, 'NYSE', '1D', now(), '1.0.0'),
+  ('10000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'pw200-1d', 'strategy', 'BINANCE', '1D', now(), '1.0.0-pw200'),
+  ('10000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'pw200-d', 'strategy', 'BINANCE', 'D', now(), '1.0.0-pw200'),
+  ('10000000-0000-4000-8000-00000000000c', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'pw200-60', 'strategy', 'BINANCE', '60', now(), '1.0.0-pw200'),
+  ('10000000-0000-4000-8000-00000000000d', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'candidate-c1', 'strategy', 'BINANCE', '1D', now(), '1.0.0-pw200.c1'),
+  ('10000000-0000-4000-8000-00000000000e', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'unknown-version', 'strategy', 'BINANCE', '1D', now(), '2.0.0'),
+  ('10000000-0000-4000-8000-00000000000f', '00000000-0000-4000-8000-000000000001', 'AAPL', 'BUY', 85, 1, 100, 'legacy-model-60', 'strategy', 'BINANCE', '60', now(), '1.0.0');
 
 set local role authenticated;
 select set_config(
@@ -86,6 +92,73 @@ select is(
   ),
   0,
   'rejected classifications create no fills'
+);
+
+-- ===== Model versions =====
+-- 1.0.0-pw200 executes on daily alerts only; 1.0.0 keeps executing on any
+-- timeframe until a later migration withdraws it.
+select lives_ok(
+  format(
+    'select public.execute_tactical_signal(%L, %L, 100)',
+    accepted.signal_id,
+    '00000000-0000-4000-8000-000000000001'
+  ),
+  accepted.description
+)
+from (
+  values
+    ('10000000-0000-4000-8000-00000000000a', 'the window-200 Pine version executes on a 1D alert'),
+    ('10000000-0000-4000-8000-00000000000b', 'the window-200 Pine version executes on a D alert'),
+    ('10000000-0000-4000-8000-00000000000f', '1.0.0 still executes, on any timeframe, during the switch-over')
+) as accepted (signal_id, description);
+
+select throws_ok(
+  format(
+    'select public.execute_tactical_signal(%L, %L, 100)',
+    refused.signal_id,
+    '00000000-0000-4000-8000-000000000001'
+  ),
+  '23514',
+  'Signal strategy provenance is incomplete or unsupported',
+  refused.description
+)
+from (
+  values
+    ('10000000-0000-4000-8000-00000000000c', 'the window-200 Pine version is refused on a 60-minute alert'),
+    ('10000000-0000-4000-8000-00000000000d', 'the unpromoted candidate attribution is refused'),
+    ('10000000-0000-4000-8000-00000000000e', 'an unknown model version is refused')
+) as refused (signal_id, description);
+
+select is(
+  (
+    select count(*)::integer
+    from public.paper_transactions
+    where signal_id in (
+      '10000000-0000-4000-8000-00000000000a',
+      '10000000-0000-4000-8000-00000000000b',
+      '10000000-0000-4000-8000-00000000000f'
+    )
+  ),
+  3,
+  'each accepted model version creates one fill'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.trading_signals as signal
+    where signal.id in (
+      '10000000-0000-4000-8000-00000000000c',
+      '10000000-0000-4000-8000-00000000000d',
+      '10000000-0000-4000-8000-00000000000e'
+    )
+      and signal.status = 'PENDING'
+      and not exists (
+        select 1 from public.paper_transactions as fill where fill.signal_id = signal.id
+      )
+  ),
+  3,
+  'refused model versions stay pending with no fill'
 );
 
 select is(

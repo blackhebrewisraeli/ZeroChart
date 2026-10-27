@@ -75,8 +75,12 @@ function ConnectTradingView({
       <h3 id="pine-connect-title">Connect TradingView</h3>
       <p>
         Send alerts to your Action Center: generate a token, copy the Pine Script again (the token
-        is now inside it), then create a TradingView alert on ZC Quant with the condition “Any
+        is now inside it), then create a TradingView alert on ZC Quant pw200 with the condition “Any
         alert() function call”, tick Webhook URL and paste the URL below.
+      </p>
+      <p className="pine-connect-note">
+        Set the chart to the daily (1D) timeframe first. Signals from other timeframes reach your
+        Action Center but can’t be executed.
       </p>
       <CopyField label="Webhook URL" value={`${resolveSupabaseUrl()}${TV_WEBHOOK_PATH}`} />
       {token !== null && (

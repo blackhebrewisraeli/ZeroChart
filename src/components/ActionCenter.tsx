@@ -19,6 +19,20 @@ const isStrategy = (signal: Signal) => signal.signal_kind === 'strategy';
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/**
+ * The same rule as execute_tactical_signal (20261027120000): 1.0.0 on any
+ * timeframe, 1.0.0-pw200 (the window-200 Pine script) on daily alerts only.
+ */
+function provenanceBlock(signal: Signal, complete: boolean): string | null {
+  if (complete && signal.model_version === '1.0.0') return null;
+  if (complete && signal.model_version === '1.0.0-pw200') {
+    return signal.timeframe === '1D' || signal.timeframe === 'D'
+      ? null
+      : 'Model 1.0.0-pw200 can only be executed from a daily (1D) alert.';
+  }
+  return 'Verified strategy provenance is required before execution.';
+}
+
 /** The scanner asset a signal's ticker refers to ("BTCUSDT", "BTCUSD" or "BTC-USD"). */
 function findAsset(assets: Asset[], ticker: string): Asset | undefined {
   const wanted = ticker.toUpperCase();
@@ -202,11 +216,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const provenanceComplete = Boolean(
     signal.exchange && signal.timeframe && signal.bar_time && signal.model_version,
   );
-  const executionBlocked =
-    rejection ??
-    (!provenanceComplete || signal.model_version !== '1.0.0'
-      ? 'Verified strategy provenance is required before execution.'
-      : null);
+  const executionBlocked = rejection ?? provenanceBlock(signal, provenanceComplete);
 
   return (
     <section

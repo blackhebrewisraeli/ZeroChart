@@ -20,6 +20,8 @@ import {
 } from '../../supabase/functions/tv-webhook/payload';
 
 const DEFAULT_CAPITAL_INPUT = 'input.float(10000, "Account Capital ($)"';
+/** The window-200 Pine implementation of the canonical model (docs/PINE_PARITY_ASSESSMENT.md). */
+const PINE_MODEL_VERSION = `${CANONICAL_MODEL_VERSION}-pw200`;
 
 describe('buildPineScript', () => {
   const source = buildPineScript();
@@ -27,7 +29,7 @@ describe('buildPineScript', () => {
   it('emits a Pine Script v6 overlay indicator with the required inputs', () => {
     expect(source.startsWith('//@version=6\n')).toBe(true);
     expect(source).toContain(
-      'indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant", overlay = true)',
+      'indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant pw200", overlay = true, max_bars_back = 300)',
     );
     for (const input of [
       DEFAULT_CAPITAL_INPUT,
@@ -45,11 +47,15 @@ describe('buildPineScript', () => {
 
   it('carries every factor, sizing, overlay and alert equation', () => {
     for (const fragment of [
-      'ta.rsi(close, 14)',
-      'ta.macd(close, 12, 26, 9)',
-      'ta.atr(atrPeriod)',
+      // The app's window: the last min(200, bars) bars, re-seeded on every bar.
+      'int windowLength = math.min(bar_index + 1, MODEL_WINDOW)',
+      'zcRsi(close, windowLength)',
+      'zcMacdHist(close, windowLength)',
+      'zcAtr(high, low, close, windowLength)',
       'macdHist / close',
-      'atrValue / close',
+      'scoreAtr / close',
+      // Sizing and the trailing stop keep the ATR Period input.
+      'ta.atr(atrPeriod)',
       // RSI mean-reversion curve control points.
       '100.0 + (95.0 - 100.0)',
       '95.0 + (55.0 - 95.0)',
@@ -72,7 +78,7 @@ describe('buildPineScript', () => {
       'size.large',
       '"SIGNAL / ACTION"',
       '"SIGNAL SCORE"',
-      '"Signal Score: " + str.tostring(score) + " / 100"',
+      '"Signal Score: " + (ready ? str.tostring(score) : "-") + " / 100 (" + MODEL_VERSION + ")"',
       '"Exit at $"',
       '"MARKET VIBE"',
       '#101828',
@@ -144,7 +150,7 @@ describe('buildPineScript', () => {
         .replace('{{plot("ZC Stop")}}', '48000')
         .replace('{{timenow}}', '2026-10-20T12:00:00Z')
         .replace('{{exchange}}', 'BINANCE')
-        .replace('{{interval}}', '60')
+        .replace('{{interval}}', '1D')
         .replace('{{time}}', '2026-10-20T11:00:00Z');
 
     const messages = [...script.matchAll(/^alertcondition\(.*?, "[^"]+", (.*)\)$/gm)].map(
@@ -164,19 +170,17 @@ describe('buildPineScript', () => {
           stop_loss: 48_000,
           event_id: '2026-10-20T12:00:00Z',
           exchange: 'BINANCE',
-          timeframe: '60',
+          timeframe: '1D',
           bar_time: '2026-10-20T11:00:00.000Z',
-          model_version: CANONICAL_MODEL_VERSION,
+          model_version: PINE_MODEL_VERSION,
         },
       })),
     );
     expect(messages.map(readToken)).toEqual(['tok123', 'tok123', 'tok123']);
   });
 
-  it('stamps alerts with the canonical model version', () => {
-    expect(buildPineScript()).toContain(
-      `const string MODEL_VERSION = "${CANONICAL_MODEL_VERSION}"`,
-    );
+  it('stamps alerts with the window-200 Pine version of the canonical model', () => {
+    expect(buildPineScript()).toContain(`const string MODEL_VERSION = "${PINE_MODEL_VERSION}"`);
   });
 
   it('injects the webhook token everywhere, but only a token-shaped one', () => {

@@ -207,6 +207,30 @@ describe('Action Center', () => {
     expect(await screen.findByText('Source: BINANCE · 1D · model 1.0.0')).toBeVisible();
     expect(screen.queryByText(/Source details are incomplete/)).toBeNull();
   });
+
+  const unverified = 'Verified strategy provenance is required before execution.';
+  it.each([
+    ['1.0.0-pw200', '1D', null],
+    ['1.0.0-pw200', 'D', null],
+    ['1.0.0', '60', null],
+    ['1.0.0-pw200', '60', 'Model 1.0.0-pw200 can only be executed from a daily (1D) alert.'],
+    ['1.0.0-pw200.c1', '1D', unverified],
+    ['2.0.0', '1D', unverified],
+  ])(
+    'gates model %s on a %s alert like execute_tactical_signal',
+    async (modelVersion, timeframe, reason) => {
+      db.pending = [signal({ model_version: modelVersion, timeframe })];
+      renderSignedIn();
+
+      const execute = await screen.findByRole('button', { name: 'Execute Trade (Paper)' });
+      if (reason) {
+        expect(execute).toBeDisabled();
+        expect(execute).toHaveAccessibleDescription(reason);
+      } else {
+        expect(execute).toBeEnabled();
+      }
+    },
+  );
   afterEach(cleanup);
 
   it('subscribes to the user’s signals and shows a realtime BUY as one big card', async () => {

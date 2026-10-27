@@ -28,6 +28,7 @@ vi.mock('@/hooks/useCanonicalScores', () => ({ useCanonicalScores: () => engine.
 
 import { PortfolioProvider, usePortfolio } from '@/lib/portfolioStore';
 import { PaperTradingTerminal } from '@/components/PaperTradingTerminal';
+import { AssetsStatusContext } from '@/hooks/usePaperRisk';
 import { __resetAlertsStoreForTests, addAlert } from '@/lib/alertsStore';
 import { runAlertPass } from '@/lib/alertEngine';
 
@@ -230,6 +231,38 @@ describe('Paper Desk', () => {
       'BUYTactical',
       'BUYTactical',
     ]);
+  });
+
+  it('sizes a position the browser has no ATR for at the server ATR, as paper_account_book does', () => {
+    // engine.scores is empty, as for every stock and forex ticker. A fresh
+    // atr_14 of 50 stops ETH at 1,900 − 2 × 50, so $1,000 risks 100 / 1,900 of it.
+    const withServerAtr = (hoursOld: number) => (
+      <AssetsStatusContext
+        value={[
+          {
+            ...asset('ETH-USD', 'Ethereum', 1900),
+            atr_14: 50,
+            analytics_updated_at: new Date(NOW - hoursOld * 3_600_000).toISOString(),
+          },
+        ]}
+      >
+        {tree(1900)}
+      </AssetsStatusContext>
+    );
+    const view = render(withServerAtr(1));
+    const card = fireEthAlert(1900);
+    fireEvent.click(within(card).getByRole('button', { name: 'Trade' }));
+    const ticket = within(screen.getByRole('dialog', { name: 'Trade ETH-USD' }));
+    fireEvent.change(ticket.getByLabelText('Order amount (USD)'), { target: { value: '1000' } });
+    fireEvent.click(ticket.getByRole('button', { name: 'Buy ETH-USD' }));
+
+    expect(stat('Aggregate Open Risk').getByText('$52.63 to stops · 6% cap')).toBeInTheDocument();
+
+    // Past max_atr_age (48h) the server counts the whole entry, and so does the preview.
+    view.rerender(withServerAtr(49));
+    expect(
+      stat('Aggregate Open Risk').getByText('$1,000.00 to stops · 6% cap'),
+    ).toBeInTheDocument();
   });
 
   it('tops up and resets only the paper account', async () => {

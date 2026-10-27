@@ -61,6 +61,7 @@ import { computePortfolioValuation } from '@/lib/portfolioAccounting';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
+import { AssetsStatusContext } from '@/hooks/usePaperRisk';
 
 // Loaded on demand so the zone panels, modals, recharts and lightweight-charts stay out of
 // the Workspace chunk. SSR is unaffected: the server always renders the auth-loading shell.
@@ -569,7 +570,7 @@ function Terminal() {
   const topPick = best(filtered) ?? best(baseAssets);
   const rows = sortMarkets(filtered, marketView, scores);
 
-  return (
+  const page = (
     <div className="min-h-screen text-foreground">
       {CLOSED_BETA && (
         <p className="beta-banner">
@@ -753,6 +754,8 @@ function Terminal() {
       )}
     </div>
   );
+  // The server's ATR(14) for usePaperRisk: positions with no browser candles.
+  return <AssetsStatusContext value={query.data ?? []}>{page}</AssetsStatusContext>;
 }
 
 /** Auth-gated app shell shared by `/` (Research), `/paper-trading` and `/account`. */

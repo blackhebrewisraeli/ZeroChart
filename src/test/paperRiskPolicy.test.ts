@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FEE_RATE } from '@/components/TradeTicket';
+import { MAX_SERVER_ATR_AGE_MS } from '@/hooks/usePaperRisk';
 import { REGIME_HIGH_VOLATILITY } from '@/lib/canonicalModel';
 import { ASSET_COUNT_BY_RISK, type RiskProfile } from '@/lib/portfolioBuilder';
 import {
@@ -42,6 +43,7 @@ describe('paper_risk_policy matches the TypeScript engine', () => {
     expect(constant('DEFAULT_RISK_PERCENT')).toBe(DEFAULT_RISK_PERCENT);
     expect(constant('MAX_PORTFOLIO_RISK_PERCENT')).toBe(MAX_PORTFOLIO_RISK_PERCENT);
     expect(constant('REGIME_HIGH_VOLATILITY')).toBe(REGIME_HIGH_VOLATILITY);
+    expect(policy).toContain(`interval '${MAX_SERVER_ATR_AGE_MS / 3_600_000} hours', -- two daily`);
   });
 
   it('shares every profile limit', () => {

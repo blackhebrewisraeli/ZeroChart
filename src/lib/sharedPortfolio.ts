@@ -1,7 +1,7 @@
 import type { Asset } from '@/lib/assets';
 import { computeBacktest, deriveWeights, type AssetPriceSeries } from '@/lib/backtestManager';
 import { fetchHistoricalKlines, isBinanceCrypto } from '@/lib/binance';
-import type { MarketRegime } from '@/lib/canonicalModel';
+import type { CanonicalResult, MarketRegime } from '@/lib/canonicalModel';
 import type { Position } from '@/lib/portfolioManager';
 import { scoreTicker } from '@/lib/roboAdvisor';
 import { supabase } from '@/lib/supabaseClient';
@@ -14,18 +14,23 @@ const SHARED_BENCHMARK_TICKER = 'BTC';
 const MAX_LOOKBACK_DAYS = 365;
 const DAY_MS = 86_400_000;
 
+type NoScoreStatus = Exclude<CanonicalResult['status'], 'OK'>;
+
+/** Canonical Signal Score, or null with the engine's reason (never scanned, fetch failed, ...). */
+export type SharedPortfolioScore =
+  { quantScore: number; scoreStatus: 'OK' } | { quantScore: null; scoreStatus: NoScoreStatus };
+
 // Percentage-only by design: no field here may carry an absolute amount
 // (balances, cost basis, P&L in dollars, share counts). Percentages are
 // scale-invariant, so the portfolio's size cannot be recovered from them.
-export interface SharedPortfolioHolding {
+export type SharedPortfolioHolding = SharedPortfolioScore & {
   ticker: string;
   name: string;
   allocationPercent: number;
   pnlPercent: number;
-  /** Canonical Signal Score and regime; null when the engine had too few candles. */
-  quantScore: number | null;
+  /** Canonical regime; null when there is no score. */
   regime: MarketRegime | null;
-}
+};
 
 export interface SharedPortfolioRisk {
   /** Peak-to-trough decline (0–100) of the allocation-weighted curve over the lookback. */
@@ -35,7 +40,7 @@ export interface SharedPortfolioRisk {
 }
 
 export interface SharedPortfolioSnapshot extends SharedPortfolioRisk {
-  version: 3;
+  version: 4;
   createdAt: string;
   pnlPercent: number;
   /** Allocation-weighted score over the holdings that have one; null when none do. */
@@ -60,6 +65,34 @@ function finite(value: unknown): value is number {
 /** A score field: finite, or null for "not enough data" (older v3 rows always hold a number). */
 function finiteOrNullField(value: unknown): value is number | null {
   return value === null || finite(value);
+}
+
+function isNoScoreStatus(value: unknown): value is NoScoreStatus {
+  return (
+    value === 'INSUFFICIENT_DATA' ||
+    value === 'UNSUPPORTED' ||
+    value === 'FETCH_FAILED' ||
+    value === 'STALE_DATA' ||
+    value === 'DATA_INVALID'
+  );
+}
+
+/**
+ * A holding's score with a status that agrees with it. Rows before version 4
+ * carry no reason: their null scores read back as short history, the only
+ * wording they were ever shown with.
+ */
+function parseScore(
+  version: number,
+  quantScore: unknown,
+  scoreStatus: unknown,
+): SharedPortfolioScore | null {
+  if (version < 4) {
+    if (quantScore === null) return { quantScore, scoreStatus: 'INSUFFICIENT_DATA' };
+    return finite(quantScore) ? { quantScore, scoreStatus: 'OK' } : null;
+  }
+  if (scoreStatus === 'OK') return finite(quantScore) ? { quantScore, scoreStatus } : null;
+  return quantScore === null && isNoScoreStatus(scoreStatus) ? { quantScore, scoreStatus } : null;
 }
 
 function isRegime(value: unknown): value is MarketRegime {
@@ -174,24 +207,27 @@ export async function buildSharedPortfolioSnapshot(
 
   const totalValue = [...grouped.values()].reduce((sum, holding) => sum + holding.value, 0);
   const totalInvested = [...grouped.values()].reduce((sum, holding) => sum + holding.invested, 0);
-  const results = await Promise.all([...grouped.keys()].map((ticker) => scoreTicker(ticker)));
 
-  const holdings = [...grouped.entries()]
-    .map(([ticker, holding], index): SharedPortfolioHolding => {
-      const asset = assetByTicker.get(ticker);
-      const result = results[index];
-      const scored = result?.status === 'OK' ? result : null;
-      return {
-        ticker: ticker.slice(0, 24),
-        name: (asset?.name || ticker).slice(0, 120),
-        allocationPercent: totalValue > 0 ? (holding.value / totalValue) * 100 : 0,
-        pnlPercent:
-          holding.invested > 0 ? ((holding.value - holding.invested) / holding.invested) * 100 : 0,
-        quantScore: scored?.signal_score ?? null,
-        regime: scored?.regime ?? null,
-      };
-    })
-    .sort((a, b) => b.allocationPercent - a.allocationPercent);
+  const holdings = (
+    await Promise.all(
+      [...grouped.entries()].map(async ([ticker, holding]): Promise<SharedPortfolioHolding> => {
+        const asset = assetByTicker.get(ticker);
+        const result = await scoreTicker(ticker);
+        return {
+          ticker: ticker.slice(0, 24),
+          name: (asset?.name || ticker).slice(0, 120),
+          allocationPercent: totalValue > 0 ? (holding.value / totalValue) * 100 : 0,
+          pnlPercent:
+            holding.invested > 0
+              ? ((holding.value - holding.invested) / holding.invested) * 100
+              : 0,
+          ...(result.status === 'OK'
+            ? { quantScore: result.signal_score, scoreStatus: 'OK', regime: result.regime }
+            : { quantScore: null, scoreStatus: result.status, regime: null }),
+        };
+      }),
+    )
+  ).sort((a, b) => b.allocationPercent - a.allocationPercent);
 
   // Holdings without a canonical score are left out of the blend, not zeroed.
   let quantWeight = 0;
@@ -204,7 +240,7 @@ export async function buildSharedPortfolioSnapshot(
   const quantScore = quantWeight > 0 ? quantSum / quantWeight : null;
 
   return {
-    version: 3,
+    version: 4,
     createdAt,
     pnlPercent: totalInvested > 0 ? ((totalValue - totalInvested) / totalInvested) * 100 : 0,
     quantScore,
@@ -235,7 +271,8 @@ export async function publishSharedPortfolio({
  * Validates a stored snapshot and rebuilds it from whitelisted fields only, so
  * nothing outside the percentage-only contract (e.g. an injected dollar field)
  * can reach the public view. Version 2 snapshots predate drawdown and alpha
- * and read back as version 3 with those fields null.
+ * and read back with those fields null; versions 2 and 3 predate score
+ * statuses (see parseScore). Every row reads back as version 4.
  */
 export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -243,7 +280,7 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
     version?: unknown;
   };
   if (
-    (candidate.version !== 2 && candidate.version !== 3) ||
+    (candidate.version !== 2 && candidate.version !== 3 && candidate.version !== 4) ||
     typeof candidate.createdAt !== 'string' ||
     !finite(candidate.pnlPercent) ||
     !finiteOrNullField(candidate.quantScore) ||
@@ -255,7 +292,8 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
   const holdings: SharedPortfolioHolding[] = [];
   for (const value of candidate.holdings) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const holding = value as Partial<SharedPortfolioHolding>;
+    const holding = value as Partial<Record<keyof SharedPortfolioHolding, unknown>>;
+    const score = parseScore(candidate.version, holding.quantScore, holding.scoreStatus);
     if (
       typeof holding.ticker !== 'string' ||
       holding.ticker.length === 0 ||
@@ -264,7 +302,7 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
       holding.name.length > 120 ||
       !finite(holding.allocationPercent) ||
       !finite(holding.pnlPercent) ||
-      !finiteOrNullField(holding.quantScore) ||
+      !score ||
       (holding.regime !== null && !isRegime(holding.regime))
     ) {
       return null;
@@ -274,13 +312,13 @@ export function parseSharedPortfolioSnapshot(value: unknown): SharedPortfolioSna
       name: holding.name,
       allocationPercent: holding.allocationPercent,
       pnlPercent: holding.pnlPercent,
-      quantScore: holding.quantScore,
+      ...score,
       regime: holding.regime,
     });
   }
 
   return {
-    version: 3,
+    version: 4,
     createdAt: candidate.createdAt,
     pnlPercent: candidate.pnlPercent,
     quantScore: candidate.quantScore,

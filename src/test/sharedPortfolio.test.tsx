@@ -158,30 +158,40 @@ describe('shared portfolio snapshots', () => {
         'pnlPercent',
         'quantScore',
         'regime',
+        'scoreStatus',
         'ticker',
       ]);
     }
   });
 
-  it('reports null scores for holdings without enough candles and leaves them out of the blend', async () => {
+  it('records why each unscored holding has no score and leaves it out of the blend', async () => {
     const candles = series(200, 0.2);
-    history.candles.mockImplementation(async (ticker: string) => (ticker === 'BTC' ? candles : []));
+    history.candles.mockImplementation(async (ticker: string) => {
+      if (ticker === 'ETH') throw new Error('Binance down');
+      return ticker === 'BTC' ? candles : series(20, 0.1);
+    });
     const snapshot = await buildSharedPortfolioSnapshot(
       [
         makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 1 }),
-        makePosition({ id: 'aapl', ticker: 'AAPL', buyPrice: 100, shares: 3 }),
+        makePosition({ id: 'aapl', ticker: 'AAPL', buyPrice: 100, shares: 1 }),
+        makePosition({ id: 'eth', ticker: 'ETH', buyPrice: 100, shares: 1 }),
+        makePosition({ id: 'sol', ticker: 'SOL', buyPrice: 100, shares: 1 }),
       ],
-      [
-        makeAsset({ ticker: 'BTC', current_price: 100 }),
-        makeAsset({ ticker: 'AAPL', current_price: 100 }),
-      ],
+      ['BTC', 'AAPL', 'ETH', 'SOL'].map((ticker) => makeAsset({ ticker, current_price: 100 })),
       '2026-10-18T00:00:00.000Z',
     );
 
-    expect(snapshot.holdings.find((h) => h.ticker === 'AAPL')).toMatchObject({
+    const byTicker = Object.fromEntries(snapshot.holdings.map((h) => [h.ticker, h]));
+    expect(byTicker['BTC']).toMatchObject({ scoreStatus: 'OK' });
+    // An equity is never fetched: "not scanned", not "not enough data".
+    expect(byTicker['AAPL']).toMatchObject({
       quantScore: null,
+      scoreStatus: 'UNSUPPORTED',
       regime: null,
     });
+    expect(history.candles).not.toHaveBeenCalledWith('AAPL', expect.anything(), expect.anything());
+    expect(byTicker['ETH']).toMatchObject({ quantScore: null, scoreStatus: 'FETCH_FAILED' });
+    expect(byTicker['SOL']).toMatchObject({ quantScore: null, scoreStatus: 'INSUFFICIENT_DATA' });
     // 25% BTC is the only scored weight, so the blend is BTC's score alone.
     expect(snapshot.quantScore).toBe(engineScore(candles).signal_score);
 
@@ -348,13 +358,13 @@ describe('shared portfolio snapshots', () => {
 
     expect(record?.snapshot).toEqual({
       ...legacy,
-      version: 3,
+      version: 4,
       maxDrawdownPercent: null,
       alphaPercent: null,
     });
   });
 
-  it('reads null "not enough data" scores back', async () => {
+  it('reads version 3 rows, which carry no score status, as short history', async () => {
     const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const snapshot = {
       version: 3,
@@ -379,7 +389,50 @@ describe('shared portfolio snapshots', () => {
       error: null,
     });
 
-    expect((await fetchSharedPortfolio(id))?.snapshot).toEqual(snapshot);
+    expect((await fetchSharedPortfolio(id))?.snapshot).toEqual({
+      ...snapshot,
+      version: 4,
+      holdings: [{ ...snapshot.holdings[0], scoreStatus: 'INSUFFICIENT_DATA' }],
+    });
+  });
+
+  it('rejects version 4 holdings whose status disagrees with their score', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const holding = {
+      ticker: 'AAPL',
+      name: 'Apple',
+      allocationPercent: 100,
+      pnlPercent: 5,
+      quantScore: null,
+      scoreStatus: 'UNSUPPORTED',
+      regime: null,
+    };
+    const snapshot = (...holdings: object[]) => ({
+      version: 4,
+      createdAt: '2026-10-18T00:00:00.000Z',
+      pnlPercent: 5,
+      quantScore: null,
+      maxDrawdownPercent: null,
+      alphaPercent: null,
+      holdings,
+    });
+    const read = (value: unknown) => {
+      database.maybeSingle.mockResolvedValue({
+        data: { id, snapshot: value, created_at: '2026-10-18T00:00:00.000Z' },
+        error: null,
+      });
+      return fetchSharedPortfolio(id);
+    };
+
+    await expect(read(snapshot(holding))).resolves.toMatchObject({ snapshot: snapshot(holding) });
+    for (const bad of [
+      { ...holding, scoreStatus: undefined },
+      { ...holding, scoreStatus: 'OK' },
+      { ...holding, scoreStatus: 'EVALUATED' },
+      { ...holding, quantScore: 70 },
+    ]) {
+      await expect(read(snapshot(bad))).rejects.toThrow('invalid');
+    }
   });
 
   it('skips the request for ids that are not UUIDs', async () => {
@@ -419,6 +472,97 @@ describe('public portfolio view', () => {
     expect(screen.getByText('Total return')).toBeVisible();
     expect(screen.getAllByText('+20.00%').length).toBeGreaterThan(0);
     expect(container.textContent).not.toMatch(/\$/);
+  });
+
+  it('shows an equity holding as not scanned, never as not enough data', async () => {
+    history.candles.mockResolvedValue(series(200, 0.2));
+    const snapshot = await buildSharedPortfolioSnapshot(
+      [
+        makePosition({ id: 'aapl', ticker: 'AAPL', buyPrice: 100, shares: 3 }),
+        makePosition({ id: 'msft', ticker: 'MSFT', buyPrice: 100, shares: 1 }),
+      ],
+      [makeAsset({ ticker: 'AAPL' }), makeAsset({ ticker: 'MSFT' })],
+      '2026-10-18T00:00:00.000Z',
+    );
+    const record = (value: SharedPortfolioRecord['snapshot']): SharedPortfolioRecord => ({
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      createdAt: value.createdAt,
+      snapshot: value,
+    });
+
+    const { container, rerender } = render(<SharedPortfolioView record={record(snapshot)} />);
+
+    // Two holdings and the hero: no holding is scored, and none was ever scanned.
+    expect(screen.getAllByText('Not scanned')).toHaveLength(3);
+    expect(container.textContent).not.toMatch(/Not Enough Data|No data/);
+
+    // One scored holding: the hero shows the blend, the equity keeps its reason.
+    const btcScore = engineScore(series(200, 0.2)).signal_score;
+    rerender(
+      <SharedPortfolioView
+        record={record({
+          ...snapshot,
+          quantScore: btcScore,
+          holdings: [
+            ...snapshot.holdings,
+            { ...snapshot.holdings[0]!, ticker: 'BTC', quantScore: btcScore, scoreStatus: 'OK' },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getAllByText('Not scanned')).toHaveLength(2);
+    expect(screen.getAllByText(String(Math.round(btcScore))).length).toBeGreaterThan(0);
+
+    // The hero names the reason behind the largest unscored share.
+    const [aapl, msft] = snapshot.holdings;
+    rerender(
+      <SharedPortfolioView
+        record={record({
+          ...snapshot,
+          holdings: [
+            aapl!,
+            { ...msft!, ticker: 'SOL', quantScore: null, scoreStatus: 'FETCH_FAILED' },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getAllByText('Not scanned')).toHaveLength(2);
+    expect(screen.getByText('Fetch failed')).toBeVisible();
+  });
+
+  it('keeps the short-history wording for version 3 rows without a reason', async () => {
+    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    database.maybeSingle.mockResolvedValue({
+      data: {
+        id,
+        created_at: '2026-10-18T00:00:00.000Z',
+        snapshot: {
+          version: 3,
+          createdAt: '2026-10-18T00:00:00.000Z',
+          pnlPercent: 5,
+          quantScore: null,
+          maxDrawdownPercent: null,
+          alphaPercent: null,
+          holdings: [
+            {
+              ticker: 'AAPL',
+              name: 'Apple',
+              allocationPercent: 100,
+              pnlPercent: 5,
+              quantScore: null,
+              regime: null,
+            },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    render(<SharedPortfolioView record={(await fetchSharedPortfolio(id))!} />);
+
+    expect(screen.getByText('Not Enough Data')).toBeVisible();
+    expect(screen.getByText('No data')).toBeVisible();
+    expect(screen.queryByText('Not scanned')).not.toBeInTheDocument();
   });
 
   it('shows max drawdown and alpha, or an em dash when they are unavailable', async () => {

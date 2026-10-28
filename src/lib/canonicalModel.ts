@@ -158,8 +158,26 @@ export interface StaleCandleData {
   latestCloseTime: number | null;
 }
 
-export type CanonicalResult =
-  CanonicalScore | InsufficientData | InvalidCandleData | StaleCandleData;
+/** No validated candle source for the ticker's asset class: never fetched, never scored. */
+export interface UnsupportedCandleSource {
+  status: 'UNSUPPORTED';
+  version: typeof CANONICAL_MODEL_VERSION;
+  /** Why, in the Markets scan's words. */
+  detail: string;
+}
+
+/** The candle request failed (network, HTTP status, rate limit): nothing was scored. */
+export interface CandleFetchFailed {
+  status: 'FETCH_FAILED';
+  version: typeof CANONICAL_MODEL_VERSION;
+  detail: string;
+}
+
+/** What the engine and the candle validators can say about a candle series. */
+export type EngineResult = CanonicalScore | InsufficientData | InvalidCandleData | StaleCandleData;
+
+/** A ticker's result: the engine's, or why no candles ever reached it (scoreTicker). */
+export type CanonicalResult = EngineResult | UnsupportedCandleSource | CandleFetchFailed;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -294,7 +312,7 @@ export function scoreFactors(inputs: FactorInputs): FactorScore {
  * Scores a candle series (oldest first). The reading is the last bar's, like
  * Pine's — never the last *defined* value of a series that went stale.
  */
-export function evaluateCandles(candles: readonly EngineCandle[]): CanonicalResult {
+export function evaluateCandles(candles: readonly EngineCandle[]): EngineResult {
   const insufficient: InsufficientData = {
     status: 'INSUFFICIENT_DATA',
     version: CANONICAL_MODEL_VERSION,

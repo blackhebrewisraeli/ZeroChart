@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ArrowRight, LockKeyhole, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Cell, Pie, PieChart, Tooltip } from 'recharts';
 import { ALLOCATION_PALETTE } from '@/lib/allocation';
-import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
+import { NoScoreBadge } from '@/components/NoScoreBadge';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import type { SharedPortfolioRecord, SharedPortfolioHolding } from '@/lib/sharedPortfolio';
 import { cn } from '@/lib/utils';
@@ -88,7 +88,7 @@ export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfol
           </div>
           <div className={cn('shared-hero-score', scoreTone(snapshot.quantScore))}>
             {snapshot.quantScore === null ? (
-              <InsufficientDataBadge />
+              <NoScoreBadge status="INSUFFICIENT_DATA" />
             ) : (
               <span className="shared-hero-score-value">{Math.round(snapshot.quantScore)}</span>
             )}
@@ -213,7 +213,7 @@ export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfol
                       <span>{holding.regime ? REGIME_LABELS[holding.regime] : '—'}</span>
                     </div>
                     {holding.quantScore === null ? (
-                      <InsufficientDataBadge compact />
+                      <NoScoreBadge status="INSUFFICIENT_DATA" compact />
                     ) : (
                       <div className={cn('shared-score-pill', scoreTone(holding.quantScore))}>
                         {Math.round(holding.quantScore)}

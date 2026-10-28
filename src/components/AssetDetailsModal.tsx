@@ -5,9 +5,9 @@ import { AssetIcon } from '@/components/AssetIcon';
 import { PricingModal } from '@/components/PricingModal';
 import { AssetChart } from '@/components/AssetChart';
 import { PineScriptModal } from '@/components/PineScriptModal';
-import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
+import { NoScoreBadge } from '@/components/NoScoreBadge';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
-import { REGIME_LABELS, type CanonicalResult } from '@/lib/canonicalModel';
+import { REGIME_LABELS, type CanonicalResult, type CanonicalScore } from '@/lib/canonicalModel';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
 import { getBrokerUrl } from '@/lib/tradeRouter';
@@ -26,28 +26,41 @@ const QUANT_FACTORS = [
   { label: 'Volatility Regime', source: 'ATR', score: 'volatilityScore', weight: 'volatility' },
 ] as const;
 
+/** Why the engine has no score for an asset, in one or two sentences. */
+function noScoreNote(ticker: string, result: Exclude<CanonicalResult, CanonicalScore>): string {
+  switch (result.status) {
+    case 'INSUFFICIENT_DATA':
+      return `The engine needs ${result.required} daily candles to score ${ticker} and has ${result.received}. No score is shown rather than a guess.`;
+    case 'UNSUPPORTED':
+      return `${result.detail} ${ticker} was not scored.`;
+    case 'FETCH_FAILED':
+      return `Candle history for ${ticker} failed to load (${result.detail}), so it was not scored.`;
+    case 'STALE_DATA':
+      return `The latest closed candle for ${ticker} is stale, so it was not scored.`;
+    case 'DATA_INVALID':
+      return `Candle history for ${ticker} failed validation, so it was not scored.`;
+  }
+}
+
 /**
  * The engine's verdict on one asset: regime, score, factor breakdown and ATR
- * size once scored, else why there is no score yet.
+ * size once scored, else why there is no score.
  */
 function QuantDetails({
   ticker,
   result,
   livePrice,
 }: Readonly<{ ticker: string; result: CanonicalResult | undefined; livePrice: number | null }>) {
-  if (result?.status === 'INSUFFICIENT_DATA') {
+  if (result === undefined) {
+    return <p className="quant-breakdown-note">Computing signal…</p>;
+  }
+  if (result.status !== 'OK') {
     return (
       <div className="quant-insight-summary">
-        <InsufficientDataBadge />
-        <p className="quant-breakdown-note">
-          The engine needs {result.required} daily candles to score {ticker} and has{' '}
-          {result.received}. No score is shown rather than a guess.
-        </p>
+        <NoScoreBadge status={result.status} />
+        <p className="quant-breakdown-note">{noScoreNote(ticker, result)}</p>
       </div>
     );
-  }
-  if (result?.status !== 'OK') {
-    return <p className="quant-breakdown-note">Computing signal…</p>;
   }
   const hasLivePrice = livePrice !== null && Number.isFinite(livePrice) && livePrice > 0;
   const sizing = recommendPositionSize({

@@ -60,7 +60,7 @@ import { useHydrationState } from '@/lib/hydrationStore';
 import { AddPositionModal } from '@/components/AddPositionModal';
 import { AuthModal } from '@/components/AuthModal';
 import { AssetIcon } from '@/components/AssetIcon';
-import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
+import { NoScoreBadge } from '@/components/NoScoreBadge';
 import { Sparkline } from '@/components/Sparkline';
 import { AllocationChart } from '@/components/AllocationChart';
 import { BacktestChart } from '@/components/BacktestChart';
@@ -246,9 +246,9 @@ function HealthRing({ score }: Readonly<{ score: number | null }>) {
 }
 
 function SignalValue({ result }: Readonly<{ result: CanonicalResult | undefined }>) {
-  if (result?.status === 'OK') return <>{result.signal_score}</>;
-  if (result?.status === 'INSUFFICIENT_DATA') return <InsufficientDataBadge />;
-  return <>—</>;
+  if (result === undefined) return <>—</>;
+  if (result.status === 'OK') return <>{result.signal_score}</>;
+  return <NoScoreBadge status={result.status} />;
 }
 
 /**

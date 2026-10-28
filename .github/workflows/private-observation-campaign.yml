@@ -81,4 +81,4 @@ jobs:
 
       - name: Run private campaign orchestration
         working-directory: orchestration
-        run: npx tsx scripts/campaignAutomation.ts run
+        run: ./node_modules/.bin/tsx scripts/campaignAutomation.ts run

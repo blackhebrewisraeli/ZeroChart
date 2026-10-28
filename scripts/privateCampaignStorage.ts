@@ -149,7 +149,7 @@ export async function listCampaignObjects(
     }
   };
   await visit(root);
-  return files.sort();
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
 async function downloadObject(
@@ -240,7 +240,7 @@ async function localFiles(root: string, current = root): Promise<string[]> {
       files.push(relativePath);
     }
   }
-  return files.sort();
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
 async function uploadCreateOrVerify(
@@ -270,7 +270,7 @@ async function uploadCreateOrVerify(
   if (sha256(remote) !== sha256(content)) {
     throw new PrivateStorageConflictError(`Remote campaign artifact conflicts at ${relativePath}`);
   }
-  if (!response || !response.ok) return 'UNCHANGED';
+  if (!response?.ok) return 'UNCHANGED';
   return 'CREATED';
 }
 

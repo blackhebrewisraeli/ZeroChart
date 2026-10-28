@@ -294,13 +294,11 @@ export async function main(): Promise<void> {
 }
 
 async function reportFailure(error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
   const failure =
     error instanceof CampaignAutomationError
       ? error
-      : new CampaignAutomationError(
-          'CONFIGURATION',
-          error instanceof Error ? error.message : String(error),
-        );
+      : new CampaignAutomationError('CONFIGURATION', message);
   await writeSummary([
     '## Private observation campaign',
     '',
@@ -314,5 +312,9 @@ async function reportFailure(error: unknown): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(reportFailure);
+  try {
+    await main();
+  } catch (error) {
+    await reportFailure(error);
+  }
 }

@@ -216,7 +216,7 @@ export async function collectScanInputs(
         continue;
       }
       try {
-        input.candles = await fetchCandles(input.ticker);
+        input.candles = await fetchCandles(input.ticker); // NOSONAR(S9382): one request per worker is the bound
       } catch (error) {
         input.error = fetchError(error);
         if (error instanceof ProviderRateLimitError) limited = error;

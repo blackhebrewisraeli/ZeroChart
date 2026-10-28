@@ -76,7 +76,7 @@ describe('MarketScanSummary', () => {
       ),
     ).toHaveLength(2);
     expect(within(panel).queryByText(/None — all/)).not.toBeInTheDocument();
-    const failures = within(panel).getByRole('status');
+    const failures = within(panel).getByRole('region', { name: 'Not evaluated this scan' });
     expect(within(failures).getByText('ETH-USD')).toBeInTheDocument();
     expect(within(failures).getByText('Fetch failed')).toBeInTheDocument();
     expect(within(failures).getByText('HTTP 503')).toBeInTheDocument();

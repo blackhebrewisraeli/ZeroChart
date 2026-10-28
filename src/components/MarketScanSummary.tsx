@@ -186,7 +186,7 @@ export function MarketScanSummary({
         />
       </div>
       {failures.length > 0 && (
-        <div className="market-scan-failures" role="status">
+        <section className="market-scan-failures" aria-label="Not evaluated this scan">
           <h3 className="market-scan-label">Not evaluated this scan</h3>
           <ul className="market-scan-list">
             {failures.map((result) => (
@@ -197,7 +197,7 @@ export function MarketScanSummary({
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
       <p className="market-scan-note">
         Setups are the model&rsquo;s conditions on the last closed daily candle (the Pine

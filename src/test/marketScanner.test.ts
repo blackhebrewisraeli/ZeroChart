@@ -4,10 +4,22 @@ import { CandleProviderDataError, ProviderRateLimitError, type Candle } from '@/
 import { evaluateCandles, modelSetups, type CanonicalScore } from '@/lib/canonicalModel';
 import {
   collectScanInputs,
+  equityCacheKey,
   evaluateScan,
   SCAN_MIN_CLOSED_CANDLES,
+  UNSUPPORTED_DETAIL,
   type ScanInput,
+  type ScanSources,
 } from '@/lib/marketScanner';
+import { US_EQUITY_INSTRUMENTS, type EquityDailySeries } from '@/lib/usEquityDaily';
+import {
+  bars,
+  EQUITY_NOW,
+  fixtureProvider,
+  LATEST_FINAL,
+  split,
+  wave as equityWave,
+} from './usEquityFixtures';
 import { qualifiesForRiskProfile } from '@/lib/portfolioBuilder';
 
 const DAY = 86_400_000;
@@ -55,15 +67,22 @@ function fetchFrom(map: Record<string, Candle[] | Error>) {
   return { calls, fetchCandles };
 }
 
+const collect = (
+  universe: readonly string[],
+  crypto: ScanSources['crypto'],
+  concurrency?: number,
+  evaluationTime = NOW,
+) => collectScanInputs(universe, { crypto }, { evaluationTime, concurrency });
+
 async function scan(universe: readonly string[], map: Record<string, Candle[] | Error>) {
-  const inputs = await collectScanInputs(universe, fetchFrom(map).fetchCandles);
+  const inputs = await collect(universe, fetchFrom(map).fetchCandles);
   return evaluateScan(inputs, { evaluationTime: NOW, universeSource: 'fixture' });
 }
 
 describe('collectScanInputs', () => {
   it('attempts every supported member exactly once and never requests unsupported ones', async () => {
     const { calls, fetchCandles } = fetchFrom(SERIES);
-    const inputs = await collectScanInputs([...UNIVERSE, 'BTC-USD'], fetchCandles);
+    const inputs = await collect([...UNIVERSE, 'BTC-USD'], fetchCandles);
     expect([...calls].sort()).toEqual(['BTC-USD', 'ETH-USD', 'SOL-USD']);
     expect(inputs.map((input) => [input.ticker, input.instrument])).toEqual([
       ['AAPL', null],
@@ -79,7 +98,7 @@ describe('collectScanInputs', () => {
     const universe = Array.from({ length: 12 }, (_, i) => `C${i}-USD`);
     let inFlight = 0;
     let peak = 0;
-    const inputs = await collectScanInputs(
+    const inputs = await collect(
       universe,
       async () => {
         inFlight += 1;
@@ -100,7 +119,7 @@ describe('collectScanInputs', () => {
       'A-USD': SERIES['BTC-USD']!,
       'B-USD': new ProviderRateLimitError(429, 30_000),
     });
-    const inputs = await collectScanInputs(universe, fetchCandles, 1);
+    const inputs = await collect(universe, fetchCandles, 1);
     expect(calls).toEqual(['A-USD', 'B-USD']);
     expect(inputs.map((input) => input.error?.code ?? 'OK')).toEqual([
       'OK',
@@ -113,7 +132,7 @@ describe('collectScanInputs', () => {
   });
 
   it('records network and malformed-provider failures on their member without rejecting', async () => {
-    const inputs = await collectScanInputs(['BTC-USD', 'ETH-USD'], async (ticker) => {
+    const inputs = await collect(['BTC-USD', 'ETH-USD'], async (ticker) => {
       if (ticker === 'BTC-USD') throw new Error('network down');
       throw new CandleProviderDataError('Binance kline row 3 is not an array');
     });
@@ -143,9 +162,11 @@ describe('evaluateScan', () => {
       ['EURUSD=X', 'forex'],
       ['SPY', 'equity'],
     ]);
-    expect(unsupported.every((item) => item.detail?.startsWith('No validated daily candle'))).toBe(
-      true,
-    );
+    expect(unsupported.map((item) => item.detail)).toEqual([
+      UNSUPPORTED_DETAIL.equity,
+      UNSUPPORTED_DETAIL.forex,
+      UNSUPPORTED_DETAIL.equity,
+    ]);
     expect(unsupported.every((item) => item.rank === null && item.model === null)).toBe(true);
   });
 
@@ -222,14 +243,24 @@ describe('evaluateScan', () => {
   it('stamps the scan with its versions, universe and data-as-of', async () => {
     const result = await scan(UNIVERSE, SERIES);
     expect(result).toMatchObject({
-      scannerVersion: 'market-scan-v1',
+      scannerVersion: 'market-scan-v2',
       modelVersion: '1.0.0',
-      candlePolicyVersion: 'binance-daily-v1',
       timeframe: '1d',
       evaluationTime: NOW,
       universe: { source: 'fixture', members: [...UNIVERSE].sort() },
+    });
+    expect(result.cohorts.map((cohort) => [cohort.assetClass, cohort.status])).toEqual([
+      ['crypto', 'COMPLETE'],
+      ['equity', 'UNSUPPORTED'],
+      ['forex', 'UNSUPPORTED'],
+    ]);
+    expect(result.cohorts[0]).toMatchObject({
+      provider: 'binance-spot-klines',
+      candlePolicyVersion: 'binance-daily-v1',
+      minClosedCandles: 199,
       dataAsOf: { oldest: TODAY - 1, newest: TODAY - 1 },
     });
+    expect(result.cohorts[1]).toMatchObject({ provider: null, candlePolicyVersion: null });
   });
 
   it('keeps rank, setup conditions and risk-profile eligibility separate', async () => {
@@ -274,6 +305,7 @@ describe('scan path is read-only', () => {
   it('imports no database client, ledger, broker or order code', () => {
     for (const file of [
       'src/lib/marketScanner.ts',
+      'src/lib/usEquityDaily.ts',
       'src/hooks/useMarketScan.ts',
       'src/components/MarketScanSummary.tsx',
       'scripts/marketScanStore.ts',
@@ -286,9 +318,224 @@ describe('scan path is read-only', () => {
   });
 
   it('never fetches for a member whose class has no source', async () => {
-    const inputs: ScanInput[] = await collectScanInputs(['AAPL', 'EURUSD=X'], () => {
+    const inputs: ScanInput[] = await collect(['AAPL', 'EURUSD=X'], () => {
       throw new Error('must not be called');
     });
     expect(inputs.every((input) => input.candles === undefined && !input.error)).toBe(true);
+  });
+});
+
+describe('equity cohort (fixture provider: no live equity data exists yet)', () => {
+  const crypto = fetchFrom({}).fetchCandles;
+  const equityScan = async (
+    universe: readonly string[],
+    provider: ReturnType<typeof fixtureProvider>,
+    extra: Partial<ScanSources> = {},
+    evaluationTime = EQUITY_NOW,
+  ) => {
+    const inputs = await collectScanInputs(
+      universe,
+      { crypto, equity: provider, ...extra },
+      { evaluationTime },
+    );
+    return {
+      inputs,
+      scan: evaluateScan(inputs, {
+        evaluationTime,
+        universeSource: 'fixture',
+        equityProvider: provider.id,
+      }),
+    };
+  };
+
+  it('attempts every mapped configured equity once, over the same 200-session range', async () => {
+    const universe = Object.keys(US_EQUITY_INSTRUMENTS);
+    const series = split(bars(equityWave));
+    const provider = fixtureProvider(Object.fromEntries(universe.map((t) => [t, series])), 4);
+    const { scan: result } = await equityScan(universe, provider);
+    expect(provider.calls).toHaveLength(90);
+    expect(new Set(provider.calls.map((call) => call.symbol)).size).toBe(90);
+    expect(new Set(provider.calls.map((call) => `${call.from}..${call.to}`))).toEqual(
+      new Set([`${bars(equityWave)[0]!.session}..${LATEST_FINAL}`]),
+    );
+    expect(result.cohorts).toHaveLength(1);
+    expect(result.cohorts[0]).toMatchObject({
+      assetClass: 'equity',
+      provider: 'fixture-eod',
+      candlePolicyVersion: 'us-equity-daily-v1',
+      status: 'COMPLETE',
+      coverage: { configured: 90, supported: 90, evaluated: 90 },
+    });
+    expect(result.results.every((item) => item.instrument === `US:${item.ticker}`)).toBe(true);
+  });
+
+  it('never requests forex or an unmapped equity, and says why', async () => {
+    const provider = fixtureProvider({ AAPL: split(bars(equityWave)) });
+    const { scan: result } = await equityScan(['AAPL', 'ZZZZ', 'EURUSD=X'], provider);
+    expect(provider.calls.map((call) => call.symbol)).toEqual(['AAPL']);
+    const detail = (ticker: string) =>
+      result.results.find((item) => item.ticker === ticker)?.detail;
+    expect(detail('ZZZZ')).toMatch(/^Not in the US equity instrument map/);
+    expect(detail('EURUSD=X')).toBe(UNSUPPORTED_DETAIL.forex);
+  });
+
+  it('ranks equities only among equities, after and apart from crypto, in any input order', async () => {
+    const provider = fixtureProvider({
+      AAPL: split(bars(equityWave)),
+      MSFT: split(bars(rising)),
+      SPY: split(bars(falling)),
+    });
+    const universe = ['SPY', 'BTC-USD', 'MSFT', 'ETH-USD', 'AAPL'];
+    const run = async (members: string[]) => {
+      const inputs = await collectScanInputs(
+        members,
+        { crypto: fetchFrom(SERIES).fetchCandles, equity: provider, now: () => EQUITY_NOW },
+        { evaluationTime: EQUITY_NOW },
+      );
+      return evaluateScan(inputs, {
+        evaluationTime: EQUITY_NOW,
+        universeSource: 'fixture',
+        equityProvider: provider.id,
+      });
+    };
+    const first = await run(universe);
+    expect(await run([...universe].reverse())).toEqual(first);
+    const ranked = first.results.filter((item) => item.rank !== null);
+    expect(ranked.map((item) => [item.assetClass, item.rank])).toEqual([
+      ['crypto', 1],
+      ['crypto', 2],
+      ['equity', 1],
+      ['equity', 2],
+      ['equity', 3],
+    ]);
+    const equityScores = ranked
+      .filter((item) => item.assetClass === 'equity')
+      .map((item) => item.model?.signal_score ?? -1);
+    expect(equityScores).toEqual([...equityScores].sort((a, b) => b - a));
+    expect(first.cohorts.map((cohort) => cohort.status)).toEqual(['COMPLETE', 'COMPLETE']);
+  });
+
+  it('stops equity requests after a 429 without stopping crypto', async () => {
+    const provider = fixtureProvider(
+      {
+        AAPL: split(bars(equityWave)),
+        MSFT: new ProviderRateLimitError(429, 60_000, 'fixture-eod'),
+        NVDA: split(bars(equityWave)),
+      },
+      1,
+    );
+    const inputs = await collectScanInputs(
+      ['AAPL', 'MSFT', 'NVDA', 'BTC-USD'],
+      { crypto: fetchFrom(SERIES).fetchCandles, equity: provider },
+      { evaluationTime: EQUITY_NOW },
+    );
+    const result = evaluateScan(inputs, {
+      evaluationTime: EQUITY_NOW,
+      universeSource: 'fixture',
+      equityProvider: provider.id,
+    });
+    expect(provider.calls.map((call) => call.symbol)).toEqual(['AAPL', 'MSFT']);
+    const status = (ticker: string) => result.results.find((item) => item.ticker === ticker);
+    expect(status('MSFT')?.detail).toBe('fixture-eod rate limit: HTTP 429 (retry after 60s)');
+    expect(status('NVDA')?.status).toBe('RATE_LIMITED');
+    expect(status('NVDA')?.detail).toMatch(/^Not requested: fixture-eod rate limit/);
+    expect(status('BTC-USD')?.status).toBe('EVALUATED');
+    expect(result.status).toBe('PARTIAL');
+    expect(result.cohorts.map((cohort) => [cohort.assetClass, cohort.status])).toEqual([
+      ['crypto', 'COMPLETE'],
+      ['equity', 'PARTIAL'],
+    ]);
+  });
+
+  it('keeps at most min(provider limit, 4) equity requests in flight', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const provider = {
+      ...fixtureProvider({}, 2),
+      async fetchDaily(): Promise<EquityDailySeries> {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        inFlight -= 1;
+        return split(bars(equityWave));
+      },
+    };
+    await equityScan(['AAPL', 'AMZN', 'MSFT', 'NVDA', 'SPY', 'QQQ'], provider);
+    expect(peak).toBe(2);
+  });
+
+  it('reports partial failures, stale, invalid and short histories per equity', async () => {
+    const duplicate = bars(equityWave);
+    duplicate.splice(120, 0, { ...duplicate[120]! });
+    const provider = fixtureProvider({
+      AAPL: split(bars(equityWave)),
+      MSFT: new Error('HTTP 503'),
+      NVDA: split(bars(equityWave, 200, '2026-10-22')),
+      SPY: split(duplicate),
+      HOOD: split(bars(equityWave, 150)),
+    });
+    const { scan: result } = await equityScan(['AAPL', 'MSFT', 'NVDA', 'SPY', 'HOOD'], provider);
+    expect(result.results.map((item) => [item.ticker, item.status])).toEqual([
+      ['AAPL', 'EVALUATED'],
+      ['HOOD', 'INSUFFICIENT_HISTORY'],
+      ['MSFT', 'FETCH_FAILED'],
+      ['NVDA', 'STALE_DATA'],
+      ['SPY', 'DATA_INVALID'],
+    ]);
+    const detail = (ticker: string) =>
+      result.results.find((item) => item.ticker === ticker)?.detail;
+    expect(detail('HOOD')).toBe(
+      '150 final sessions; the scan ranks only full 199-session windows.',
+    );
+    expect(detail('NVDA')).toBe(
+      `Latest final session is 2026-10-22; the scan needs ${LATEST_FINAL} or the session before it.`,
+    );
+    expect(detail('SPY')).toContain('us-equity-daily-v1: DUPLICATE_SESSION');
+    expect(result.cohorts[0]?.status).toBe('PARTIAL');
+  });
+
+  it('serves a cached series for the same session range with its age, and refetches after the next close', async () => {
+    const provider = fixtureProvider({ AAPL: split(bars(equityWave)) });
+    const equityCache = new Map();
+    let clock = EQUITY_NOW - 3 * 3_600_000;
+    const now = () => clock;
+    await equityScan(['AAPL'], provider, { equityCache, now });
+    clock = EQUITY_NOW;
+    const { scan: again } = await equityScan(['AAPL'], provider, { equityCache, now });
+    expect(provider.calls).toHaveLength(1);
+    expect(again.results[0]).toMatchObject({
+      status: 'EVALUATED',
+      cached: true,
+      fetchedAt: EQUITY_NOW - 3 * 3_600_000,
+    });
+    expect(
+      equityCache.has(
+        equityCacheKey('fixture-eod', 'AAPL', {
+          from: provider.calls[0]!.from,
+          to: LATEST_FINAL,
+        }),
+      ),
+    ).toBe(true);
+
+    // Thursday 01:00 New York: Wednesday's session is final, so the range moves on.
+    await equityScan(['AAPL'], provider, { equityCache, now }, Date.UTC(2026, 9, 29, 5));
+    expect(provider.calls.map((call) => call.to)).toEqual([LATEST_FINAL, '2026-10-28']);
+  });
+
+  it('records a calendar it cannot place instead of fetching', async () => {
+    const provider = fixtureProvider({});
+    const { scan: result } = await equityScan(['AAPL'], provider, {}, Date.UTC(2029, 0, 3));
+    expect(provider.calls).toEqual([]);
+    expect(result.results[0]?.status).toBe('DATA_INVALID');
+    expect(result.results[0]?.detail).toMatch(/^CALENDAR_OUT_OF_RANGE/);
+  });
+
+  it('without a provider, never calls one and reports equities as unsupported', async () => {
+    const inputs = await collect(['AAPL', 'SPY'], crypto);
+    const result = evaluateScan(inputs, { evaluationTime: NOW, universeSource: 'fixture' });
+    expect(result.cohorts).toEqual([
+      expect.objectContaining({ assetClass: 'equity', status: 'UNSUPPORTED', provider: null }),
+    ]);
+    expect(result.results.every((item) => item.detail === UNSUPPORTED_DETAIL.equity)).toBe(true);
   });
 });

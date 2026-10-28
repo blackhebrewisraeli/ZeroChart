@@ -34,8 +34,11 @@ export function useMarketScan(tickers: readonly string[], universeSource: string
     queryFn: async () => {
       // Taken before the first request, so a candle that closes mid-scan stays open.
       const evaluationTime = Date.now();
-      const inputs = await collectScanInputs(members, (ticker) =>
-        fetchHistoricalCandles(ticker, SCAN_TIMEFRAME, SCAN_CANDLE_REQUEST),
+      // No equity provider here: its credential could only live server-side.
+      const inputs = await collectScanInputs(
+        members,
+        { crypto: (ticker) => fetchHistoricalCandles(ticker, SCAN_TIMEFRAME, SCAN_CANDLE_REQUEST) },
+        { evaluationTime },
       );
       return evaluateScanAsync(inputs, { evaluationTime, universeSource });
     },

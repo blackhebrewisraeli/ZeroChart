@@ -2,7 +2,8 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import type { Candle } from '@/lib/binance';
-import { evaluateScan, type ScanInput } from '@/lib/marketScanner';
+import { evaluateScan, UNSUPPORTED_DETAIL, type ScanInput } from '@/lib/marketScanner';
+import { bars, EQUITY_NOW, rising, split, wave } from './usEquityFixtures';
 
 const DAY = 86_400_000;
 const TODAY = Date.UTC(2026, 9, 28);
@@ -56,7 +57,20 @@ describe('MarketScanSummary', () => {
       within(panel).getAllByText('None — all 2 supported assets were evaluated.'),
     ).toHaveLength(2);
     expect(within(panel).getByText(/Completed 28 Oct, 17:00 UTC/)).toBeInTheDocument();
-    expect(within(panel).getByText(/Candles to 27 Oct close \(UTC\)/)).toBeInTheDocument();
+    const coverage = within(panel).getByRole('region', { name: 'Coverage by asset class' });
+    expect(within(coverage).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(coverage).getByText('2 of 2 evaluated')).toBeInTheDocument();
+    expect(
+      within(coverage).getByText(
+        'Binance spot klines · binance-daily-v1 · candles to 27 Oct close (UTC)',
+      ),
+    ).toBeInTheDocument();
+    expect(within(coverage).getAllByText('Not scanned · 1')).toHaveLength(2);
+    expect(within(coverage).getByText(UNSUPPORTED_DETAIL.equity)).toBeInTheDocument();
+    expect(within(panel).getByRole('region', { name: 'Crypto setups' })).toBeInTheDocument();
+    expect(
+      within(panel).queryByRole('region', { name: 'Equities & ETFs setups' }),
+    ).not.toBeInTheDocument();
   });
 
   it('separates an incomplete scan from "no qualifying setups" and lists what failed', () => {
@@ -72,7 +86,7 @@ describe('MarketScanSummary', () => {
     expect(within(panel).getByText('1 of 2 supported')).toBeInTheDocument();
     expect(
       within(panel).getAllByText(
-        'None among the 1 evaluated. The scan is incomplete, so this is not a full answer.',
+        "None among the 1 evaluated. This class's scan is incomplete, so this is not a full answer.",
       ),
     ).toHaveLength(2);
     expect(within(panel).queryByText(/None — all/)).not.toBeInTheDocument();
@@ -80,6 +94,49 @@ describe('MarketScanSummary', () => {
     expect(within(failures).getByText('ETH-USD')).toBeInTheDocument();
     expect(within(failures).getByText('Fetch failed')).toBeInTheDocument();
     expect(within(failures).getByText('HTTP 503')).toBeInTheDocument();
+  });
+
+  it('ranks equities in their own section, says their performance is unvalidated, and shows cached age', () => {
+    const equity = (ticker: string, path: (i: number) => number, fetchedAt: number): ScanInput => ({
+      ticker,
+      instrument: `US:${ticker}`,
+      equity: {
+        provider: 'fixture-eod',
+        range: { from: '2026-01-09', to: '2026-10-27' },
+        series: split(bars(path)),
+        fetchedAt,
+        cached: fetchedAt < EQUITY_NOW,
+      },
+    });
+    const scan = evaluateScan(
+      [
+        { ...supported('BTC-USD'), candles: candles() },
+        equity('AAPL', wave, EQUITY_NOW),
+        equity('MSFT', rising, EQUITY_NOW - (3 * 60 + 5) * 60_000),
+      ],
+      {
+        evaluationTime: EQUITY_NOW,
+        universeSource: 'assets_status',
+        equityProvider: 'fixture-eod',
+      },
+    );
+    render(
+      <MarketScanSummary scan={scan} completedAt={EQUITY_NOW} scanning={false} failed={false} />,
+    );
+    const panel = screen.getByRole('region', { name: 'Market scan' });
+    const coverage = within(panel).getByRole('region', { name: 'Coverage by asset class' });
+    expect(
+      within(coverage).getByText(
+        'fixture-eod · us-equity-daily-v1 · sessions to 27 Oct close (New York) · 1 from cache, fetched up to 3h 05m before this scan',
+      ),
+    ).toBeInTheDocument();
+    const equities = within(panel).getByRole('region', { name: 'Equities & ETFs setups' });
+    expect(
+      within(equities).getByText(
+        /predictive performance on equities and ETFs has not been validated/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(equities).queryByText('BTC-USD')).not.toBeInTheDocument();
   });
 
   it('never offers an action: no buttons or links in the panel', () => {

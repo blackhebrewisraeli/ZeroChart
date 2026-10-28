@@ -81,6 +81,7 @@ Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
 | Signal Score (0–100)       | `src/lib/canonicalModel.ts`: the single scoring model; `pine/` ports it within the bounds of `docs/PINE_PARITY_ASSESSMENT.md`; `docs/QUANT_MODEL_VERIFICATION.md` checks it |
 | Indicators                 | `src/lib/indicators.ts`, run off the main thread by `financeClient.ts` → `finance.worker.ts` → `financeCompute.ts`                                                          |
 | Candle input contract      | `src/lib/candleValidation.ts` (`docs/CANDLE_INPUT_CONTRACT.md`)                                                                                                             |
+| Equity candle contract     | `src/lib/usEquityDaily.ts`: NYSE session calendar, `us-equity-daily-v1`, provider seam (`docs/EQUITY_DATA.md`)                                                              |
 | Market data in the browser | `src/lib/assets.ts` (assets_status), `binance.ts` (REST candles), `hooks/useBinanceWebSocket.ts` → `livePriceStore.ts`                                                      |
 | Data freshness             | `src/lib/freshness.ts`, `components/FreshnessBadge.tsx`                                                                                                                     |
 | Server-side market data    | `supabase/functions/{crypto-price-feed,equity-forex-price-feed,market-analytics}`                                                                                           |

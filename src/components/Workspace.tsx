@@ -238,17 +238,26 @@ const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['Crypto', 'Stocks', 'Forex', 'A
 
 type ScanResults = ReadonlyMap<string, ScanAssetResult>;
 
-/** Scan rank order; unscored assets (scanning, unsupported or failed) sink last, by ticker. */
-function rankScore(scores: ScanResults, asset: Asset): number {
-  return scanScore(scores.get(asset.ticker)) ?? -1;
+const CLASS_ORDER = { crypto: 0, equity: 1, forex: 2 } as const;
+
+/**
+ * Scan rank order: each asset class's own ranking in turn, crypto first, never
+ * interleaved — the same score does not compare across classes. Unscored
+ * assets (scanning, unsupported or failed) sink last, by ticker.
+ */
+function compareByScan(scores: ScanResults, a: Asset, b: Asset): number {
+  const key = (asset: Asset) => {
+    const result = scores.get(asset.ticker);
+    return result?.rank == null ? [3, 0] : [CLASS_ORDER[result.assetClass], result.rank];
+  };
+  const [classA = 3, rankA = 0] = key(a);
+  const [classB = 3, rankB = 0] = key(b);
+  return classA - classB || rankA - rankB || compareTickers(a.ticker, b.ticker);
 }
 
 function sortMarkets(assets: Asset[], view: MarketView, scores: ScanResults): Asset[] {
   const list = [...assets];
-  if (view === 'signals')
-    return list.sort(
-      (a, b) => rankScore(scores, b) - rankScore(scores, a) || compareTickers(a.ticker, b.ticker),
-    );
+  if (view === 'signals') return list.sort((a, b) => compareByScan(scores, a, b));
   if (view === 'gainers')
     return list.sort((a, b) => (b.change_24h ?? -Infinity) - (a.change_24h ?? -Infinity));
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
@@ -605,8 +614,7 @@ function Terminal() {
     assetClass === 'All'
       ? baseAssets
       : baseAssets.filter((a) => getAssetClass(a.ticker) === assetClass);
-  const best = (list: Asset[]) =>
-    [...list].sort((a, b) => rankScore(scores, b) - rankScore(scores, a))[0];
+  const best = (list: Asset[]) => [...list].sort((a, b) => compareByScan(scores, a, b))[0];
   // The hero follows the asset-class filter, so it opens on the top crypto pick.
   const topPick = best(filtered) ?? best(baseAssets);
   const rows = sortMarkets(filtered, marketView, scores);

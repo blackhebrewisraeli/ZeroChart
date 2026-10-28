@@ -15,7 +15,15 @@ export type CandleIssueCode =
   | 'OPEN_OUTSIDE_RANGE'
   | 'CLOSE_OUTSIDE_RANGE'
   | 'DUPLICATE_TIMESTAMP'
-  | 'MISSING_DAILY_INTERVAL';
+  | 'MISSING_DAILY_INTERVAL'
+  // us-equity-daily-v1 (usEquityDaily.ts)
+  | 'INVALID_SESSION_DATE'
+  | 'CALENDAR_OUT_OF_RANGE'
+  | 'NON_SESSION_BAR'
+  | 'DUPLICATE_SESSION'
+  | 'MISSING_SESSION'
+  | 'ADJUSTMENT_BASIS_MISMATCH'
+  | 'UNADJUSTED_SPLIT';
 
 export interface DailyCandle {
   timestamp: number;
@@ -45,7 +53,7 @@ export interface CandleValidationResult<T extends DailyCandle> {
   fresh: boolean | null;
 }
 
-function issue(
+export function issue(
   code: CandleIssueCode,
   index: number,
   candle: Partial<DailyCandle>,
@@ -108,7 +116,7 @@ function validateCloseTime(candle: DailyCandle, index: number): CandleIssue[] {
   return [];
 }
 
-function validatePrices(candle: DailyCandle, index: number): CandleIssue[] {
+export function validatePrices(candle: DailyCandle, index: number): CandleIssue[] {
   const issues: CandleIssue[] = [];
   const prices = [
     ...(candle.open === undefined ? [] : ([['open', candle.open]] as const)),

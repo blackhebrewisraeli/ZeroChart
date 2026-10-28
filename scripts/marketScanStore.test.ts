@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Candle } from '@/lib/binance';
+import { bars, EQUITY_NOW, fixtureProvider, split, wave } from '@/test/usEquityFixtures';
 import {
   fetchAssetsStatusUniverse,
   loadScan,
@@ -44,10 +45,12 @@ async function scanInto(store: string) {
   return runScan({
     universe: UNIVERSE,
     universeSource: 'assets_status',
-    fetchCandles: async (ticker) => {
-      const candles = CANDLES[ticker];
-      if (!candles) throw new Error('HTTP 503');
-      return candles;
+    sources: {
+      crypto: async (ticker) => {
+        const candles = CANDLES[ticker];
+        if (!candles) throw new Error('HTTP 503');
+        return candles;
+      },
     },
     repositoryCommit: COMMIT,
     store,
@@ -128,13 +131,98 @@ describe('market scan snapshots', () => {
     const summary = scanSummary(path, snapshot);
     expect(summary.ranked.map((row) => row.rank)).toEqual([1, 2, 3]);
     expect(summary.notEvaluated).toEqual([
-      { ticker: 'XRP-USD', status: 'FETCH_FAILED', detail: 'HTTP 503' },
+      {
+        ticker: 'XRP-USD',
+        assetClass: 'crypto',
+        status: 'FETCH_FAILED',
+        detail: 'HTTP 503',
+        fetchedAt: null,
+        cached: false,
+      },
     ]);
     expect(summary.unsupported.map((group) => [group.assetClass, group.tickers])).toEqual([
       ['equity', ['AAPL', 'SPY']],
       ['forex', ['EURUSD=X']],
     ]);
     expect(JSON.stringify(summary)).not.toContain('closeTime');
+  });
+});
+
+describe('market scan snapshots with an equity provider (fixture)', () => {
+  const SECRET = 'sk_live_fixture_credential_never_serialized';
+  /** An adapter holding a credential in its closure, as a real one would server-side. */
+  const sentHeaders: string[] = [];
+  function credentialedProvider() {
+    const inner = fixtureProvider({
+      AAPL: split(bars(wave)),
+      SPY: split(bars((i) => 400 + i)),
+      MSFT: new Error('HTTP 503'),
+    });
+    const authorization = `Token ${SECRET}`;
+    return {
+      ...inner,
+      fetchDaily: (symbol: string, range: { from: string; to: string }) => {
+        sentHeaders.push(authorization);
+        return inner.fetchDaily(symbol, range);
+      },
+    };
+  }
+
+  async function equityScanInto(store: string) {
+    return runScan({
+      universe: ['AAPL', 'BTC-USD', 'MSFT', 'SPY'],
+      universeSource: 'assets_status',
+      sources: {
+        crypto: async () => CANDLES['BTC-USD']!,
+        equity: credentialedProvider(),
+        now: () => EQUITY_NOW,
+      },
+      repositoryCommit: COMMIT,
+      store,
+      now: () => EQUITY_NOW,
+    });
+  }
+
+  it('reproduces offline, with the provider and policy attributed and no credential stored', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-scan-'));
+    const { path, snapshot } = await equityScanInto(store);
+    expect(snapshot.scan.cohorts.map((cohort) => [cohort.assetClass, cohort.provider])).toEqual([
+      ['crypto', 'binance-spot-klines'],
+      ['equity', 'fixture-eod'],
+    ]);
+    // Reproduction reads only the snapshot: no provider is passed or called.
+    expect(await reproduceScan(snapshot.scanId, store)).toEqual({
+      status: 'MATCH',
+      scanId: snapshot.scanId,
+    });
+    expect(sentHeaders.length).toBeGreaterThan(0);
+    expect(await readFile(path, 'utf8')).not.toContain(SECRET);
+
+    const summary = scanSummary(path, snapshot);
+    expect(summary.ranked.map((row) => [row.assetClass, row.ticker, row.rank])).toEqual([
+      ['crypto', 'BTC-USD', 1],
+      expect.arrayContaining(['equity', 1]),
+      expect.arrayContaining(['equity', 2]),
+    ]);
+    expect(summary.notEvaluated).toEqual([
+      expect.objectContaining({ ticker: 'MSFT', assetClass: 'equity', status: 'FETCH_FAILED' }),
+    ]);
+    expect(summary.cohorts[1]).toMatchObject({
+      candlePolicyVersion: 'us-equity-daily-v1',
+      dataAsOf: { newest: '2026-10-27T20:00:00.000Z' },
+    });
+  });
+
+  it('detects an edited equity series', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-scan-'));
+    const { snapshot } = await equityScanInto(store);
+    await tamper(store, snapshot.scanId, (s) => {
+      const aapl = s.inputs.find((input) => input.ticker === 'AAPL')!.equity!.series!;
+      aapl.bars[150]!.close *= 1.001;
+    });
+    expect(await reproduceScan(snapshot.scanId, store)).toMatchObject({
+      reason: 'INPUT_HASH_MISMATCH',
+    });
   });
 });
 

@@ -350,7 +350,10 @@ const commandHandlers: Record<string, CommandHandler> = {
     const { path, snapshot } = await runScan({
       universe: await fetchAssetsStatusUniverse(),
       universeSource: 'assets_status',
-      fetchCandles: (ticker) => fetchHistoricalCandles(ticker, SCAN_TIMEFRAME, SCAN_CANDLE_REQUEST),
+      // No equity provider: none is licensed for this use yet (docs/EQUITY_DATA.md).
+      sources: {
+        crypto: (ticker) => fetchHistoricalCandles(ticker, SCAN_TIMEFRAME, SCAN_CANDLE_REQUEST),
+      },
       // A scan run from uncommitted code says so rather than claiming the commit.
       repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
       store: storePath(allArgs, SCAN_STORE),

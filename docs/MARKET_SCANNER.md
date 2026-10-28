@@ -4,8 +4,12 @@ The scanner runs the canonical model (`src/lib/canonicalModel.ts`, model `1.0.0`
 asset in the Markets universe, ranks what it could score, flags the model's setup conditions, and
 reports everything it could not score with the reason. It never places, sizes or proposes an order.
 
-Code: `src/lib/marketScanner.ts` (pure engine), `src/hooks/useMarketScan.ts` (Markets page),
+Code: `src/lib/marketScanner.ts` (pure engine), `src/lib/usEquityDaily.ts` (equity calendar,
+candle policy and provider seam), `src/hooks/useMarketScan.ts` (Markets page),
 `src/components/MarketScanSummary.tsx`, `scripts/marketScanStore.ts` (CLI evidence).
+
+Equities and ETFs: see [EQUITY_DATA.md](EQUITY_DATA.md) for the provider decision, the
+`us-equity-daily-v1` contract and what it takes to switch them on.
 
 ## Coverage: displayed versus evaluated
 
@@ -13,24 +17,26 @@ The universe is the `assets_status` table: 100 rows on 2026-10-28. Before this c
 page displayed all 100 but the canonical model only ran on the 5 crypto rows. The 95 others showed
 "No data", which read like a short history rather than "never evaluated".
 
-| Asset class                | Configured | Price source (cadence)                                                      | Daily candles                                                                                  | Canonical model runs?      | Freshness                                                                     | Unsupported / failure behavior                                                                                                                                                          |
-| -------------------------- | ---------: | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Crypto (`BTC-USD` …)       |          5 | `crypto-price-feed`: Binance 24h ticker, every 15 min; live WebSocket ticks | Binance spot klines, 1d, last 200 (browser and CLI); `binance-daily-v1` validation             | **Yes**: scored and ranked | Closed candles only; latest close must be ≤ 48h old. Prices go Stale after 2h | Before: a fetch failure became `INSUFFICIENT_DATA`. Now: `FETCH_FAILED`, `RATE_LIMITED`, `DATA_INVALID`, `STALE_DATA` or `INSUFFICIENT_HISTORY`, and the scan reports itself incomplete |
-| Equities and ETFs (`AAPL`) |         90 | `equity-forex-price-feed`: Yahoo spark, every 15 min                        | Browser: none. `market-analytics` reads Yahoo's v8 chart (1y, 1d) once a day, server-side only | **No**                     | Quote time is the exchange's `regularMarketTime`                              | Before: "No data". Now: `UNSUPPORTED`, shown as "Not scanned" with the reason, unranked                                                                                                 |
-| Forex (`EURUSD=X`)         |          5 | Same Yahoo feed                                                             | Same as equities; no volume                                                                    | **No**                     | As equities                                                                   | As equities                                                                                                                                                                             |
+| Asset class                | Configured | Price source (cadence)                                                      | Daily candles                                                                                                         | Canonical model runs?        | Freshness                                                                                                                         | Unsupported / failure behavior                                                                                                                                                          |
+| -------------------------- | ---------: | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Crypto (`BTC-USD` …)       |          5 | `crypto-price-feed`: Binance 24h ticker, every 15 min; live WebSocket ticks | Binance spot klines, 1d, last 200 (browser and CLI); `binance-daily-v1` validation                                    | **Yes**: scored and ranked   | Closed candles only; latest close must be ≤ 48h old. Prices go Stale after 2h                                                     | Before: a fetch failure became `INSUFFICIENT_DATA`. Now: `FETCH_FAILED`, `RATE_LIMITED`, `DATA_INVALID`, `STALE_DATA` or `INSUFFICIENT_HISTORY`, and the scan reports itself incomplete |
+| Equities and ETFs (`AAPL`) |         90 | `equity-forex-price-feed`: Yahoo spark, every 15 min                        | None licensed. The scanner accepts a server-side `EquityDailyProvider` under `us-equity-daily-v1`; none is configured | **No** (fixture-tested only) | Sessions, not hours: latest final session or the one before ([contract](EQUITY_DATA.md#3-the-us-equity-daily-v1-candle-contract)) | `UNSUPPORTED`, "Not scanned", with the reason: no licensed provider is configured                                                                                                       |
+| Forex (`EURUSD=X`)         |          5 | Same Yahoo feed                                                             | Same as equities; no volume                                                                                           | **No**                       | As equities                                                                                                                       | As equities                                                                                                                                                                             |
 
 `market-analytics` is not the canonical model. It writes RSI(14), ATR(14), SMA 50/200, a volume
 spike and the archived scanner's Stable/Radar signals. It has no MACD, no factor scores and no
 regime, and it scores open-market bars by a different rule. Its output stays a separate, displayed
 field.
 
-## Supported cohort and inclusion rules
+## Cohorts and inclusion rules
 
-This PR supports one cohort: **crypto spot on Binance, 1D, UTC days**. That is all 5 crypto rows
-in the configured universe. Equities and forex are attempted, reported as `UNSUPPORTED`, and never
-ranked.
+Each asset class is a separate cohort with its own provider, candle policy, coverage and ranking
+(`scan.cohorts`). Live today: **crypto spot on Binance, 1D, UTC days**, all 5 crypto rows. US
+equities and ETFs (1D, New York sessions) run only through an injected licensed provider, and none
+is configured, so they are `UNSUPPORTED` like forex. Scanner version `market-scan-v2`.
 
-An asset is ranked only if all of these hold on the scan:
+A crypto asset is ranked only if all of these hold on the scan (the equity rules are in
+[EQUITY_DATA.md](EQUITY_DATA.md#3-the-us-equity-daily-v1-candle-contract)):
 
 1. **Instrument identity.** The ticker classifies as crypto (`classifyTicker`) and maps to a Binance
    USDT spot pair. Each result names it, e.g. `BTC-USD → BINANCE:BTCUSDT`. The quote is USDT, not
@@ -50,12 +56,13 @@ An asset is ranked only if all of these hold on the scan:
 There is **no liquidity filter**. Klines carry volume, but no repository policy defines a minimum,
 so none is invented.
 
-Scores from different asset classes or timeframes are never ranked together.
+Scores from different asset classes or timeframes are never ranked together: ranks restart at 1
+in each cohort, and the Markets "Signals" sort lists each class's ranking in turn.
 
 ## Ranking, setups and eligibility are separate
 
-- **Rank**: score descending, then ticker in code-unit order. The same inputs always give the same
-  order.
+- **Rank**: within the asset class, score descending, then ticker in code-unit order. The same
+  inputs always give the same order.
 - **Setup conditions** (`modelSetups` in `canonicalModel.ts`) are the Pine HUD's own, on the last
   closed bar:
   - _Long setup_ (`ZC LONG`): score ≥ 78 and MACD momentum ≥ +0.05% of price.
@@ -83,8 +90,10 @@ Scan snapshots, scheduled-score campaigns (`.zerochart-campaigns/`) and received
 ## Running a scan
 
 The Markets page scans on load, every 15 minutes, and when the page regains focus after 5 minutes.
-The engine runs in the finance Web Worker, with at most 4 requests in flight. After a 429 or 418,
-nothing else is requested that scan; the remaining assets are recorded as `RATE_LIMITED`.
+The engine runs in the finance Web Worker, with at most 4 requests in flight per provider. After a
+429 or 418, nothing else is requested from that provider that scan; its remaining assets are
+recorded as `RATE_LIMITED`. Other providers carry on. The browser never has an equity provider:
+its credential could only live server-side.
 
 From the command line (read-only: a public `assets_status` read and public Binance klines):
 
@@ -99,17 +108,21 @@ ranking, setups and every unevaluated asset. It exits non-zero unless the scan i
 A snapshot holds:
 
 - the universe members and their hash;
-- every asset's raw candles or recorded failure, each with its own hash;
+- each cohort's provider, candle policy, calendar, freshness rule and coverage;
+- every asset's raw candles (or equity series with its session range, fetch time and cache flag)
+  or recorded failure, each with its own hash;
 - the scan time;
 - the scanner, model and candle-policy versions;
 - the repository commit (suffixed `-dirty` for uncommitted code).
 
-`scan-reproduce` re-derives the scan offline from those inputs and compares every output: `MATCH`,
-or `MISMATCH` with `UNIVERSE_HASH_MISMATCH`, `INPUT_HASH_MISMATCH`, `OUTPUT_MISMATCH` or
-`UNSUPPORTED_VERSION`.
+`scan-reproduce` re-derives the scan offline from those inputs, without any provider, and
+compares every output: `MATCH`, or `MISMATCH` with `UNIVERSE_HASH_MISMATCH`,
+`INPUT_HASH_MISMATCH`, `OUTPUT_MISMATCH` or `UNSUPPORTED_VERSION`. Snapshots written by
+`market-scan-v1` report `UNSUPPORTED_VERSION`.
 
 Scan status is `COMPLETE` only when every supported asset was scored, `PARTIAL` when some were, and
-`FAILED` when none were. "No qualifying setups" is stated as a full answer only for a complete scan.
+`FAILED` when none were. Each cohort has its own status too. "No qualifying setups" is stated as a
+full answer only for a complete cohort.
 
 ## Evaluating the scanner
 
@@ -119,13 +132,11 @@ to count incomplete scans. The snapshots keep that whole population.
 
 ## Remaining gaps
 
-- **Equities, ETFs and forex (95 of 100)** need three things:
-  - a daily candle source whose terms allow this use. Yahoo's keyless endpoints are unofficial and
-    publish no rate limits or licence;
-  - a session-calendar candle policy: exchange hours, holidays, half days, DST, the open bar until
-    the close, and a split/dividend adjustment choice;
-  - a decision on whether the model's volatility bands (0.5%–5.5% daily ATR) compare across asset
-    classes. Until then each class would rank only within itself.
+- **Equities and ETFs (90 of 100)** need a provider licensed for display in this app, one adapter
+  and a server-side scheduled scan ([EQUITY_DATA.md](EQUITY_DATA.md#integration-prerequisite)).
+  The session policy, separate ranking and evidence are done. Whether the model's volatility bands
+  (0.5%–5.5% daily ATR) suit single stocks and ETFs is unvalidated; that is why they rank apart.
+- **Forex (5 of 100)** needs a licensed source and a 24/5 session policy of its own.
 - Snapshots are local files. A server-side scheduled scan with stored history would need a table
   and a migration.
 - `useCanonicalScores` (Tactical Signals, the asset details modal, the Paper Desk) still turns

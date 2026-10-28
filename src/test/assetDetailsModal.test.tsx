@@ -89,7 +89,9 @@ describe('AssetDetailsModal quant breakdown', () => {
     render(<AssetDetailsModal asset={makeAsset('AAPL')} onClose={() => {}} />);
 
     expect(screen.getByText('Not scanned')).toBeInTheDocument();
-    expect(screen.getByText(/No validated daily candle source for equities/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/No licensed daily-candle provider is configured for US equities/),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Not Enough Data')).not.toBeInTheDocument();
     expect(screen.queryByText(/daily candles to score/)).not.toBeInTheDocument();
     expect(screen.queryByTitle('Signal Score (0–100)')).not.toBeInTheDocument();

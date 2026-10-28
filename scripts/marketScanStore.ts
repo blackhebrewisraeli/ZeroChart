@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { Candle } from '@/lib/binance';
 import {
   collectScanInputs,
   evaluateScan,
   SCANNER_VERSION,
   type MarketScan,
   type ScanInput,
+  type ScanSources,
 } from '@/lib/marketScanner';
 import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
 import { stableSerialize } from './evaluationStore';
@@ -85,17 +85,20 @@ function snapshotPath(store: string, scanId: string): string {
 export async function runScan(options: {
   universe: readonly string[];
   universeSource: string;
-  fetchCandles: (ticker: string) => Promise<readonly Candle[]>;
+  sources: ScanSources;
   repositoryCommit: string;
   store: string;
   now?: () => number;
 }): Promise<{ path: string; snapshot: ScanSnapshot }> {
   const now = options.now ?? Date.now;
   const startedAt = now();
-  const inputs = await collectScanInputs(options.universe, options.fetchCandles);
+  const inputs = await collectScanInputs(options.universe, options.sources, {
+    evaluationTime: startedAt,
+  });
   const scan = evaluateScan(inputs, {
     evaluationTime: startedAt,
     universeSource: options.universeSource,
+    equityProvider: options.sources.equity?.id ?? null,
   });
   const version = universeVersion(scan.universe.source, scan.universe.members);
   const snapshot: ScanSnapshot = {
@@ -156,6 +159,8 @@ export async function reproduceScan(
   const recomputed = evaluateScan(snapshot.inputs, {
     evaluationTime: snapshot.scan.evaluationTime,
     universeSource: source,
+    equityProvider:
+      snapshot.scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.provider ?? null,
   });
   return stableSerialize(recomputed) === stableSerialize(snapshot.scan)
     ? { status: 'MATCH', scanId }
@@ -175,16 +180,20 @@ export function scanSummary(path: string, snapshot: ScanSnapshot) {
     versions: {
       scanner: scan.scannerVersion,
       model: scan.modelVersion,
-      candlePolicy: scan.candlePolicyVersion,
       universe: snapshot.universeVersion,
       repositoryCommit: snapshot.repositoryCommit,
     },
     universe: { source: scan.universe.source, members: scan.universe.members.length },
     coverage: scan.coverage,
-    dataAsOf: { oldest: iso(scan.dataAsOf.oldest), newest: iso(scan.dataAsOf.newest) },
+    cohorts: scan.cohorts.map((cohort) => ({
+      ...cohort,
+      dataAsOf: { oldest: iso(cohort.dataAsOf.oldest), newest: iso(cohort.dataAsOf.newest) },
+    })),
+    // Ranks restart per asset class: scores are never compared across classes.
     ranked: scan.results
       .filter((result) => result.status === 'EVALUATED')
       .map((result) => ({
+        assetClass: result.assetClass,
         rank: result.rank,
         ticker: result.ticker,
         instrument: result.instrument,
@@ -193,11 +202,20 @@ export function scanSummary(path: string, snapshot: ScanSnapshot) {
         setups: result.setups,
         riskProfiles: result.riskProfiles,
         dataAsOf: iso(result.dataAsOf),
+        fetchedAt: iso(result.fetchedAt),
+        cached: result.cached,
         rationale: result.model?.rationale ?? null,
       })),
     notEvaluated: scan.results
       .filter((result) => result.status !== 'EVALUATED' && result.status !== 'UNSUPPORTED')
-      .map((result) => ({ ticker: result.ticker, status: result.status, detail: result.detail })),
+      .map((result) => ({
+        ticker: result.ticker,
+        assetClass: result.assetClass,
+        status: result.status,
+        detail: result.detail,
+        fetchedAt: iso(result.fetchedAt),
+        cached: result.cached,
+      })),
     unsupported: (['equity', 'forex', 'crypto'] as const).flatMap((assetClass) => {
       const results = scan.results.filter(
         (result) => result.status === 'UNSUPPORTED' && result.assetClass === assetClass,

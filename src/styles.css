@@ -1005,6 +1005,26 @@ body {
 .market-scan-fail-code {
   color: var(--accent-amber);
 }
+.market-scan-coverage,
+.market-scan-cohort-setups {
+  margin-top: 14px;
+}
+.market-scan-cohort {
+  display: grid;
+  grid-template-columns: 150px 150px minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: baseline;
+}
+.market-scan-cohort-name {
+  font:
+    600 12.5px 'DM Sans',
+    sans-serif;
+}
+.market-scan-cohort-count {
+  font:
+    500 11.5px 'JetBrains Mono',
+    monospace;
+}
 .market-scan-note {
   margin: 14px 0 0;
   font-size: 11.5px;
@@ -1023,6 +1043,9 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .market-scan-grid {
+    grid-template-columns: 1fr;
+  }
+  .market-scan-cohort {
     grid-template-columns: 1fr;
   }
 }

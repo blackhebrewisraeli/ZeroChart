@@ -30,14 +30,15 @@ export interface Candle {
 
 export class CandleProviderDataError extends Error {}
 
-/** Binance answered 429 (slow down) or 418 (IP banned for ignoring 429s). */
+/** A provider answered 429 (slow down), or Binance 418 (IP banned for ignoring 429s). */
 export class ProviderRateLimitError extends Error {
   constructor(
     readonly status: number,
-    /** Retry-After in milliseconds, when Binance sent one. */
+    /** Retry-After in milliseconds, when the provider sent one. */
     readonly retryAfterMs: number | null,
+    provider = 'Binance',
   ) {
-    super(`Binance rate limit: HTTP ${status}`);
+    super(`${provider} rate limit: HTTP ${status}`);
   }
 }
 

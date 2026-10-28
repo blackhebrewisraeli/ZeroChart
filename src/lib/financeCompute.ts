@@ -13,7 +13,7 @@ export type FinanceRequest =
   | {
       kind: 'marketScan';
       inputs: readonly ScanInput[];
-      options: { evaluationTime: number; universeSource: string };
+      options: Parameters<typeof evaluateScan>[1];
     };
 
 export type FinanceResult =

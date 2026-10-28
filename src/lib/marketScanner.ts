@@ -149,7 +149,7 @@ export interface MarketScan {
   results: readonly ScanAssetResult[];
 }
 
-const UNSUPPORTED_DETAIL: Record<TickerKind, string> = {
+export const UNSUPPORTED_DETAIL: Record<TickerKind, string> = {
   crypto: '',
   equity:
     'No validated daily candle source for equities: they need a licensed provider and an exchange-session candle policy.',

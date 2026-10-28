@@ -2,7 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetDetailsModal } from '@/components/AssetDetailsModal';
 import type { Asset } from '@/lib/assets';
-import { evaluateCandles, type CanonicalResult } from '@/lib/canonicalModel';
+import {
+  CANONICAL_MODEL_VERSION,
+  evaluateCandles,
+  type CanonicalResult,
+} from '@/lib/canonicalModel';
+import { UNSUPPORTED_DETAIL } from '@/lib/marketScanner';
 import { okResult, STRONG_INPUTS } from './canonicalFixtures';
 
 const engine = vi.hoisted(() => ({ scores: new Map<string, CanonicalResult>() }));
@@ -43,9 +48,21 @@ function makeAsset(ticker: string): Asset {
 }
 
 beforeEach(() => {
-  engine.scores = new Map([
+  engine.scores = new Map<string, CanonicalResult>([
     ['BTC', okResult(STRONG_INPUTS)],
-    ['AAPL', evaluateCandles([])],
+    ['SOL', evaluateCandles([])],
+    [
+      'AAPL',
+      {
+        status: 'UNSUPPORTED',
+        version: CANONICAL_MODEL_VERSION,
+        detail: UNSUPPORTED_DETAIL.equity,
+      },
+    ],
+    [
+      'ETH',
+      { status: 'FETCH_FAILED', version: CANONICAL_MODEL_VERSION, detail: 'Failed to fetch' },
+    ],
   ]);
 });
 
@@ -60,12 +77,30 @@ describe('AssetDetailsModal quant breakdown', () => {
   });
 
   it('shows a Not Enough Data badge instead of a score when the engine has too few candles', () => {
-    render(<AssetDetailsModal asset={makeAsset('AAPL')} onClose={() => {}} />);
+    render(<AssetDetailsModal asset={makeAsset('SOL')} onClose={() => {}} />);
 
     expect(screen.getByText('Not Enough Data')).toBeInTheDocument();
-    expect(screen.getByText(/needs 34 daily candles to score AAPL and has 0/)).toBeInTheDocument();
+    expect(screen.getByText(/needs 34 daily candles to score SOL and has 0/)).toBeInTheDocument();
     expect(screen.queryByTitle('Signal Score (0–100)')).not.toBeInTheDocument();
     expect(screen.queryByText(/ATR position size/)).not.toBeInTheDocument();
+  });
+
+  it('says an equity was not scanned, never that its history is too short', () => {
+    render(<AssetDetailsModal asset={makeAsset('AAPL')} onClose={() => {}} />);
+
+    expect(screen.getByText('Not scanned')).toBeInTheDocument();
+    expect(screen.getByText(/No validated daily candle source for equities/)).toBeInTheDocument();
+    expect(screen.queryByText('Not Enough Data')).not.toBeInTheDocument();
+    expect(screen.queryByText(/daily candles to score/)).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Signal Score (0–100)')).not.toBeInTheDocument();
+  });
+
+  it('says the fetch failed instead of blaming the history', () => {
+    render(<AssetDetailsModal asset={makeAsset('ETH')} onClose={() => {}} />);
+
+    expect(screen.getByText('Fetch failed')).toBeInTheDocument();
+    expect(screen.getByText(/failed to load \(Failed to fetch\)/)).toBeInTheDocument();
+    expect(screen.queryByText('Not Enough Data')).not.toBeInTheDocument();
   });
 
   it('says it is computing while the engine result is loading', () => {

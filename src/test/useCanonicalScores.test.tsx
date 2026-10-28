@@ -14,6 +14,7 @@ vi.mock('@/lib/binance', async (importOriginal) => ({
 }));
 
 import { useCanonicalScores } from '@/hooks/useCanonicalScores';
+import { fetchHistoricalCandles } from '@/lib/binance';
 import { evaluateCandles } from '@/lib/canonicalModel';
 
 describe('useCanonicalScores', () => {
@@ -23,10 +24,16 @@ describe('useCanonicalScores', () => {
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
 
-    const { result } = renderHook(() => useCanonicalScores(['BTC', 'AAPL', 'BTC']), { wrapper });
+    const { result } = renderHook(() => useCanonicalScores(['BTC', 'AAPL', 'EURUSD=X', 'BTC']), {
+      wrapper,
+    });
 
-    await waitFor(() => expect(result.current.size).toBe(2));
+    await waitFor(() => expect(result.current.size).toBe(3));
     expect(result.current.get('BTC')).toEqual(evaluateCandles(candles));
-    expect(result.current.get('AAPL')).toMatchObject({ status: 'INSUFFICIENT_DATA', received: 0 });
+    // Never scanned is not short history: equities and forex have no candle source.
+    expect(result.current.get('AAPL')?.status).toBe('UNSUPPORTED');
+    expect(result.current.get('EURUSD=X')?.status).toBe('UNSUPPORTED');
+    expect(fetchHistoricalCandles).toHaveBeenCalledTimes(1);
+    expect(fetchHistoricalCandles).toHaveBeenCalledWith('BTC', '1d', 200);
   });
 });

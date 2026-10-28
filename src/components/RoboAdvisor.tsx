@@ -543,6 +543,12 @@ function EmptyPortfolioState({
           because market history failed to load.
         </p>
       )}
+      {diagnostics && diagnostics.unsupported > 0 && (
+        <p className="robo-empty-rule">
+          {diagnostics.unsupported} of {diagnostics.totalCandidates} assets were not scanned:
+          equities and forex have no validated daily candle source.
+        </p>
+      )}
       <p className="robo-empty-balance">Nothing was booked. Your Paper Cash is unchanged.</p>
     </div>
   );
@@ -942,7 +948,8 @@ export function RoboAdvisor({
 
                         <p className="robo-results-note">
                           Regime-weighted Multi-Factor Score (RSI · MACD · ATR) · Assets with fewer
-                          than {MIN_CANDLES} daily candles are skipped (Not Enough Data) · Suggested
+                          than {MIN_CANDLES} daily candles are skipped (Not Enough Data) · Equities
+                          and forex are not scanned (no validated daily candle source) · Suggested
                           size risks up to 2% of capital at a 2×ATR stop, capped at the allocation ·
                           Swap any holding to replace it
                         </p>

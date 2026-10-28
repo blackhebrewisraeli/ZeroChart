@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   RISK_PROFILE_POLICIES,
   buildQuantPortfolio,
@@ -7,7 +7,13 @@ import {
   type QuantDeps,
 } from '@/lib/roboAdvisor';
 import type { Asset } from '@/lib/assets';
-import { evaluateCandles, MIN_CANDLES, type EngineCandle } from '@/lib/canonicalModel';
+import {
+  CANONICAL_MODEL_VERSION,
+  evaluateCandles,
+  MIN_CANDLES,
+  type EngineCandle,
+} from '@/lib/canonicalModel';
+import { scanInstrument, UNSUPPORTED_DETAIL } from '@/lib/marketScanner';
 import { recommendPositionSize } from '@/lib/risk';
 import type { Candle } from '@/lib/binance';
 
@@ -44,12 +50,13 @@ function makeCandles(count: number, range = 0.5, drift = -0.1): EngineCandle[] {
   });
 }
 
-function depsFor(candlesByTicker: Record<string, EngineCandle[] | Error>): QuantDeps {
+/** `null` is a ticker without a candle source; an unlisted ticker has no candles. */
+function depsFor(candlesByTicker: Record<string, EngineCandle[] | Error | null>): QuantDeps {
   return {
     fetchCandles: vi.fn(async (ticker: string) => {
-      const candles = candlesByTicker[ticker] ?? [];
+      const candles = candlesByTicker[ticker];
       if (candles instanceof Error) throw candles;
-      return candles;
+      return candles === undefined ? [] : candles;
     }),
   };
 }
@@ -83,9 +90,49 @@ describe('scoreTicker', () => {
     expect(await scoreTicker('BTC', depsFor({ BTC: candles }))).toEqual(evaluateCandles(candles));
   });
 
-  it('never rejects: a failed fetch is INSUFFICIENT_DATA with zero candles', async () => {
+  it('never rejects: a failed fetch is FETCH_FAILED, not a short history', async () => {
     const result = await scoreTicker('BTC', depsFor({ BTC: new Error('network down') }));
-    expect(result).toMatchObject({ status: 'INSUFFICIENT_DATA', received: 0 });
+    expect(result).toEqual({
+      status: 'FETCH_FAILED',
+      version: CANONICAL_MODEL_VERSION,
+      detail: 'network down',
+    });
+  });
+
+  it('reports a supported asset with genuinely short history as INSUFFICIENT_DATA', async () => {
+    const result = await scoreTicker('BTC', depsFor({ BTC: makeCandles(MIN_CANDLES - 1) }));
+    expect(result).toMatchObject({
+      status: 'INSUFFICIENT_DATA',
+      required: MIN_CANDLES,
+      received: MIN_CANDLES - 1,
+    });
+  });
+
+  describe('assets without a validated candle source', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it.each([
+      ['AAPL', 'equity'],
+      ['MSFT', 'equity'],
+      ['EURUSD=X', 'forex'],
+    ] as const)(
+      'reports %s as UNSUPPORTED with the Markets scan detail, never as insufficient history',
+      async (ticker, assetClass) => {
+        const fetchSpy = vi.spyOn(globalThis, 'fetch');
+        const result = await scoreTicker(ticker);
+
+        expect(result.status).not.toBe('INSUFFICIENT_DATA');
+        expect(result).toEqual({
+          status: 'UNSUPPORTED',
+          version: CANONICAL_MODEL_VERSION,
+          detail: UNSUPPORTED_DETAIL[assetClass],
+        });
+        expect(scanInstrument(ticker)).toBeNull();
+        expect(fetchSpy).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('returns a data failure instead of scoring duplicate provider timestamps', async () => {
@@ -219,7 +266,7 @@ describe('buildQuantPortfolio', () => {
       BTC: candles,
       NEW: makeCandles(MIN_CANDLES - 1),
       DOWN: new Error('network down'),
-      // AAPL: no candle source → []
+      AAPL: null,
     });
     const assets = [makeAsset('BTC'), makeAsset('NEW'), makeAsset('DOWN'), makeAsset('AAPL')];
 
@@ -246,6 +293,7 @@ describe('buildQuantPortfolio', () => {
           makeAsset('WEAK'),
           makeAsset('SHORT'),
           makeAsset('DOWN'),
+          makeAsset('AAPL'),
         ],
         onDiagnostics,
       },
@@ -254,16 +302,18 @@ describe('buildQuantPortfolio', () => {
         WEAK: weak,
         SHORT: makeCandles(MIN_CANDLES - 1),
         DOWN: new Error('network down'),
+        AAPL: null,
       }),
     );
 
     expect(onDiagnostics).toHaveBeenCalledWith({
-      totalCandidates: 4,
+      totalCandidates: 5,
       eligible: 1,
       insufficientData: 1,
       dataFailures: 0,
       staleData: 0,
       networkFailures: 1,
+      unsupported: 1,
       belowMinimumScore: 1,
       highVolatility: 0,
       nonPositiveMomentum: 0,

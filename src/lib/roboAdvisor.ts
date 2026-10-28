@@ -10,6 +10,7 @@ import {
   validateBinanceDailyCandles,
 } from '@/lib/candleValidation';
 import { evaluateCandlesAsync } from '@/lib/financeClient';
+import { scanInstrument, UNSUPPORTED_DETAIL } from '@/lib/marketScanner';
 import { recommendPositionSize } from '@/lib/risk';
 import {
   allocateScoreCandidates,
@@ -18,11 +19,12 @@ import {
   type Allocation,
   type PortfolioPreferences,
 } from '@/lib/portfolioBuilder';
+import { classifyTicker } from '@/lib/ticker';
 export { qualifiesForRiskProfile, RISK_PROFILE_POLICIES } from '@/lib/portfolioBuilder';
 
 export interface QuantDeps {
-  /** Daily OHLC candles, oldest first; `[]` when the ticker has no candle source. */
-  fetchCandles: (ticker: string) => Promise<readonly (EngineCandle | Candle)[]>;
+  /** Daily OHLC candles, oldest first; null when the ticker has no candle source. */
+  fetchCandles: (ticker: string) => Promise<readonly (EngineCandle | Candle)[] | null>;
 }
 
 export interface PortfolioBuildDiagnostics {
@@ -32,33 +34,43 @@ export interface PortfolioBuildDiagnostics {
   dataFailures: number;
   staleData: number;
   networkFailures: number;
+  /** No validated candle source for the asset class (the Markets scan's "Not scanned"). */
+  unsupported: number;
   belowMinimumScore: number;
   highVolatility: number;
   nonPositiveMomentum: number;
 }
 
-type ScoreAttempt = { result: CanonicalResult; networkFailed: boolean };
-
 /**
  * 200 daily candles from Binance: well past MIN_CANDLES. The smoothers come
  * close to TradingView's full-history values but never match them exactly
  * (docs/PINE_PARITY_ASSESSMENT.md).
- * Stocks and forex have no candle source yet and resolve to `[]`.
+ * Only what the Markets scan scores has a source (`scanInstrument`): stocks
+ * and forex resolve to null and are never fetched.
  */
 const defaultDeps: QuantDeps = {
-  fetchCandles: (ticker) => fetchHistoricalCandles(ticker, '1d', 200),
+  fetchCandles: async (ticker) =>
+    scanInstrument(ticker) === null ? null : fetchHistoricalCandles(ticker, '1d', 200),
 };
 
 /**
  * The canonical engine result for one ticker: its candles, scored in the
- * finance Web Worker. Never rejects — a failed fetch simply has no candles.
+ * finance Web Worker. Never rejects — an unsupported asset class or a failed
+ * fetch is its own status, never a short history.
  */
-async function scoreTickerAttempt(
+export async function scoreTicker(
   ticker: string,
   deps: QuantDeps = defaultDeps,
-): Promise<ScoreAttempt> {
+): Promise<CanonicalResult> {
   try {
     const candles = await deps.fetchCandles(ticker);
+    if (candles === null) {
+      return {
+        status: 'UNSUPPORTED',
+        version: CANONICAL_MODEL_VERSION,
+        detail: UNSUPPORTED_DETAIL[classifyTicker(ticker)],
+      };
+    }
     const timestamped = candles.every(
       (candle): candle is Candle => 'timestamp' in candle && 'closeTime' in candle,
     );
@@ -70,60 +82,45 @@ async function scoreTickerAttempt(
       });
       if (!validation.structurallyValid) {
         return {
-          result: {
-            status: 'DATA_INVALID',
-            version: CANONICAL_MODEL_VERSION,
-            validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
-            issues: validation.issues,
-          },
-          networkFailed: false,
+          status: 'DATA_INVALID',
+          version: CANONICAL_MODEL_VERSION,
+          validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+          issues: validation.issues,
         };
       }
       if (validation.fresh === false) {
         return {
-          result: {
-            status: 'STALE_DATA',
-            version: CANONICAL_MODEL_VERSION,
-            validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
-            latestCloseTime: validation.latestCloseTime,
-          },
-          networkFailed: false,
+          status: 'STALE_DATA',
+          version: CANONICAL_MODEL_VERSION,
+          validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+          latestCloseTime: validation.latestCloseTime,
         };
       }
-      return {
-        result: await evaluateCandlesAsync(validation.closed),
-        networkFailed: false,
-      };
+      return await evaluateCandlesAsync(validation.closed);
     }
-    return { result: await evaluateCandlesAsync(candles), networkFailed: false };
+    return await evaluateCandlesAsync(candles);
   } catch (error) {
     if (error instanceof CandleProviderDataError) {
       return {
-        result: {
-          status: 'DATA_INVALID',
-          version: CANONICAL_MODEL_VERSION,
-          validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
-          issues: [
-            {
-              code: 'MALFORMED_PROVIDER_ROW',
-              index: -1,
-              timestamp: null,
-              detail: error.message,
-            },
-          ],
-        },
-        networkFailed: false,
+        status: 'DATA_INVALID',
+        version: CANONICAL_MODEL_VERSION,
+        validationPolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+        issues: [
+          {
+            code: 'MALFORMED_PROVIDER_ROW',
+            index: -1,
+            timestamp: null,
+            detail: error.message,
+          },
+        ],
       };
     }
-    return { result: await evaluateCandlesAsync([]), networkFailed: true };
+    return {
+      status: 'FETCH_FAILED',
+      version: CANONICAL_MODEL_VERSION,
+      detail: error instanceof Error ? error.message : 'Unknown market-data error',
+    };
   }
-}
-
-export async function scoreTicker(
-  ticker: string,
-  deps: QuantDeps = defaultDeps,
-): Promise<CanonicalResult> {
-  return (await scoreTickerAttempt(ticker, deps)).result;
 }
 
 /** A valid positive live price for the asset, if the provider gave us one. */
@@ -135,8 +132,9 @@ function validPrice(asset: Asset): number | null {
 
 /**
  * Builds a portfolio from the canonical engine: every candidate is scored on
- * its own candle history, assets the engine reports as INSUFFICIENT_DATA are
- * skipped (never scored from proxies), capital is allocated proportionally to
+ * its own candle history, assets without a score (unsupported asset class,
+ * failed fetch, invalid, stale or short history) are skipped and counted in
+ * the diagnostics (never scored from proxies), capital is allocated proportionally to
  * the remaining scores, and each holding gets an ATR-based suggested position
  * size that risks exactly 2% of the requested capital.
  */
@@ -165,6 +163,7 @@ export async function buildQuantPortfolio(
     dataFailures: 0,
     staleData: 0,
     networkFailures: 0,
+    unsupported: 0,
     belowMinimumScore: 0,
     highVolatility: 0,
     nonPositiveMomentum: 0,
@@ -177,17 +176,15 @@ export async function buildQuantPortfolio(
   const scored = await Promise.all(
     candidates.map(async (asset) => ({
       asset,
-      ...(await scoreTickerAttempt(asset.ticker, deps)),
+      result: await scoreTicker(asset.ticker, deps),
     })),
   );
   const policy = RISK_PROFILE_POLICIES[preferences.riskProfile];
-  const qualified = scored.flatMap(({ asset, result, networkFailed }) => {
-    if (networkFailed) {
-      diagnostics.networkFailures += 1;
-      return [];
-    }
+  const qualified = scored.flatMap(({ asset, result }) => {
     if (result.status !== 'OK') {
-      if (result.status === 'DATA_INVALID') diagnostics.dataFailures += 1;
+      if (result.status === 'FETCH_FAILED') diagnostics.networkFailures += 1;
+      else if (result.status === 'UNSUPPORTED') diagnostics.unsupported += 1;
+      else if (result.status === 'DATA_INVALID') diagnostics.dataFailures += 1;
       else if (result.status === 'STALE_DATA') diagnostics.staleData += 1;
       else diagnostics.insufficientData += 1;
       return [];

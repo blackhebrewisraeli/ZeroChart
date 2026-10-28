@@ -52,8 +52,9 @@ function signalFor(
 /**
  * - SELL: a held asset whose canonical score is below 50.
  * - BUY: a non-held asset scoring 85+ while the ledger has cash to deploy.
- * An asset without a canonical score (loading, or INSUFFICIENT_DATA) yields
- * no signal — missing data is silence, never a SELL.
+ * An asset without a canonical score (loading, not scanned, failed fetch,
+ * invalid, stale or short history) yields no signal — missing data is
+ * silence, never a SELL.
  */
 export function generateTacticalSignals(
   positions: readonly Position[],

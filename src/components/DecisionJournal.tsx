@@ -214,6 +214,93 @@ function Summary({
   );
 }
 
+function useJournal(userId: string | null, ticker: string, status: RecordedStatus | null) {
+  return useInfiniteQuery({
+    queryKey: ['decision-journal', userId, ticker, status],
+    queryFn: ({ pageParam }) => loadJournalPage(userId ?? '', { ticker, status }, pageParam),
+    initialPageParam: null as JournalCursor | null,
+    getNextPageParam: (page) => page.next,
+    // The dev stub has no session to read with.
+    enabled: userId !== null && !isDevAuthUser(userId),
+    // postgrest-js already retries a GET that fails on the network.
+    retry: false,
+  });
+}
+
+type JournalQuery = ReturnType<typeof useJournal>;
+
+function JournalList({
+  query,
+  entries,
+}: Readonly<{ query: JournalQuery; entries: JournalEntry[] }>) {
+  return (
+    <>
+      <Summary
+        entries={entries}
+        total={query.data?.pages[0]?.total ?? null}
+        asOf={query.dataUpdatedAt}
+      />
+      <ol className="journal-list" aria-label="Signals, newest first">
+        {entries.map((entry) => (
+          <EntryItem key={entry.signal.id} entry={entry} />
+        ))}
+      </ol>
+      {query.isError && (
+        <p className="journal-error" role="alert">
+          {query.isFetchNextPageError
+            ? "Couldn't load older signals"
+            : "Couldn't refresh, so this is the list as of the time above"}
+          : {errorMessage(query.error)}
+        </p>
+      )}
+      {query.hasNextPage && (
+        <button
+          type="button"
+          className="portfolio-cash-btn journal-more"
+          aria-disabled={query.isFetchingNextPage || undefined}
+          onClick={() => {
+            if (!query.isFetchingNextPage) void query.fetchNextPage();
+          }}
+        >
+          {query.isFetchingNextPage ? 'Loading…' : 'Load older signals'}
+        </button>
+      )}
+    </>
+  );
+}
+
+function JournalBody({ query, filtered }: Readonly<{ query: JournalQuery; filtered: boolean }>) {
+  const entries = (query.data?.pages ?? []).flatMap((page) => page.rows.map(journalEntry));
+  if (query.isPending) return <output className="journal-status">Loading signal journal…</output>;
+  if (query.isError && entries.length === 0) {
+    return (
+      <div className="journal-error" role="alert">
+        <p>
+          Couldn&apos;t load the signal journal: {errorMessage(query.error)}. Nothing is shown, so
+          no outcome is guessed.
+        </p>
+        <button type="button" className="portfolio-cash-btn" onClick={() => void query.refetch()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (entries.length > 0) return <JournalList query={query} entries={entries} />;
+  return (
+    <div className="holdings-empty">
+      <NotebookText size={26} aria-hidden="true" />
+      <span className="holdings-empty-title">
+        {filtered ? 'No signals match these filters' : 'No signals recorded yet'}
+      </span>
+      <span className="holdings-empty-sub">
+        {filtered
+          ? 'Clear the asset or status filter to see the rest.'
+          : 'TradingView alerts appear here once tv-webhook records them.'}
+      </span>
+    </div>
+  );
+}
+
 /**
  * Signal Journal: every TradingView signal with what was recorded about it and
  * the paper fill linked to it. Read-only: there is no action here, and trades
@@ -224,25 +311,15 @@ export function DecisionJournal() {
   const [status, setStatus] = useState<RecordedStatus | null>(null);
   const [assetText, setAssetText] = useState('');
   const [ticker, setTicker] = useState('');
-  // The dev stub has no session to read with.
-  const enabled = userId !== null && !isDevAuthUser(userId);
 
   useEffect(() => {
     const timer = setTimeout(() => setTicker(tickerQuery(assetText)), 300);
     return () => clearTimeout(timer);
   }, [assetText]);
 
-  const query = useInfiniteQuery({
-    queryKey: ['decision-journal', userId, ticker, status],
-    queryFn: ({ pageParam }) => loadJournalPage(userId ?? '', { ticker, status }, pageParam),
-    initialPageParam: null as JournalCursor | null,
-    getNextPageParam: (page) => page.next,
-    enabled,
-    // postgrest-js already retries a GET that fails on the network.
-    retry: false,
-  });
+  const query = useJournal(userId, ticker, status);
 
-  if (!enabled) {
+  if (userId === null || isDevAuthUser(userId)) {
     return (
       <section className="journal" aria-label="Signal journal">
         <div className="holdings-empty">
@@ -254,76 +331,6 @@ export function DecisionJournal() {
           </span>
         </div>
       </section>
-    );
-  }
-
-  const pages = query.data?.pages ?? [];
-  const entries = pages.flatMap((page) => page.rows.map(journalEntry));
-  const filtered = ticker !== '' || status !== null;
-
-  let body: ReactNode;
-  if (query.isPending) {
-    body = (
-      <p className="journal-status" role="status">
-        Loading signal journal…
-      </p>
-    );
-  } else if (query.isError && entries.length === 0) {
-    body = (
-      <div className="journal-error" role="alert">
-        <p>
-          Couldn&apos;t load the signal journal: {errorMessage(query.error)}. Nothing is shown, so
-          no outcome is guessed.
-        </p>
-        <button type="button" className="portfolio-cash-btn" onClick={() => void query.refetch()}>
-          Retry
-        </button>
-      </div>
-    );
-  } else if (entries.length === 0) {
-    body = (
-      <div className="holdings-empty">
-        <NotebookText size={26} aria-hidden="true" />
-        <span className="holdings-empty-title">
-          {filtered ? 'No signals match these filters' : 'No signals recorded yet'}
-        </span>
-        <span className="holdings-empty-sub">
-          {filtered
-            ? 'Clear the asset or status filter to see the rest.'
-            : 'TradingView alerts appear here once tv-webhook records them.'}
-        </span>
-      </div>
-    );
-  } else {
-    body = (
-      <>
-        <Summary entries={entries} total={pages[0]?.total ?? null} asOf={query.dataUpdatedAt} />
-        <ol className="journal-list" aria-label="Signals, newest first">
-          {entries.map((entry) => (
-            <EntryItem key={entry.signal.id} entry={entry} />
-          ))}
-        </ol>
-        {query.isError && (
-          <p className="journal-error" role="alert">
-            {query.isFetchNextPageError
-              ? "Couldn't load older signals"
-              : "Couldn't refresh, so this is the list as of the time above"}
-            : {errorMessage(query.error)}
-          </p>
-        )}
-        {query.hasNextPage && (
-          <button
-            type="button"
-            className="portfolio-cash-btn journal-more"
-            aria-disabled={query.isFetchingNextPage || undefined}
-            onClick={() => {
-              if (!query.isFetchingNextPage) void query.fetchNextPage();
-            }}
-          >
-            {query.isFetchingNextPage ? 'Loading…' : 'Load older signals'}
-          </button>
-        )}
-      </>
     );
   }
 
@@ -366,7 +373,7 @@ export function DecisionJournal() {
           </button>
         </div>
       </div>
-      {body}
+      <JournalBody query={query} filtered={ticker !== '' || status !== null} />
       <p className="journal-footnote">
         Not recorded for any signal: the provider&apos;s event time, the risk checks that applied
         when it was decided, when or why it was dismissed, and whether a fill was recovered after a

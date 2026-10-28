@@ -138,7 +138,15 @@ export type Database = {
           ticker?: string | null;
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'paper_transactions_signal_id_fkey';
+            columns: ['signal_id'];
+            isOneToOne: false;
+            referencedRelation: 'trading_signals';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       shared_portfolios: {
         Row: {

@@ -2637,6 +2637,12 @@ body {
   .analytics-export {
     order: 4;
   }
+  /* The Paper Desk's three tabs get the first row; the totals wrap below. */
+  .paper .analytics-workspace-tabs::before {
+    content: '';
+    order: 2;
+    flex-basis: 100%;
+  }
 }
 .portfolio-count {
   font:
@@ -3202,6 +3208,282 @@ body {
   font:
     600 11px 'JetBrains Mono',
     monospace;
+}
+/* Signal Journal (docs/DECISION_JOURNAL.md): read-only, so only the filters are controls. */
+.journal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.journal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.journal-sub {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.journal-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.journal-filters input {
+  width: 130px;
+}
+.journal-filters select {
+  width: auto;
+}
+.journal-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font:
+    500 11px 'JetBrains Mono',
+    monospace;
+}
+.journal-asof {
+  margin-left: auto;
+}
+.journal-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.journal-entry {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.journal-entry[data-state='inconsistent'] {
+  border-color: var(--signal-red-border);
+}
+.journal-entry > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.journal-entry > summary::-webkit-details-marker {
+  display: none;
+}
+.journal-entry > summary:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 1px;
+}
+.journal-when {
+  display: grid;
+  min-width: 156px;
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+}
+.journal-when small,
+.journal-detail h4 {
+  color: var(--muted-foreground);
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.journal-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.journal-signal strong {
+  font:
+    600 13px 'JetBrains Mono',
+    monospace;
+}
+.journal-kind {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.journal-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.journal-state,
+.journal-incomplete {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.04em;
+}
+.journal-state[data-state='awaiting'] {
+  border-color: var(--brand-blue-border);
+  background: var(--brand-blue-soft);
+  color: var(--brand-blue);
+}
+.journal-state[data-state='executed'] {
+  border-color: var(--signal-green-border);
+  background: var(--signal-green-soft);
+  color: var(--signal-green);
+}
+.journal-state[data-state='unresolved'],
+.journal-incomplete {
+  border-color: var(--accent-amber-border);
+  background: var(--accent-amber-soft);
+  color: var(--accent-amber);
+}
+.journal-state[data-state='inconsistent'] {
+  border-color: var(--signal-red-border);
+  background: var(--signal-red-soft);
+  color: var(--signal-red);
+}
+.journal-headline,
+.journal-chevron {
+  margin-left: auto;
+}
+.journal-headline {
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+}
+.journal-headline + .journal-chevron {
+  margin-left: 0;
+}
+.journal-chevron {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  transition: transform 160ms ease-out;
+}
+.journal-entry[open] .journal-chevron {
+  transform: rotate(180deg);
+}
+.journal-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 16px 22px;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+.journal-detail h4 {
+  margin: 0 0 8px;
+}
+.journal-detail dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.journal-detail dl div {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+  gap: 10px;
+  font-size: 12px;
+}
+.journal-detail dt {
+  color: var(--muted-foreground);
+}
+.journal-detail dd {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  overflow-wrap: anywhere;
+}
+.journal-notes {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border: 1px solid var(--signal-red-border);
+  border-radius: 10px;
+  background: var(--signal-red-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.journal-entry[data-state='unresolved'] .journal-notes {
+  border-color: var(--accent-amber-border);
+  background: var(--accent-amber-soft);
+}
+.journal-caveat,
+.journal-status,
+.journal-footnote {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.journal-caveat {
+  margin-top: 8px;
+}
+.journal-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--signal-red-border);
+  border-radius: 12px;
+  background: var(--signal-red-soft);
+  font-size: 12.5px;
+}
+.journal-error p {
+  flex: 1 1 260px;
+  margin: 0;
+}
+.journal-more {
+  align-self: center;
+}
+.journal-spin {
+  animation: journal-spin 0.8s linear infinite;
+}
+@keyframes journal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journal-spin {
+    animation: none;
+  }
+  .journal-chevron {
+    transition: none;
+  }
+}
+@media (max-width: 560px) {
+  .journal-filters {
+    width: 100%;
+  }
+  .journal-filters input {
+    flex: 1 1 100%;
+  }
+  .journal-filters select {
+    flex: 1 1 auto;
+  }
+  .journal-asof,
+  .journal-headline {
+    margin-left: 0;
+  }
+  .journal-headline + .journal-chevron {
+    margin-left: auto;
+  }
+  .journal-detail dl div {
+    grid-template-columns: minmax(0, 8rem) minmax(0, 1fr);
+  }
 }
 @media (max-width: 500px) {
   .action-center-actions {

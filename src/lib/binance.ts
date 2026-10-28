@@ -30,6 +30,17 @@ export interface Candle {
 
 export class CandleProviderDataError extends Error {}
 
+/** Binance answered 429 (slow down) or 418 (IP banned for ignoring 429s). */
+export class ProviderRateLimitError extends Error {
+  constructor(
+    readonly status: number,
+    /** Retry-After in milliseconds, when Binance sent one. */
+    readonly retryAfterMs: number | null,
+  ) {
+    super(`Binance rate limit: HTTP ${status}`);
+  }
+}
+
 /**
  * Parses the raw klines array returned by Binance into `{ timestamp, close }`
  * points, dropping any malformed rows.
@@ -91,6 +102,13 @@ async function fetchRawKlines(ticker: string, interval: string, limit: number): 
     `&interval=${encodeURIComponent(interval)}` +
     `&limit=${encodeURIComponent(String(limit))}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  if (response.status === 429 || response.status === 418) {
+    const seconds = Number(response.headers.get('Retry-After'));
+    throw new ProviderRateLimitError(
+      response.status,
+      Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null,
+    );
+  }
   if (!response.ok) {
     throw new Error(`Binance klines request failed with status ${response.status}`);
   }

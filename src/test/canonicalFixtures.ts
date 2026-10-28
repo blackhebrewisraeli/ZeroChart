@@ -25,6 +25,7 @@ export function okResult(inputs: FactorInputs): CanonicalScore {
     version: CANONICAL_MODEL_VERSION,
     close: 100,
     atr: 1,
+    inputs,
     ...scoreFactors(inputs),
   };
 }

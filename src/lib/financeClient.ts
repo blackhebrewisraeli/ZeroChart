@@ -2,6 +2,7 @@ import { computeFinance, type FinanceRequest, type FinanceResult } from './finan
 import type { MacdResult } from './indicators';
 import type { BacktestOptions, BacktestResult } from './backtestManager';
 import type { CanonicalResult, EngineCandle } from './canonicalModel';
+import type { MarketScan, ScanInput } from './marketScanner';
 
 let worker: Worker | null | undefined;
 let nextId = 0;
@@ -86,4 +87,12 @@ export function computeBacktestAsync(options: BacktestOptions): Promise<Backtest
 /** Async, worker-backed canonical engine pass over a candle series (cached in the worker). */
 export function evaluateCandlesAsync(candles: readonly EngineCandle[]): Promise<CanonicalResult> {
   return request<CanonicalResult>({ kind: 'canonical', candles });
+}
+
+/** Async, worker-backed scoring and ranking of a collected market scan. */
+export function evaluateScanAsync(
+  inputs: readonly ScanInput[],
+  options: { evaluationTime: number; universeSource: string },
+): Promise<MarketScan> {
+  return request<MarketScan>({ kind: 'marketScan', inputs, options });
 }

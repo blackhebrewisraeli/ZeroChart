@@ -50,6 +50,14 @@ import {
 } from './decisionsReport';
 import { collectCampaignOutcomes } from './outcomeMeasurement';
 import { BINANCE_DAILY_CANDLE_POLICY_VERSION } from '@/lib/candleValidation';
+import { SCAN_CANDLE_REQUEST, SCAN_TIMEFRAME } from '@/lib/marketScanner';
+import {
+  fetchAssetsStatusUniverse,
+  reproduceScan,
+  runScan,
+  SCAN_STORE,
+  scanSummary,
+} from './marketScanStore';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -63,7 +71,9 @@ const USAGE = `Usage:
   npm run evaluate -- campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
   npm run evaluate -- outcome-collect CAMPAIGN_ID [--store DIR]
   npm run evaluate -- decisions-report CAMPAIGN_ID [--store DIR] [--output FILE]
-  npm run evaluate -- decisions-demo [--output FILE]`;
+  npm run evaluate -- decisions-demo [--output FILE]
+  npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
+  npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -322,6 +332,11 @@ async function repositoryCommit(): Promise<string> {
   return stdout.trim();
 }
 
+async function worktreeDirty(): Promise<boolean> {
+  const { stdout } = await execFileAsync('git', ['status', '--porcelain']);
+  return stdout.trim() !== '';
+}
+
 function requiredValue(command: string, value?: string): string {
   if (!value) throw new Error(`${command} requires a value`);
   return value;
@@ -330,6 +345,27 @@ function requiredValue(command: string, value?: string): string {
 type CommandHandler = (value: string | undefined, args: string[]) => Promise<void>;
 
 const commandHandlers: Record<string, CommandHandler> = {
+  scan: async (value, args) => {
+    const allArgs = [value, ...args].filter((item): item is string => Boolean(item));
+    const { path, snapshot } = await runScan({
+      universe: await fetchAssetsStatusUniverse(),
+      universeSource: 'assets_status',
+      fetchCandles: (ticker) => fetchHistoricalCandles(ticker, SCAN_TIMEFRAME, SCAN_CANDLE_REQUEST),
+      // A scan run from uncommitted code says so rather than claiming the commit.
+      repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
+      store: storePath(allArgs, SCAN_STORE),
+    });
+    printJson(scanSummary(path, snapshot));
+    if (snapshot.scan.status !== 'COMPLETE') process.exitCode = 1;
+  },
+  'scan-reproduce': async (value, args) => {
+    const result = await reproduceScan(
+      requiredValue('scan-reproduce', value),
+      storePath(args, SCAN_STORE),
+    );
+    printJson(result);
+    if (result.status === 'MISMATCH') process.exitCode = 1;
+  },
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>
     observe(requiredValue('observe', value).split(',').filter(Boolean), args),

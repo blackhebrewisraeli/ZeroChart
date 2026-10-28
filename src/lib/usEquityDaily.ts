@@ -263,7 +263,13 @@ function splitIssues(
     const index = window.findIndex((bar) => bar.session === split.session);
     const previous = window[index - 1];
     const bar = window[index];
-    if (!previous || !bar || !(split.ratio > 0) || Math.abs(Math.log(split.ratio)) < Math.log(1.25))
+    if (
+      !previous ||
+      !bar ||
+      !Number.isFinite(split.ratio) ||
+      split.ratio <= 0 ||
+      Math.abs(Math.log(split.ratio)) < Math.log(1.25)
+    )
       continue;
     const step = Math.log(previous.close / bar.open);
     if (Math.abs(step - Math.log(split.ratio)) < Math.log(1.15)) {
@@ -278,6 +284,12 @@ function splitIssues(
     }
   }
   return issues;
+}
+
+/** ISO dates sort chronologically as strings; malformed ones still sort deterministically. */
+function bySession(a: EquityDailyBar, b: EquityDailyBar): number {
+  if (a.session === b.session) return 0;
+  return a.session < b.session ? -1 : 1;
 }
 
 /**
@@ -316,10 +328,7 @@ export function validateUsEquityDailySeries(
       ],
     };
   }
-  // ISO dates sort chronologically as strings; malformed ones still sort deterministically.
-  const sorted = [...series.bars].sort((a, b) =>
-    a.session === b.session ? 0 : a.session < b.session ? -1 : 1,
-  );
+  const sorted = [...series.bars].sort(bySession);
   const final = sorted.filter((bar) => bar.session <= requiredSession);
   const window = final.slice(-options.modelWindow);
   const issues: CandleIssue[] = [];

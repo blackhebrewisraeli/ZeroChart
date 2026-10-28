@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Asset } from '@/lib/assets';
 import type { LivePrice } from '@/lib/livePriceStore';
 import { evaluateCandles, type CanonicalResult } from '@/lib/canonicalModel';
@@ -263,6 +264,15 @@ describe('Paper Desk', () => {
     expect(
       stat('Aggregate Open Risk').getByText('$1,000.00 to stops · 6% cap'),
     ).toBeInTheDocument();
+  });
+
+  it('opens the read-only Signal Journal as a third workspace tab', () => {
+    render(<QueryClientProvider client={new QueryClient()}>{tree(1900)}</QueryClientProvider>);
+    const tab = screen.getByRole('button', { name: 'Signal Journal' });
+    fireEvent.click(tab);
+    expect(tab).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('region', { name: 'Signal journal' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Open positions' })).toBeNull();
   });
 
   it('tops up and resets only the paper account', async () => {

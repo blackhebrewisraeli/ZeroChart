@@ -22,6 +22,7 @@ import { formatShares, MAX_PORTFOLIO_RISK_PERCENT } from '@/lib/risk';
 import { Shares } from '@/components/Shares';
 import { ActionCenter } from '@/components/ActionCenter';
 import { SignalDiagnostics } from '@/components/SignalDiagnostics';
+import { DecisionJournal } from '@/components/DecisionJournal';
 import { AssetChart } from '@/components/AssetChart';
 import { AssetIcon } from '@/components/AssetIcon';
 import { TacticalSignals } from '@/components/TacticalSignals';
@@ -249,7 +250,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
   const assetByTicker = new Map(assets.map((asset) => [asset.ticker.toUpperCase(), asset]));
   const scores = useCanonicalScores(assets.map((asset) => asset.ticker));
   const [selected, setSelected] = useState<string | null>(null);
-  const [tab, setTab] = useState<'positions' | 'ledger'>('positions');
+  const [tab, setTab] = useState<'positions' | 'ledger' | 'journal'>('positions');
 
   const paper = portfolios.paper_trading;
   const valuation = computePortfolioValuation(
@@ -429,6 +430,14 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
               >
                 Trade Ledger ({paper.transactions.length})
               </button>
+              <button
+                type="button"
+                className={cn('analytics-workspace-tab', tab === 'journal' && 'is-active')}
+                aria-pressed={tab === 'journal'}
+                onClick={() => setTab('journal')}
+              >
+                Signal Journal
+              </button>
               <span className="portfolio-count analytics-entry-count">
                 REALIZED {formatPnl(paper.realizedPnl)}
               </span>
@@ -450,7 +459,8 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
                   filename={LEDGER_FILENAME}
                 />
               )}
-              {tab !== 'ledger' && openCount > 0 && (
+              {tab === 'journal' && <DecisionJournal />}
+              {tab === 'positions' && openCount > 0 && (
                 <section className="ledger-scroll" aria-label="Open positions">
                   <table className="ledger-table paper-positions">
                     <thead>
@@ -482,7 +492,7 @@ export function PaperTradingTerminal({ assets: baseAssets }: Readonly<{ assets: 
                   </table>
                 </section>
               )}
-              {tab !== 'ledger' && openCount === 0 && (
+              {tab === 'positions' && openCount === 0 && (
                 <div className="holdings-empty">
                   <Activity size={26} />
                   <span className="holdings-empty-title">No open paper positions</span>

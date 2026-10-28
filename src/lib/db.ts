@@ -4,6 +4,7 @@ import type { PortfolioPersistedState, PortfolioStateV3 } from '@/lib/portfolioS
 import { isCloudWriteAllowed } from '@/lib/hydrationStore';
 import { supabase } from '@/lib/supabaseClient';
 import type { Json } from '@/integrations/supabase/types';
+import type { JournalCursor, JournalSignal, RecordedStatus } from '@/lib/decisionJournal';
 
 /**
  * Thrown when a cloud write is attempted before the signed-in user's cloud
@@ -121,6 +122,55 @@ export async function loadPaperTransactions(userId: string): Promise<PaperLedger
     rows.push(...data);
     if (data.length < PAPER_PAGE_SIZE) return rows;
   }
+}
+
+export const JOURNAL_PAGE_SIZE = 25;
+
+export interface JournalPage {
+  rows: JournalSignal[];
+  next: JournalCursor | null;
+  /** Signals matching the filters; counted on the first page only. */
+  total: number | null;
+}
+
+/**
+ * One page of the Decision Journal, newest server receipt first. The fills are
+ * embedded through `signal_id`, so a signal and its fill come from one
+ * snapshot, and both tables' owner-only RLS policies apply. Columns are named:
+ * nothing beyond what the journal shows leaves the database.
+ */
+export async function loadJournalPage(
+  userId: string,
+  filters: { ticker: string; status: RecordedStatus | null },
+  cursor: JournalCursor | null,
+): Promise<JournalPage> {
+  let query = supabase
+    .from('trading_signals')
+    .select(
+      'id, ticker, action, signal_kind, signal_score, quantity, stop_loss, price, status, event_id, exchange, timeframe, bar_time, model_version, created_at, paper_transactions(id, action, ticker, quantity, price, fees, created_at)',
+      cursor ? {} : { count: 'exact' },
+    )
+    .eq('user_id', userId);
+  if (filters.status) query = query.eq('status', filters.status);
+  if (filters.ticker) query = query.ilike('ticker', `%${filters.ticker}%`);
+  if (cursor) {
+    // Keyset, not offsets: a signal arriving or changing status mid-scroll can't repeat or skip a row.
+    const at = `"${cursor.createdAt}"`;
+    query = query.or(`created_at.lt.${at},and(created_at.eq.${at},id.lt.${cursor.id})`);
+  }
+  const { data, error, count } = await query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(JOURNAL_PAGE_SIZE + 1);
+  if (error) throw new Error(error.message);
+  const rows = data.slice(0, JOURNAL_PAGE_SIZE);
+  const last = rows.at(-1);
+  return {
+    rows,
+    next:
+      data.length > JOURNAL_PAGE_SIZE && last ? { createdAt: last.created_at, id: last.id } : null,
+    total: count,
+  };
 }
 
 /** Appends one row; the insert trigger rejects a fill the account can't cover. */

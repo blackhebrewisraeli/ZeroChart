@@ -63,8 +63,8 @@ export const REGIME_HIGH_VOLATILITY = 0.04;
 const CALM_VOLATILITY = 0.02;
 /** |MACD histogram|/price at or above 0.5% (half saturation) classifies TRENDING. */
 const REGIME_TRENDING_MOMENTUM = 0.005;
-/** Momentum inside ±0.05% reads as "flat" in the rationale. */
-const FLAT_MOMENTUM = 0.0005;
+/** Momentum inside ±0.05% reads as "flat" in the rationale (and in Pine's setups). */
+export const FLAT_MOMENTUM = 0.0005;
 /** RSI at or beyond 30/70 is "extreme" — MEAN_REVERTING when volatility is moderate. */
 const RSI_OVERSOLD = 30;
 const RSI_OVERBOUGHT = 70;
@@ -127,6 +127,8 @@ export interface EngineCandle {
 export interface CanonicalScore extends FactorScore {
   status: 'OK';
   version: typeof CANONICAL_MODEL_VERSION;
+  /** The last bar's raw readings the factor scores were built from. */
+  inputs: FactorInputs;
   /** Last candle close — the price Pine normalizes MACD and ATR by. */
   close: number;
   /** ATR(14) in price units, for position sizing. */
@@ -314,16 +316,44 @@ export function evaluateCandles(candles: readonly EngineCandle[]): CanonicalResu
     return insufficient;
   }
 
+  const inputs: FactorInputs = {
+    rsi: rsiValue,
+    momentumPercent: histogram / close,
+    volatilityPercent: atrValue / close,
+  };
   return {
     status: 'OK',
     version: CANONICAL_MODEL_VERSION,
     close,
     atr: atrValue,
-    ...scoreFactors({
-      rsi: rsiValue,
-      momentumPercent: histogram / close,
-      volatilityPercent: atrValue / close,
-    }),
+    inputs,
+    ...scoreFactors(inputs),
+  };
+}
+
+/** Pine's `longSetup` ("ZC LONG"): score at or above this with bullish momentum. */
+export const LONG_SETUP_MIN_SCORE = 78;
+/** Pine's `riskSetup` ("ZC RISK"): score at or below this, or a HIGH_VOLATILITY regime. */
+export const RISK_SETUP_MAX_SCORE = 28;
+
+export interface ModelSetups {
+  long: boolean;
+  risk: boolean;
+}
+
+/**
+ * The setup conditions Pine evaluates on a closed bar (`longSetup` and
+ * `riskSetup` in pine/zerochart_quant_hud.pine); both can hold at once. Pine
+ * alerts only on the bar a condition turns true, so a condition that holds
+ * here is a standing setup, not a fresh signal.
+ */
+export function modelSetups(
+  result: Pick<CanonicalScore, 'signal_score' | 'regime' | 'inputs'>,
+): ModelSetups {
+  const { signal_score: score, regime, inputs } = result;
+  return {
+    long: score >= LONG_SETUP_MIN_SCORE && inputs.momentumPercent >= FLAT_MOMENTUM,
+    risk: score <= RISK_SETUP_MAX_SCORE || regime === 'HIGH_VOLATILITY',
   };
 }
 

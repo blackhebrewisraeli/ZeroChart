@@ -81,17 +81,18 @@ describe('evaluateCandles', () => {
     const last = candles.length - 1;
     const close = closes[last]!;
     const atrValue = atr(highs, lows, closes, 14)[last]!;
-    const expected = scoreFactors({
+    const inputs = {
       rsi: rsi(closes, 14)[last]!,
       momentumPercent: macd(closes, 12, 26, 9).histogram[last]! / close,
       volatilityPercent: atrValue / close,
-    });
+    };
     expect(evaluateCandles(candles)).toEqual({
       status: 'OK',
       version: CANONICAL_MODEL_VERSION,
       close,
       atr: atrValue,
-      ...expected,
+      inputs,
+      ...scoreFactors(inputs),
     });
   });
 

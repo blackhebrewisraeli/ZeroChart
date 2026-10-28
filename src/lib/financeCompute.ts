@@ -1,6 +1,7 @@
 import { atr, macd, rsi, sma, type MacdResult } from './indicators';
 import { computeBacktest, type BacktestOptions, type BacktestResult } from './backtestManager';
 import { evaluateCandles, type CanonicalResult, type EngineCandle } from './canonicalModel';
+import { evaluateScan, type MarketScan, type ScanInput } from './marketScanner';
 
 export type FinanceRequest =
   | { kind: 'sma'; values: number[]; period: number }
@@ -8,9 +9,15 @@ export type FinanceRequest =
   | { kind: 'macd'; values: number[]; fast: number; slow: number; signalPeriod: number }
   | { kind: 'atr'; highs: number[]; lows: number[]; closes: number[]; period: number }
   | ({ kind: 'backtest' } & BacktestOptions)
-  | { kind: 'canonical'; candles: readonly EngineCandle[] };
+  | { kind: 'canonical'; candles: readonly EngineCandle[] }
+  | {
+      kind: 'marketScan';
+      inputs: readonly ScanInput[];
+      options: { evaluationTime: number; universeSource: string };
+    };
 
-export type FinanceResult = Float64Array | MacdResult | BacktestResult | CanonicalResult;
+export type FinanceResult =
+  Float64Array | MacdResult | BacktestResult | CanonicalResult | MarketScan;
 
 /** Dispatches a request to the matching pure core function. */
 export function computeFinance(request: FinanceRequest): FinanceResult {
@@ -27,6 +34,8 @@ export function computeFinance(request: FinanceRequest): FinanceResult {
       return computeBacktest(request);
     case 'canonical':
       return evaluateCandles(request.candles);
+    case 'marketScan':
+      return evaluateScan(request.inputs, request.options);
   }
 }
 

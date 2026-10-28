@@ -50,8 +50,9 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   └── tests/                        pgTAP suites, concurrency.sh (races), upgrade.sh (migration upgrade)
 ├── scripts/                          Node CLIs run with tsx, plus their tests
 │   ├── check-db-contract.ts          Release gate run by `npm run build` (see docs/RELEASE.md)
-│   ├── evaluate-canonical.ts         `npm run evaluate`: replay, observe, campaigns, outcomes, reports
+│   ├── evaluate-canonical.ts         `npm run evaluate`: replay, observe, campaigns, outcomes, reports, scans
 │   ├── evaluationStore.ts            Evaluation-run store, keyed by input and config hashes
+│   ├── marketScanStore.ts            Market-scan snapshots: run, store, reproduce offline
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)
@@ -70,8 +71,8 @@ Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
 `components.json`) stays at the root, where each tool looks for it. `src/routes`,
 `supabase/` and `public/` are fixed by TanStack Start, the Supabase CLI and Vite.
 
-`.zerochart-evaluations/`, `.zerochart-campaigns/` and `.zerochart-reports/` are
-local, git-ignored stores written by `npm run evaluate`.
+`.zerochart-evaluations/`, `.zerochart-campaigns/`, `.zerochart-reports/` and
+`.zerochart-scans/` are local, git-ignored stores written by `npm run evaluate`.
 
 ## Where things live
 
@@ -85,6 +86,7 @@ local, git-ignored stores written by `npm run evaluate`.
 | Server-side market data    | `supabase/functions/{crypto-price-feed,equity-forex-price-feed,market-analytics}`                                                                                           |
 | TradingView signals        | `supabase/functions/tv-webhook` → `trading_signals`; shown in `components/ActionCenter.tsx`, `TacticalSignals.tsx`                                                          |
 | Paper trading              | `components/PaperTradingTerminal.tsx`, `lib/brokers/`, `lib/tradeLedger.ts`, `hooks/usePaperRisk.ts`, `lib/risk.ts`                                                         |
+| Market scan                | `src/lib/marketScanner.ts` (pure), `hooks/useMarketScan.ts`, `components/MarketScanSummary.tsx`, `scripts/marketScanStore.ts` (`docs/MARKET_SCANNER.md`)                    |
 | Signal journal (read-only) | `src/lib/decisionJournal.ts` (pure), `db.ts` `loadJournalPage`, `components/DecisionJournal.tsx` (`docs/DECISION_JOURNAL.md`)                                               |
 | Portfolio accounting       | `src/lib/portfolioAccounting.ts`, `portfolioStore.tsx` (state), `db.ts` + `hydrationStore.ts` (cloud sync)                                                                  |
 | Robo advisor / rebalancing | `src/lib/roboAdvisor.ts`, `portfolioBuilder.ts`, `rebalance.ts`, `allocation.ts`, `dca.ts`                                                                                  |

@@ -30,7 +30,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { TradeTicket } from '@/components/TradeTicket';
 import { TacticalSignals } from '@/components/TacticalSignals';
 import { TradingViewWidget } from '@/components/TradingViewWidget';
-import { InsufficientDataBadge } from '@/components/InsufficientDataBadge';
+import { MarketScanSummary } from '@/components/MarketScanSummary';
 import {
   fetchAssets,
   formatChange,
@@ -47,8 +47,13 @@ import {
 } from '@/lib/assets';
 import { cn } from '@/lib/utils';
 import { toBinanceSymbol } from '@/lib/binance';
-import { scoreOf, type CanonicalResult } from '@/lib/canonicalModel';
-import { useCanonicalScores } from '@/hooks/useCanonicalScores';
+import {
+  compareTickers,
+  scanStatusLabel,
+  type MarketScan,
+  type ScanAssetResult,
+} from '@/lib/marketScanner';
+import { useMarketScan } from '@/hooks/useMarketScan';
 import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import type { User } from '@supabase/supabase-js';
@@ -91,17 +96,45 @@ const Sparkline = lazy(() =>
 const sparklineFallback = <div className="sparkline" style={{ height: 30 }} aria-hidden="true" />;
 const zoneFallback = <div aria-busy="true" className="skeleton h-96 w-full" />;
 
-function ScoreRing({ result }: Readonly<{ result: CanonicalResult | undefined }>) {
-  const score = scoreOf(result);
+/** Canonical score from the Markets scan; null while scanning or when the scan could not score it. */
+function scanScore(result: ScanAssetResult | undefined): number | null {
+  return result?.model?.signal_score ?? null;
+}
+
+/** Why the scan has no score for an asset: muted, never a red "0". */
+function NotScoredBadge({
+  result,
+  compact = false,
+}: Readonly<{ result: ScanAssetResult; compact?: boolean }>) {
+  return (
+    <span
+      className={cn('insufficient-data-badge', compact && 'is-compact')}
+      title={result.detail ?? undefined}
+    >
+      {scanStatusLabel(result)}
+    </span>
+  );
+}
+
+function ScoreRing({ result }: Readonly<{ result: ScanAssetResult | undefined }>) {
+  const score = scanScore(result);
   if (score === null) {
-    const insufficient = result?.status === 'INSUFFICIENT_DATA';
+    const notScored = result !== undefined && result.status !== 'EVALUATED';
     return (
       <div
         className="score-ring score-none"
         role="img"
-        aria-label={insufficient ? 'Signal score: not enough data' : 'Signal score loading'}
+        aria-label={
+          notScored
+            ? `Signal score: ${scanStatusLabel(result).toLowerCase()}`
+            : 'Signal score loading'
+        }
       >
-        {insufficient ? <InsufficientDataBadge /> : <span className="score-ring-value">—</span>}
+        {notScored ? (
+          <NotScoredBadge result={result} />
+        ) : (
+          <span className="score-ring-value">—</span>
+        )}
         <span className="score-ring-label">SIGNAL</span>
       </div>
     );
@@ -118,7 +151,7 @@ function ScoreRing({ result }: Readonly<{ result: CanonicalResult | undefined }>
   );
 }
 
-function Hero({ asset, result }: Readonly<{ asset: Asset; result: CanonicalResult | undefined }>) {
+function Hero({ asset, result }: Readonly<{ asset: Asset; result: ScanAssetResult | undefined }>) {
   const surging = asset.volume_spike !== null && asset.volume_spike > 1;
   return (
     <section className="hero" data-tour="hero" aria-label="Top signal">
@@ -203,31 +236,30 @@ const MARKET_VIEWS: { id: MarketView; label: ReactNode }[] = [
 // Crypto spot (Binance) leads: the closed beta evaluates it first.
 const ASSET_CLASS_FILTERS: AssetClassFilter[] = ['Crypto', 'Stocks', 'Forex', 'All'];
 
-/** Canonical score for ranking; unscored assets (loading or not enough data) sink last. */
-function rankScore(scores: ReadonlyMap<string, CanonicalResult>, asset: Asset): number {
-  return scoreOf(scores.get(asset.ticker)) ?? -1;
+type ScanResults = ReadonlyMap<string, ScanAssetResult>;
+
+/** Scan rank order; unscored assets (scanning, unsupported or failed) sink last, by ticker. */
+function rankScore(scores: ScanResults, asset: Asset): number {
+  return scanScore(scores.get(asset.ticker)) ?? -1;
 }
 
-function sortMarkets(
-  assets: Asset[],
-  view: MarketView,
-  scores: ReadonlyMap<string, CanonicalResult>,
-): Asset[] {
+function sortMarkets(assets: Asset[], view: MarketView, scores: ScanResults): Asset[] {
   const list = [...assets];
-  if (view === 'signals') return list.sort((a, b) => rankScore(scores, b) - rankScore(scores, a));
+  if (view === 'signals')
+    return list.sort(
+      (a, b) => rankScore(scores, b) - rankScore(scores, a) || compareTickers(a.ticker, b.ticker),
+    );
   if (view === 'gainers')
     return list.sort((a, b) => (b.change_24h ?? -Infinity) - (a.change_24h ?? -Infinity));
   return list.sort((a, b) => (a.change_24h ?? Infinity) - (b.change_24h ?? Infinity));
 }
 
-function MarketScore({
-  score,
-  result,
-}: Readonly<{ score: number | null; result: CanonicalResult | undefined }>) {
+function MarketScore({ result }: Readonly<{ result: ScanAssetResult | undefined }>) {
+  const score = scanScore(result);
   if (score !== null) {
     return <span className={cn('markets-score', scoreTone(score))}>{score}</span>;
   }
-  if (result?.status === 'INSUFFICIENT_DATA') return <InsufficientDataBadge compact />;
+  if (result && result.status !== 'EVALUATED') return <NotScoredBadge result={result} compact />;
   return (
     <span className="markets-score score-none" aria-label="Signal score loading">
       —
@@ -242,14 +274,14 @@ const MarketRow = memo(function MarketRow({
   onSelect,
 }: {
   asset: Asset;
-  result: CanonicalResult | undefined;
-  rank: number;
+  result: ScanAssetResult | undefined;
+  /** Null for an unranked row, so it never reads as a placing. */
+  rank: number | null;
   onSelect: (asset: Asset) => void;
 }) {
   const live = useLivePrice(toBinanceSymbol(asset.ticker));
   const currentPrice = live?.price ?? asset.current_price;
   const change = live?.change ?? asset.change_24h ?? null;
-  const score = scoreOf(result);
   const priceFlash = usePriceFlash(currentPrice);
   const streamConnected = useConnectionState() === 'connected';
   const freshness = assetFreshness(asset, live, { streamConnected });
@@ -268,7 +300,7 @@ const MarketRow = memo(function MarketRow({
         }
       }}
     >
-      <span className="markets-rank">#{rank}</span>
+      <span className="markets-rank">{rank === null ? '—' : `#${rank}`}</span>
       <span className="markets-ticker" title={asset.name || asset.ticker}>
         <AssetIcon symbol={asset.ticker} name={asset.name} size="sm" />
         <span className="markets-ticker-label">{asset.ticker}</span>
@@ -293,7 +325,7 @@ const MarketRow = memo(function MarketRow({
         {formatChange(change)}
       </span>
       <span className="markets-score-cell">
-        <MarketScore score={score} result={result} />
+        <MarketScore result={result} />
       </span>
       <span // NOSONAR(S6819): keeps Trade clicks (and its modal's) from selecting the row
         role="presentation"
@@ -390,6 +422,7 @@ function NoSignals({ onPreview }: Readonly<{ onPreview: () => void }>) {
 function MarketsSection({
   rows,
   scores,
+  scan,
   assets,
   marketView,
   onMarketView,
@@ -399,7 +432,8 @@ function MarketsSection({
   onInvest,
 }: Readonly<{
   rows: Asset[];
-  scores: ReadonlyMap<string, CanonicalResult>;
+  scores: ScanResults;
+  scan: ReactNode;
   assets: Asset[];
   marketView: MarketView;
   onMarketView: (view: MarketView) => void;
@@ -427,6 +461,7 @@ function MarketsSection({
           </Suspense>
         </div>
       </div>
+      {scan}
       <div className="markets-controls">
         <fieldset className="markets-pills" aria-label="Market view">
           {MARKET_VIEWS.map((view) => (
@@ -473,7 +508,8 @@ function MarketsSection({
               key={asset.ticker}
               asset={asset}
               result={scores.get(asset.ticker)}
-              rank={index + 1}
+              // Top Signals ranks only what the scan scored; the movers views rank by 24h change.
+              rank={marketView === 'signals' ? (scores.get(asset.ticker)?.rank ?? null) : index + 1}
               onSelect={onSelect}
             />
           ))}
@@ -497,7 +533,7 @@ function ResearchZone({
   pending: boolean;
   failed: boolean;
   topPick: Asset | undefined;
-  scores: ReadonlyMap<string, CanonicalResult>;
+  scores: ScanResults;
   assets: Asset[];
   user: User | null;
   onPreview: () => void;
@@ -559,7 +595,12 @@ function Terminal() {
   }, [user, liveAssets, hydration, paper]);
   const connectionState = useConnectionState();
   const reconnecting = connectionState === 'reconnecting';
-  const scores = useCanonicalScores(baseAssets.map((asset) => asset.ticker));
+  const scanQuery = useMarketScan(
+    baseAssets.map((asset) => asset.ticker),
+    preview ? 'sample-preview' : 'assets_status',
+  );
+  const scan: MarketScan | undefined = scanQuery.data;
+  const scores: ScanResults = new Map(scan?.results.map((result) => [result.ticker, result]));
   const filtered =
     assetClass === 'All'
       ? baseAssets
@@ -712,6 +753,14 @@ function Terminal() {
               <MarketsSection
                 rows={rows}
                 scores={scores}
+                scan={
+                  <MarketScanSummary
+                    scan={scan}
+                    completedAt={scanQuery.dataUpdatedAt}
+                    scanning={scanQuery.isFetching}
+                    failed={scanQuery.isError}
+                  />
+                }
                 assets={baseAssets}
                 marketView={marketView}
                 onMarketView={setMarketView}

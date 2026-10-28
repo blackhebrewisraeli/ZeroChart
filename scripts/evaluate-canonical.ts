@@ -380,6 +380,7 @@ const commandHandlers: Record<string, CommandHandler> = {
     const result = await collectCampaignOutcomes(
       requiredValue('outcome-collect', value),
       storePath(args, '.zerochart-campaigns'),
+      { maturedOnly: args.includes('--matured-only') },
     );
     printJson(result);
     if (result.results.some((item) => item.status === 'CONFLICT')) process.exitCode = 1;

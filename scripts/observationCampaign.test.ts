@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { Candle } from '@/lib/binance';
 import { hashEvaluationConfig } from './evaluationStore';
 import { legacyConfigFor } from './evaluate-canonical';
+import { collectCampaignOutcomes } from './outcomeMeasurement';
 import {
   campaignReport,
   initializeCampaign,
@@ -173,6 +174,27 @@ describe('prospective observation campaign', () => {
     expect(report.reproductions).toHaveLength(1);
     expect(report.reproductions[0]).toMatchObject({ status: 'MATCH', networkBlocked: true });
     expect(JSON.stringify(report)).not.toContain('fixture');
+  });
+
+  it('skips immature outcomes without provider access', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-campaign-'));
+    await createCampaign(store);
+    await runDueCampaign(campaignId, store, { now, fetchCandles: async () => candles() });
+    let fetches = 0;
+    const result = await collectCampaignOutcomes(campaignId, store, {
+      now,
+      maturedOnly: true,
+      fetchCandles: async () => {
+        fetches += 1;
+        return [];
+      },
+    });
+    expect(result).toMatchObject({
+      eligibleObservations: 0,
+      skippedImmatureObservations: 1,
+      results: [],
+    });
+    expect(fetches).toBe(0);
   });
 
   it('keeps legacy campaign artifacts readable but refuses retroactive policy upgrade', async () => {

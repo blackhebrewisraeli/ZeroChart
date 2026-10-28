@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  dismissalReasonLabel,
   formatElapsed,
   journalEntry,
   summarizeJournal,
@@ -49,6 +50,7 @@ function signal(overrides: Partial<JournalSignal> = {}): JournalSignal {
     model_version: '1.0.0-pw200',
     created_at: RECEIVED,
     paper_transactions: [],
+    trading_signal_dismissals: null,
     ...overrides,
   };
 }
@@ -162,6 +164,23 @@ describe('missing and contradictory evidence', () => {
     ]);
   });
 
+  it.each(['PENDING', 'EXECUTED'])(
+    'a dismissal recorded on a %s signal is inconsistent',
+    (status) => {
+      const entry = journalEntry(
+        signal({
+          status,
+          trading_signal_dismissals: { dismissed_at: RECEIVED, reason: null },
+          paper_transactions: status === 'EXECUTED' ? [fill()] : [],
+        }),
+      );
+      expect(entry.state).toBe('inconsistent');
+      expect(entry.notes).toContain(
+        `A dismissal is recorded, but the signal is recorded as ${status}.`,
+      );
+    },
+  );
+
   it('more than one linked fill is inconsistent', () => {
     const entry = journalEntry(
       signal({ status: 'EXECUTED', paper_transactions: [fill(), fill({ id: 'fill-2' })] }),
@@ -218,6 +237,28 @@ describe('execution comparison', () => {
   });
 });
 
+describe('dismissal evidence', () => {
+  it('a recorded dismissal is dismissed, with or without a reason', () => {
+    for (const reason of [null, 'price_moved']) {
+      const entry = journalEntry(
+        signal({
+          status: 'DISMISSED',
+          trading_signal_dismissals: { dismissed_at: '2026-10-27T07:21:00+00:00', reason },
+        }),
+      );
+      expect(entry).toMatchObject({ state: 'dismissed', notes: [] });
+    }
+  });
+
+  it('labels each allowlisted reason, an omitted one as not provided, and shows an unknown code as stored', () => {
+    expect(dismissalReasonLabel(null)).toBe('No reason provided');
+    expect(
+      ['price_moved', 'too_risky', 'stale', 'disagree', 'other'].map(dismissalReasonLabel),
+    ).toEqual(['Price moved', 'Too risky', 'Signal is stale', 'Disagree with the signal', 'Other']);
+    expect(dismissalReasonLabel('future_code')).toBe('future_code');
+  });
+});
+
 describe('summary and filters', () => {
   it('counts each state and the incomplete rows', () => {
     const summary = summarizeJournal(
@@ -265,6 +306,8 @@ describe('loadJournalPage', () => {
     expect(columns).toContain(
       'paper_transactions(id, action, ticker, quantity, price, fees, created_at)',
     );
+    // The time and reason only: no actor or owner columns leave the database.
+    expect(columns).toContain('trading_signal_dismissals(dismissed_at, reason)');
     expect(columns).not.toMatch(/\*|token|secret|payload/);
     expect(options).toEqual({ count: 'exact' });
     expect(call('eq')).toEqual([['user_id', 'user-a']]);

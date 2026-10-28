@@ -34,8 +34,15 @@ const rotate: CatalogFunction = {
   anon: false,
   authenticated: true,
 };
-const production = [portfolio, tactical, shared, rotate];
-const others = [tactical, shared, rotate];
+const dismiss: CatalogFunction = {
+  name: 'dismiss_tactical_signal',
+  args: ['signal_id', 'reason'],
+  defaults: 1,
+  anon: false,
+  authenticated: true,
+};
+const production = [portfolio, tactical, shared, rotate, dismiss];
+const others = [tactical, shared, rotate, dismiss];
 
 // The function as 20261022130000 left it: no `expected`.
 const fiveArgPortfolio: CatalogFunction = {
@@ -81,10 +88,17 @@ describe('contractGaps', () => {
     expect(gapsWith(others)[0]).toMatch(/^execute_paper_portfolio\(.*PGRST202/);
   });
 
+  it('blocks this frontend on a database without dismiss_tactical_signal (20261028120000)', () => {
+    expect(gapsWith([portfolio, tactical, shared, rotate], ['20261028120000'])).toEqual([
+      'migration 20261028120000 is not applied',
+      'dismiss_tactical_signal(signal_id, reason): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
+    ]);
+  });
+
   it('blocks grants that differ from the roles the frontend uses', () => {
     const opened = { ...portfolio, anon: true };
     const closed = { ...shared, anon: false };
-    expect(gapsWith([opened, tactical, closed, rotate])).toEqual([
+    expect(gapsWith([opened, tactical, closed, rotate, dismiss])).toEqual([
       'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run, expected): anon can execute it; the frontend needs authenticated only',
       'get_shared_portfolio(share_id): anon cannot execute it; the frontend needs anon and authenticated only',
     ]);

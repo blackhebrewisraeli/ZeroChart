@@ -99,23 +99,27 @@ select is(
   1,
   'the retry left one linked fill'
 );
-update public.trading_signals set status = 'DISMISSED' where event_id = 'attempt-dismiss';
+select public.dismiss_tactical_signal(
+  (select id from public.trading_signals where event_id = 'attempt-dismiss'),
+  'stale'
+);
 
 select results_eq(
   $$
-    select s.event_id, s.status, p.ticker, p.quantity, p.price, p.fees
+    select s.event_id, s.status, p.ticker, p.quantity, p.price, p.fees, d.reason
     from public.trading_signals s
     left join public.paper_transactions p on p.signal_id = s.id
+    left join public.trading_signal_dismissals d on d.signal_id = s.id
     order by s.event_id
   $$,
   $$
     values
-      ('attempt-1', 'EXECUTED', 'ZCTJ-USD', 1::numeric, 100::numeric, 0.25::numeric),
-      ('attempt-dismiss', 'DISMISSED', null, null, null, null),
-      ('attempt-pending', 'PENDING', null, null, null, null),
-      ('legacy-executed', 'EXECUTED', null, null, null, null)
+      ('attempt-1', 'EXECUTED', 'ZCTJ-USD', 1::numeric, 100::numeric, 0.25::numeric, null::text),
+      ('attempt-dismiss', 'DISMISSED', null, null, null, null, 'stale'),
+      ('attempt-pending', 'PENDING', null, null, null, null, null),
+      ('legacy-executed', 'EXECUTED', null, null, null, null, null)
   $$,
-  'the owner reads each signal with its own linked fill and amounts, and none of another owner''s'
+  'the owner reads each signal with its own linked fill, amounts and dismissal, and none of another owner''s'
 );
 select is(
   (

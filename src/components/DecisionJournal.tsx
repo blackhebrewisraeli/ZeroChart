@@ -5,6 +5,7 @@ import { formatPrice, formatSignedPercent } from '@/lib/assets';
 import { isDevAuthUser } from '@/lib/authStore';
 import { loadJournalPage } from '@/lib/db';
 import {
+  dismissalReasonLabel,
   formatElapsed,
   journalEntry,
   JOURNAL_STATES,
@@ -58,6 +59,7 @@ function priceChange(pct: number | null): string {
 
 function EntryItem({ entry }: Readonly<{ entry: JournalEntry }>) {
   const { signal, fill, comparison, state, notes } = entry;
+  const dismissal = signal.trading_signal_dismissals;
   return (
     <li>
       <details className="journal-entry" data-state={state}>
@@ -136,7 +138,15 @@ function EntryItem({ entry }: Readonly<{ entry: JournalEntry }>) {
               <Fact label="Planned stop">
                 {signal.stop_loss === null ? null : price(signal.stop_loss)}
               </Fact>
-              {signal.status === 'DISMISSED' && (
+              {dismissal && (
+                <>
+                  <Fact label="Dismissed at">
+                    <Time value={dismissal.dismissed_at} />
+                  </Fact>
+                  <Fact label="Dismissal reason">{dismissalReasonLabel(dismissal.reason)}</Fact>
+                </>
+              )}
+              {!dismissal && signal.status === 'DISMISSED' && (
                 <Fact label="Dismissal time and reason">{NOT_RECORDED}</Fact>
               )}
               {state === 'awaiting' && (
@@ -376,8 +386,9 @@ export function DecisionJournal() {
       <JournalBody query={query} filtered={ticker !== '' || status !== null} />
       <p className="journal-footnote">
         Not recorded for any signal: the provider&apos;s event time, the risk checks that applied
-        when it was decided, when or why it was dismissed, and whether a fill was recovered after a
-        lost response.
+        when it was decided, and whether a fill was recovered after a lost response. Dismissal time
+        and reason are recorded since dismissal recording was released; earlier dismissals show Not
+        recorded.
       </p>
     </section>
   );

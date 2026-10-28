@@ -134,9 +134,9 @@ export interface JournalPage {
 }
 
 /**
- * One page of the Decision Journal, newest server receipt first. The fills are
- * embedded through `signal_id`, so a signal and its fill come from one
- * snapshot, and both tables' owner-only RLS policies apply. Columns are named:
+ * One page of the Decision Journal, newest server receipt first. The fills and
+ * the dismissal record are embedded through `signal_id`, so a signal and its
+ * outcome come from one snapshot, and every table's owner-only RLS policy applies. Columns are named:
  * nothing beyond what the journal shows leaves the database.
  */
 export async function loadJournalPage(
@@ -147,7 +147,7 @@ export async function loadJournalPage(
   let query = supabase
     .from('trading_signals')
     .select(
-      'id, ticker, action, signal_kind, signal_score, quantity, stop_loss, price, status, event_id, exchange, timeframe, bar_time, model_version, created_at, paper_transactions(id, action, ticker, quantity, price, fees, created_at)',
+      'id, ticker, action, signal_kind, signal_score, quantity, stop_loss, price, status, event_id, exchange, timeframe, bar_time, model_version, created_at, paper_transactions(id, action, ticker, quantity, price, fees, created_at), trading_signal_dismissals(dismissed_at, reason)',
       cursor ? {} : { count: 'exact' },
     )
     .eq('user_id', userId);

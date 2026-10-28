@@ -8,13 +8,33 @@ import type { Database } from '@/integrations/supabase/types';
 
 type SignalRow = Database['public']['Tables']['trading_signals']['Row'];
 type FillRow = Database['public']['Tables']['paper_transactions']['Row'];
+type DismissalRow = Database['public']['Tables']['trading_signal_dismissals']['Row'];
 
 export type JournalFill = Pick<
   FillRow,
   'id' | 'action' | 'ticker' | 'quantity' | 'price' | 'fees' | 'created_at'
 >;
 
-/** A signal row as the journal reads it: named columns plus its linked fills. */
+/** What dismiss_tactical_signal recorded (20261028120000). Earlier dismissals have none. */
+export type JournalDismissal = Pick<DismissalRow, 'dismissed_at' | 'reason'>;
+
+/** The reasons trading_signal_dismissals accepts, in menu order. */
+export const DISMISSAL_REASONS = {
+  price_moved: 'Price moved',
+  too_risky: 'Too risky',
+  stale: 'Signal is stale',
+  disagree: 'Disagree with the signal',
+  other: 'Other',
+} as const;
+
+export type DismissalReason = keyof typeof DISMISSAL_REASONS;
+
+export function dismissalReasonLabel(reason: string | null): string {
+  if (reason === null) return 'No reason provided';
+  return reason in DISMISSAL_REASONS ? DISMISSAL_REASONS[reason as DismissalReason] : reason;
+}
+
+/** A signal row as the journal reads it: named columns plus its linked fills and dismissal. */
 export type JournalSignal = Pick<
   SignalRow,
   | 'id'
@@ -32,7 +52,11 @@ export type JournalSignal = Pick<
   | 'bar_time'
   | 'model_version'
   | 'created_at'
-> & { paper_transactions: JournalFill[] };
+> & {
+  paper_transactions: JournalFill[];
+  /** One-to-one through its primary key `signal_id`, so an object or null. */
+  trading_signal_dismissals: JournalDismissal | null;
+};
 
 export type RecordedStatus = 'PENDING' | 'EXECUTED' | 'DISMISSED';
 
@@ -108,20 +132,24 @@ function compare(signal: JournalSignal, fill: JournalFill): ExecutionComparison 
   };
 }
 
-/** What the linked fills contradict, if anything. */
-function fillFindings(signal: JournalSignal): string[] {
+/** What the linked fills and dismissal record contradict, if anything. */
+function evidenceFindings(signal: JournalSignal): string[] {
   const fills = signal.paper_transactions;
   const [fill] = fills;
-  if (!fill) {
-    return signal.status === 'EXECUTED'
-      ? [
-          'Recorded as executed, but no fill is linked to it. Signals executed before 2026-10-22 ' +
-            '(migration 20261022090000) booked their fill without a link, so it may be in the ' +
-            'Trade Ledger unlinked.',
-        ]
-      : [];
-  }
   const findings: string[] = [];
+  if (signal.trading_signal_dismissals && signal.status !== 'DISMISSED') {
+    findings.push(`A dismissal is recorded, but the signal is recorded as ${signal.status}.`);
+  }
+  if (!fill) {
+    if (signal.status === 'EXECUTED') {
+      findings.push(
+        'Recorded as executed, but no fill is linked to it. Signals executed before 2026-10-22 ' +
+          '(migration 20261022090000) booked their fill without a link, so it may be in the ' +
+          'Trade Ledger unlinked.',
+      );
+    }
+    return findings;
+  }
   if (fills.length > 1) findings.push(`${fills.length} fills are linked; execution books one.`);
   if (signal.status !== 'EXECUTED') {
     findings.push(`A fill is linked, but the signal is recorded as ${signal.status}.`);
@@ -143,7 +171,7 @@ function fillFindings(signal: JournalSignal): string[] {
 
 export function journalEntry(signal: JournalSignal): JournalEntry {
   const fill = signal.paper_transactions[0] ?? null;
-  const notes = fillFindings(signal);
+  const notes = evidenceFindings(signal);
   let state: JournalState;
   if (notes.length > 0) state = 'inconsistent';
   else if (signal.status === 'EXECUTED') state = 'executed';

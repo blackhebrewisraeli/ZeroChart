@@ -3144,6 +3144,22 @@ body {
   line-height: 1.5;
   color: var(--signal-red);
 }
+.action-center-reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+  color: var(--muted-foreground);
+}
+.action-center-reason select {
+  flex: none;
+  width: auto;
+}
 .action-center-queue {
   margin: 0;
   font:

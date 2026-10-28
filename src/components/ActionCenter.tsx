@@ -14,6 +14,11 @@ import { FEE_RATE } from '@/components/TradeTicket';
 import { cn } from '@/lib/utils';
 import { loadPaperTransactions } from '@/lib/db';
 import { isDevAuthUser } from '@/lib/authStore';
+import {
+  DISMISSAL_REASONS,
+  dismissalReasonLabel,
+  type DismissalReason,
+} from '@/lib/decisionJournal';
 
 type Signal = Database['public']['Tables']['trading_signals']['Row'];
 const isStrategy = (signal: Signal) => signal.signal_kind === 'strategy';
@@ -59,6 +64,15 @@ async function bookedFill(signalId: string): Promise<Fill | null> {
   return asFill(data?.[0]);
 }
 
+/** The signal's stored status and dismissal reason; null when they can't be read. */
+async function storedOutcome(signalId: string) {
+  const { data } = await supabase
+    .from('trading_signals')
+    .select('status, trading_signal_dismissals(reason)')
+    .eq('id', signalId);
+  return data?.[0] ?? null;
+}
+
 /** Appends fetched rows that aren't already listed or known to be resolved. */
 function appendNew(list: Signal[], rows: Signal[], resolved: ReadonlySet<string>): Signal[] {
   const seen = new Set([...resolved, ...list.map((s) => s.id)]);
@@ -77,6 +91,11 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   const { scopeUserId: userId, portfolios, replacePaperLedger } = usePortfolio();
   const [pending, setPending] = useState<Signal[]>([]);
   const [busy, setBusy] = useState(false);
+  // Keyed by signal, so a reason never carries over to the next card in the queue.
+  const [reasonChoice, setReasonChoice] = useState<{ id: string; reason: DismissalReason | '' }>({
+    id: '',
+    reason: '',
+  });
   // Resolution is one-way (RLS only updates PENDING rows), so a backlog snapshot
   // still in flight must never bring back a signal resolved after it was read.
   const resolved = useRef(new Set<string>());
@@ -136,25 +155,33 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
     setPending((list) => list.filter((s) => s.id !== id));
   }
 
-  /** Moves a signal out of PENDING; false when another tab already resolved it. Throws on a DB error. */
-  async function resolve(id: string, status: 'EXECUTED' | 'DISMISSED'): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('trading_signals')
-      .update({ status })
-      .eq('id', id)
-      .eq('status', 'PENDING')
-      .select('id');
-    if (error) throw new Error(error.message);
-    forget(id);
-    return data.length > 0;
-  }
-
-  async function dismiss(id: string) {
+  /** dismiss_tactical_signal records the time and reason with the status change. */
+  async function dismiss(signal: Signal, reason: DismissalReason | null) {
     setBusy(true);
     try {
-      await resolve(id, 'DISMISSED');
+      const { error } = await supabase.rpc('dismiss_tactical_signal', {
+        signal_id: signal.id,
+        reason,
+      });
+      if (error) {
+        // A dropped connection can hide a committed dismissal, and another tab
+        // may have resolved the signal first: the stored outcome decides. Never
+        // fall back to a direct UPDATE.
+        const stored = await storedOutcome(signal.id);
+        const recorded = stored?.trading_signal_dismissals;
+        if (stored?.status === 'EXECUTED') {
+          toast.info(`${signal.ticker} was already executed, so it wasn't dismissed`);
+        } else if (stored?.status !== 'DISMISSED') {
+          throw new Error(error.message);
+        } else if (recorded && recorded.reason !== reason) {
+          toast.info(`${signal.ticker} was already dismissed`, {
+            description: `Recorded reason: ${dismissalReasonLabel(recorded.reason)}`,
+          });
+        }
+      }
+      forget(signal.id);
     } catch (error) {
-      toast.error('Could not update the signal', { description: errorMessage(error) });
+      toast.error('Could not dismiss the signal', { description: errorMessage(error) });
     } finally {
       setBusy(false);
     }
@@ -226,6 +253,7 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
     signal.exchange && signal.timeframe && signal.bar_time && signal.model_version,
   );
   const executionBlocked = rejection ?? provenanceBlock(signal, provenanceComplete);
+  const reason = reasonChoice.id === signal.id ? reasonChoice.reason : '';
 
   return (
     <section
@@ -292,11 +320,32 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
           className="action-center-dismiss"
           aria-disabled={busy || undefined}
           onClick={() => {
-            if (!busy) void dismiss(signal.id);
+            if (!busy) void dismiss(signal, reason || null);
           }}
         >
           Dismiss
         </button>
+      </div>
+      <div className="action-center-reason">
+        <label htmlFor="action-center-reason">Dismiss reason (optional)</label>
+        <select
+          id="action-center-reason"
+          className="portfolio-cash-input"
+          value={reason}
+          onChange={(event) =>
+            setReasonChoice({
+              id: signal.id,
+              reason: event.target.value as DismissalReason | '',
+            })
+          }
+        >
+          <option value="">No reason</option>
+          {Object.entries(DISMISSAL_REASONS).map(([code, label]) => (
+            <option key={code} value={code}>
+              {label}
+            </option>
+          ))}
+        </select>
       </div>
       {executionBlocked && (
         <p id="action-center-rejection" className="action-center-rejection">

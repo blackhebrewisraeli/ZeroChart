@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ArrowRight, LockKeyhole, TrendingDown, TrendingUp, Zap } from 'lucide-react';
 import { Cell, Pie, PieChart, Tooltip } from 'recharts';
 import { ALLOCATION_PALETTE } from '@/lib/allocation';
-import { NoScoreBadge } from '@/components/NoScoreBadge';
+import { NoScoreBadge, type NoScoreStatus } from '@/components/NoScoreBadge';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import type { SharedPortfolioRecord, SharedPortfolioHolding } from '@/lib/sharedPortfolio';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,21 @@ function scoreTone(score: number | null): string {
   if (score >= 80) return 'shared-score-high';
   if (score >= 60) return 'shared-score-mid';
   return 'shared-score-low';
+}
+
+/**
+ * Why the portfolio has no score: the reason behind the largest unscored
+ * share. An all-equity snapshot is "Not scanned", not short of history.
+ */
+function portfolioNoScoreStatus(holdings: readonly SharedPortfolioHolding[]): NoScoreStatus {
+  const weights = new Map<NoScoreStatus, number>();
+  for (const holding of holdings) {
+    if (holding.quantScore !== null) continue;
+    const { scoreStatus, allocationPercent } = holding;
+    weights.set(scoreStatus, (weights.get(scoreStatus) ?? 0) + allocationPercent);
+  }
+  const [largest] = [...weights].sort((a, b) => b[1] - a[1]);
+  return largest?.[0] ?? 'INSUFFICIENT_DATA';
 }
 
 function AllocationTooltip({
@@ -88,7 +103,7 @@ export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfol
           </div>
           <div className={cn('shared-hero-score', scoreTone(snapshot.quantScore))}>
             {snapshot.quantScore === null ? (
-              <NoScoreBadge status="INSUFFICIENT_DATA" />
+              <NoScoreBadge status={portfolioNoScoreStatus(snapshot.holdings)} />
             ) : (
               <span className="shared-hero-score-value">{Math.round(snapshot.quantScore)}</span>
             )}
@@ -213,7 +228,7 @@ export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfol
                       <span>{holding.regime ? REGIME_LABELS[holding.regime] : '—'}</span>
                     </div>
                     {holding.quantScore === null ? (
-                      <NoScoreBadge status="INSUFFICIENT_DATA" compact />
+                      <NoScoreBadge status={holding.scoreStatus} compact />
                     ) : (
                       <div className={cn('shared-score-pill', scoreTone(holding.quantScore))}>
                         {Math.round(holding.quantScore)}

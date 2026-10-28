@@ -19,12 +19,18 @@ interface Requirement<Name extends keyof Functions> {
 }
 
 type FrontendRpc =
+  | 'dismiss_tactical_signal'
   | 'execute_paper_portfolio'
   | 'execute_tactical_signal'
   | 'get_shared_portfolio'
   | 'rotate_signal_webhook_token';
 
 export const DB_CONTRACT: { [Name in FrontendRpc]: Requirement<Name> } = {
+  // Dismiss sends a null reason when none is picked.
+  dismiss_tactical_signal: {
+    args: { signal_id: 'always', reason: 'always' },
+    roles: ['authenticated'],
+  },
   execute_paper_portfolio: {
     args: {
       request_id: 'always',

@@ -171,6 +171,38 @@ export type Database = {
       };
       // Mirrors 20261020120000_create_trading_signals.sql + 20261020180000_signal_contract_v2.sql;
       // rows arrive via the tv-webhook function. `quantity` is in units, not dollars.
+      trading_signal_dismissals: {
+        Row: {
+          actor_id: string;
+          dismissed_at: string;
+          reason: string | null;
+          signal_id: string;
+          user_id: string;
+        };
+        Insert: {
+          actor_id: string;
+          dismissed_at: string;
+          reason?: string | null;
+          signal_id: string;
+          user_id: string;
+        };
+        Update: {
+          actor_id?: string;
+          dismissed_at?: string;
+          reason?: string | null;
+          signal_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'trading_signal_dismissals_signal_id_fkey';
+            columns: ['signal_id'];
+            isOneToOne: true;
+            referencedRelation: 'trading_signals';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       trading_signals: {
         Row: {
           action: string;
@@ -332,6 +364,10 @@ export type Database = {
           risk_profile: string;
         };
         Returns: Json;
+      };
+      dismiss_tactical_signal: {
+        Args: { reason?: string | null; signal_id: string };
+        Returns: Database['public']['Tables']['trading_signal_dismissals']['Row'];
       };
       execute_tactical_signal: {
         Args: { execution_price: number; signal_id: string; user_id: string };

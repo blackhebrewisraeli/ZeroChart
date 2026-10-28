@@ -34,6 +34,7 @@ function signal(id: string, overrides: Partial<JournalSignal> = {}): JournalSign
     model_version: '1.0.0-pw200',
     created_at: '2026-10-27T07:20:00+00:00',
     paper_transactions: [],
+    trading_signal_dismissals: null,
     ...overrides,
   };
 }
@@ -71,11 +72,13 @@ const page = (
 
 function renderJournal() {
   const client = new QueryClient();
-  return render(
+  const tree = () => (
     <QueryClientProvider client={client}>
       <DecisionJournal />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const rendered = render(tree());
+  return { ...rendered, rerender: () => rendered.rerender(tree()) };
 }
 
 const entry = (ticker: string, state: string) =>
@@ -154,6 +157,70 @@ describe('DecisionJournal', () => {
     const buttons = screen.getAllByRole('button').map((button) => button.textContent);
     expect(buttons).toEqual([' Refresh']);
     expect(screen.queryByText(/reject/i)).toBeNull();
+  });
+
+  it('shows a recorded dismissal time and reason, and Not recorded for an earlier dismissal', async () => {
+    view.load.mockResolvedValue(
+      page([
+        signal('reasoned', {
+          status: 'DISMISSED',
+          trading_signal_dismissals: {
+            dismissed_at: '2026-10-27T07:21:30+00:00',
+            reason: 'too_risky',
+          },
+        }),
+        signal('no-reason', {
+          status: 'DISMISSED',
+          ticker: 'ZCTBUSDT',
+          trading_signal_dismissals: { dismissed_at: '2026-10-27T07:22:00+00:00', reason: null },
+        }),
+        signal('legacy-dismissed', { status: 'DISMISSED', ticker: 'ZCTCUSDT' }),
+      ]),
+    );
+    renderJournal();
+
+    const details = async (ticker: string) =>
+      within((await screen.findByText(ticker)).closest('details') as HTMLElement);
+    const reasoned = await details('ZCTAUSDT');
+    expect(reasoned.getByText('Dismissal reason').nextSibling).toHaveTextContent('Too risky');
+    expect(reasoned.getByText('Dismissed at').nextSibling?.firstChild).toHaveAttribute(
+      'datetime',
+      '2026-10-27T07:21:30.000Z',
+    );
+    expect(reasoned.queryByText('Dismissal time and reason')).toBeNull();
+
+    const noReason = await details('ZCTBUSDT');
+    expect(noReason.getByText('Dismissal reason').nextSibling).toHaveTextContent(
+      'No reason provided',
+    );
+    expect(noReason.getByText('Dismissed at').nextSibling?.firstChild).toHaveAttribute(
+      'datetime',
+      '2026-10-27T07:22:00.000Z',
+    );
+
+    const legacy = await details('ZCTCUSDT');
+    expect(legacy.getByText('Dismissal time and reason').nextSibling).toHaveTextContent(
+      'Not recorded',
+    );
+    expect(legacy.queryByText('Dismissed at')).toBeNull();
+    expect(legacy.queryByText('Dismissal reason')).toBeNull();
+
+    expect(screen.getByText(/Showing 3 signals/).closest('p')).toHaveTextContent('3 dismissed');
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([' Refresh']);
+  });
+
+  it('reads only the signed-in owner, and shows none of the previous owner after a switch', async () => {
+    view.load.mockImplementation(async (userId: string) =>
+      page([signal(`${userId}-row`, { ticker: userId === 'user-a' ? 'ZCTAUSDT' : 'ZCTBUSDT' })]),
+    );
+    const { rerender } = renderJournal();
+    expect(await screen.findByText('ZCTAUSDT')).toBeInTheDocument();
+
+    view.userId = 'user-b';
+    rerender();
+    expect(await screen.findByText('ZCTBUSDT')).toBeInTheDocument();
+    expect(screen.queryByText('ZCTAUSDT')).toBeNull();
+    expect(view.load.mock.calls.map(([userId]) => userId)).toEqual(['user-a', 'user-b']);
   });
 
   it('shows an error and no entries when the read fails, then recovers on Retry', async () => {

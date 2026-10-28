@@ -90,7 +90,7 @@ flowchart TB
 
 - TradingView alerts post to the [`tv-webhook`](./supabase/functions/tv-webhook/index.ts) Edge Function. Each user authenticates with a rotating `secret_token` that is stored only as a SHA-256 hash.
 - TradingView cancels a delivery after 3 seconds, so one database call (`ingest_tradingview_signal`) authenticates the token and records the signal, and the function answers only once the row has committed. Validation errors are reported only to an authenticated caller. Payloads carry ticker, BUY/SELL action, 0–100 `signal_score`, `price`, `quantity` in units, an optional stop, and, from the current HUD, exchange, timeframe, bar time and model version. They land in `trading_signals` as `PENDING`. A unique `(user, ticker, action, event_id)` index turns a re-delivered alert into a `200 duplicate`. Each delivery logs one JSON line naming its outcome.
-- The [Action Center](./src/components/ActionCenter.tsx) streams new signals over Supabase Realtime. **Execute** books a tactical fill into the Paper Trading ledger at the live price, and only then marks the signal `EXECUTED`; **Dismiss** retires the signal.
+- The [Action Center](./src/components/ActionCenter.tsx) streams new signals over Supabase Realtime. **Execute** books a tactical fill into the Paper Trading ledger at the live price, and only then marks the signal `EXECUTED`; **Dismiss** retires the signal through `dismiss_tactical_signal`, which records when, by whom and, optionally, why ([docs/DECISION_JOURNAL.md](./docs/DECISION_JOURNAL.md#dismissal-evidence)).
 - Row-level security lets users read only their own signals and move them out of `PENDING` once. Ticker, size, and stop are writable only by the webhook, so the audit trail can't be rewritten.
 
 ### Also included

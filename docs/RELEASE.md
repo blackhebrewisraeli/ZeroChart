@@ -96,3 +96,29 @@ Proposed transition (not done yet; it's a contract step):
 1. Done in #75: the server accepts `expected`, and Confirm always sends it.
 2. Wait until no booking arrives without it. To make that measurable, a small migration could add `'previewed': expected is not null` to each receipt. Then `select count(*) from paper_order_batches where receipt ->> 'previewed' = 'false'` must stay at 0 for a chosen period.
 3. Contract migration: right after the replay lookup, refuse `not dry_run and expected is null` with `check_violation` and a message asking the user to preview again. The replay lookup runs first, so a request ID that already committed still returns its receipt without `expected`, and retries and recovery keep working. Keep the argument's `default null`: previews and recoveries never send it, and `DB_CONTRACT` marks it `sometimes`, so the gate blocks any release that drops the default.
+
+## `dismiss_tactical_signal` (20261028120000)
+
+Dismissal evidence ([DECISION_JOURNAL.md](./DECISION_JOURNAL.md#dismissal-evidence)). The migration only expands: a new table, the RPC and two triggers. It changes no existing grant, policy, function or row, and it backfills nothing.
+
+**Order: database, then frontend.**
+
+1. From a checkout of the PR's final head, `supabase db push --dry-run`, then `supabase db push`. It should list only `20261028120000`.
+2. From the same checkout, run the contract check above. It must report every migration applied, `dismiss_tactical_signal(signal_id, reason)` included. Until then the gate blocks this frontend, which calls the RPC.
+3. Merge. The production build passes the gate and the new Action Center goes live.
+
+**Between steps 1 and 3**, production still runs the older frontend, which dismisses with a direct `UPDATE` of `trading_signals.status`. The new trigger records each of those dismissals (time, owner as actor, no reason) in the same statement, so none goes unrecorded. Such dismissals show **No reason provided**. An update that matches no row, because another tab resolved the signal first, records nothing, and the old frontend shows no success message for it. No feature flag or other temporary mechanism is needed. Tabs that keep the old bundle open after step 3 behave the same way until they reload.
+
+**Contract step, in a later release.** Revoke the direct path once no old bundle is in use:
+
+```sql
+revoke update (status) on public.trading_signals from authenticated;
+drop policy "Users can resolve their own pending signals" on public.trading_signals;
+```
+
+Keep the recording trigger: it still guards every other path. A dismissal record doesn't say whether the RPC or a direct update wrote it, so old-bundle use can't be measured from it. Wait at least one release after step 3. After the contract step, a stale bundle's Dismiss fails with `42501` and an error toast instead of dismissing. Instant Rollback to a frontend released before `20261028120000` is no longer possible after it.
+
+**Rollback.**
+
+- Frontend: Instant Rollback to an earlier deployment is safe until the contract step. The older bundle's dismissals keep being recorded, without reasons.
+- Database: forward-only. Never drop `trading_signal_dismissals` or delete its rows. They are the only record of those dismissals. To withdraw the RPC, revoke its `EXECUTE` in a new migration (and roll the frontend back first, since the gate requires the function). Recorded rows stay readable in the journal.

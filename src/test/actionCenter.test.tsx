@@ -13,6 +13,13 @@ const db = vi.hoisted(() => ({
   // The RPC commits its fill, then the response never arrives.
   dropResponse: false,
   rows: [] as Array<Record<string, unknown>>,
+  // What the server stored for a resolved signal, as ActionCenter reads it back.
+  outcomes: new Map<
+    string,
+    { status: string; trading_signal_dismissals: { reason: string | null } | null }
+  >(),
+  // The read-back after a failed dismissal fails too.
+  readFails: false,
   insert: vi.fn(),
   update: vi.fn(),
   rpc: vi.fn(),
@@ -62,6 +69,19 @@ vi.mock('@/lib/supabaseClient', () => {
     supabase: {
       rpc: async (name: string, args: Record<string, unknown>) => {
         db.rpc(name, args);
+        if (name === 'dismiss_tactical_signal') {
+          if (db.hold) await new Promise<void>((resume) => (db.release = resume));
+          // A refusal commits nothing.
+          if (db.rpcError) return { data: null, error: db.rpcError };
+          const id = String(args['signal_id']);
+          const reason = (args['reason'] ?? null) as string | null;
+          if (!db.outcomes.has(id)) {
+            db.outcomes.set(id, { status: 'DISMISSED', trading_signal_dismissals: { reason } });
+          }
+          if (db.dropResponse)
+            return { data: null, error: { message: 'TypeError: Failed to fetch' } };
+          return { data: { signal_id: id, reason }, error: null };
+        }
         if (db.rpcError) return { data: null, error: db.rpcError };
         const source = db.pending.find(
           (candidate) => (candidate as { id?: string }).id === args['signal_id'],
@@ -88,7 +108,20 @@ vi.mock('@/lib/supabaseClient', () => {
             ? query(() =>
                 db.rows.filter((row) => db.eq.mock.calls.at(-1)?.[1] === row['signal_id']),
               )
-            : query(() => db.pending),
+            : query(() => {
+                const [column, id] = db.eq.mock.calls.at(-1) ?? [];
+                if (column !== 'id') return db.pending;
+                if (db.readFails) return null as unknown as unknown[];
+                return db.pending
+                  .filter((row) => (row as { id: string }).id === id)
+                  .map(
+                    (row) =>
+                      db.outcomes.get(String(id)) ?? {
+                        status: (row as { status: string }).status,
+                        trading_signal_dismissals: null,
+                      },
+                  );
+              }),
         update: (values: unknown) => {
           db.update(values);
           return query(
@@ -189,6 +222,8 @@ describe('Action Center', () => {
     db.updateError = null;
     db.rpcError = null;
     db.dropResponse = false;
+    db.outcomes = new Map();
+    db.readFails = false;
     db.hold = false;
     db.status = 'SUBSCRIBED';
     db.holdStatus = false;
@@ -421,7 +456,7 @@ describe('Action Center', () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it('Dismiss resolves the signal and leaves the ledger untouched', async () => {
+  it('Dismiss resolves the signal through dismiss_tactical_signal in one click, with no reason', async () => {
     db.pending = [signal(), signal({ id: 'sig-2', action: 'SELL', ticker: 'BTC-USD' })];
     renderSignedIn();
 
@@ -429,8 +464,123 @@ describe('Action Center', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('SELL SIGNAL'));
 
-    expect(db.update).toHaveBeenCalledWith({ status: 'DISMISSED' });
+    expect(db.rpc).toHaveBeenCalledWith('dismiss_tactical_signal', {
+      signal_id: 'sig-1',
+      reason: null,
+    });
+    // Never a direct status UPDATE, which would skip the evidence.
+    expect(db.update).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
     expect(store.portfolios.paper_trading.transactions.some((t) => t.type === 'buy')).toBe(false);
+  });
+
+  it('sends the optional reason, and the next signal starts with none', async () => {
+    db.pending = [signal(), signal({ id: 'sig-2', action: 'SELL', ticker: 'BTC-USD' })];
+    renderSignedIn();
+
+    const reason = await screen.findByRole('combobox', { name: 'Dismiss reason (optional)' });
+    expect(reason).toHaveValue('');
+    expect(
+      within(reason)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'No reason',
+      'Price moved',
+      'Too risky',
+      'Signal is stale',
+      'Disagree with the signal',
+      'Other',
+    ]);
+    fireEvent.change(reason, { target: { value: 'price_moved' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('SELL SIGNAL'));
+
+    expect(db.rpc).toHaveBeenCalledWith('dismiss_tactical_signal', {
+      signal_id: 'sig-1',
+      reason: 'price_moved',
+    });
+    expect(screen.getByRole('combobox', { name: 'Dismiss reason (optional)' })).toHaveValue('');
+  });
+
+  describe('when the dismissal response is lost or refused, the stored outcome decides', () => {
+    it('a dismissal the server committed: the card goes, with no error and no retry', async () => {
+      db.pending = [signal()];
+      db.dropResponse = true;
+      renderSignedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull(),
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(toast.info).not.toHaveBeenCalled();
+      expect(db.rpc).toHaveBeenCalledTimes(1);
+      expect(db.eq).toHaveBeenCalledWith('id', 'sig-1');
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('a refusal while the signal is still pending: an error, and the card stays', async () => {
+      db.pending = [signal()];
+      db.rpcError = { message: 'Signal not found' };
+      renderSignedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Could not dismiss the signal', {
+          description: 'Signal not found',
+        }),
+      );
+      expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('an unreadable outcome is not declared a success', async () => {
+      db.pending = [signal()];
+      db.rpcError = { message: 'TypeError: Failed to fetch' };
+      db.readFails = true;
+      renderSignedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      expect(screen.getByRole('region', { name: 'Action center' })).toBeInTheDocument();
+      expect(db.update).not.toHaveBeenCalled();
+    });
+
+    it('executed in another tab first: the card goes, and says it was not dismissed', async () => {
+      db.pending = [signal()];
+      db.rpcError = { message: "Signal was executed, so it can't be dismissed" };
+      db.outcomes.set('sig-1', { status: 'EXECUTED', trading_signal_dismissals: null });
+      renderSignedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull(),
+      );
+      expect(toast.info).toHaveBeenCalledWith(
+        "BTCUSDT was already executed, so it wasn't dismissed",
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it('dismissed in another tab with another reason: the card goes, showing the recorded reason', async () => {
+      db.pending = [signal()];
+      db.rpcError = { message: 'Signal was already dismissed with another reason' };
+      db.outcomes.set('sig-1', {
+        status: 'DISMISSED',
+        trading_signal_dismissals: { reason: 'too_risky' },
+      });
+      renderSignedIn();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('region', { name: 'Action center' })).toBeNull(),
+      );
+      expect(toast.info).toHaveBeenCalledWith('BTCUSDT was already dismissed', {
+        description: 'Recorded reason: Too risky',
+      });
+      expect(toast.error).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the pressed button focusable while a request is out, so focus stays on the queue', async () => {
@@ -445,7 +595,7 @@ describe('Action Center', () => {
     // A disabled button drops keyboard focus to <body>; aria-disabled keeps it.
     expect(dismiss).not.toBeDisabled();
     expect(dismiss).toHaveAttribute('aria-disabled', 'true');
-    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(db.rpc).toHaveBeenCalledTimes(1);
 
     db.hold = false;
     await act(async () => db.release());

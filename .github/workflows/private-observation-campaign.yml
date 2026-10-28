@@ -1,0 +1,84 @@
+name: Private observation campaign
+
+on:
+  schedule:
+    # Primary run shortly after 06:30 UTC, plus one bounded later retry.
+    - cron: '42 6 * * *'
+    - cron: '12 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-observation-campaign
+  cancel-in-progress: false
+
+jobs:
+  activation:
+    name: Activation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report activation state
+        env:
+          ENABLED: ${{ vars.PRIVATE_CAMPAIGN_AUTOMATION_ENABLED }}
+        run: |
+          if [ "$ENABLED" = "true" ]; then
+            echo "Campaign automation is enabled."
+          else
+            echo "Campaign automation is disabled. Set PRIVATE_CAMPAIGN_AUTOMATION_ENABLED=true only after the private evidence import and synthetic acceptance test."
+          fi
+
+  observe:
+    name: Restore, observe, persist, reproduce and mature outcomes
+    needs: activation
+    if: vars.PRIVATE_CAMPAIGN_AUTOMATION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CAMPAIGN_ID: private-2026q4-003
+      CAMPAIGN_STORE: ${{ github.workspace }}/frozen/.zerochart-campaigns
+      FROZEN_IMPLEMENTATION_DIR: ${{ github.workspace }}/frozen
+      ORCHESTRATION_REVISION: ${{ github.sha }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_CAMPAIGN_BUCKET: private-campaign-evidence
+      SUPABASE_CAMPAIGN_EMAIL: ${{ secrets.SUPABASE_CAMPAIGN_EMAIL }}
+      SUPABASE_CAMPAIGN_PASSWORD: ${{ secrets.SUPABASE_CAMPAIGN_PASSWORD }}
+    steps:
+      - name: Checkout orchestration revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: orchestration
+
+      - name: Checkout frozen campaign implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 595963cbe9fdd83e77d6286792bb0517e621b54a
+          path: frozen
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Validate required configuration
+        run: |
+          : "${SUPABASE_URL:?Set the SUPABASE_URL repository variable}"
+          : "${SUPABASE_PUBLISHABLE_KEY:?Set the SUPABASE_PUBLISHABLE_KEY repository variable}"
+          : "${SUPABASE_CAMPAIGN_EMAIL:?Set the SUPABASE_CAMPAIGN_EMAIL Actions secret}"
+          : "${SUPABASE_CAMPAIGN_PASSWORD:?Set the SUPABASE_CAMPAIGN_PASSWORD Actions secret}"
+
+      - name: Install orchestration dependencies
+        working-directory: orchestration
+        run: npm ci --ignore-scripts
+
+      - name: Install frozen implementation dependencies
+        working-directory: frozen
+        run: npm ci --ignore-scripts
+
+      - name: Run private campaign orchestration
+        working-directory: orchestration
+        run: ./node_modules/.bin/tsx scripts/campaignAutomation.ts run

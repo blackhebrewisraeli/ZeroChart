@@ -329,6 +329,7 @@ export async function collectCampaignOutcomes(
   options: {
     now?: Date;
     fetchCandles?: typeof fetchResearchCandles;
+    maturedOnly?: boolean;
   } = {},
 ) {
   const now = options.now ?? new Date();
@@ -339,8 +340,13 @@ export async function collectCampaignOutcomes(
     slot: string;
     status: 'CREATED' | 'UNCHANGED' | 'CONFLICT';
   };
+  const maturedObservations = observations.filter((observation) => {
+    if (!options.maturedOnly) return true;
+    const reference = firstDailyOpenStrictlyAfter(observation.observedAt);
+    return now.getTime() >= reference + Math.max(...OUTCOME_HORIZONS) * DAY_MS;
+  });
   const byObservation = await Promise.all(
-    observations.map(async (observation): Promise<CollectionResult[]> => {
+    maturedObservations.map(async (observation): Promise<CollectionResult[]> => {
       const measurable = observation.run.decisions.filter((decision) => decision.score !== null);
       const reference = firstDailyOpenStrictlyAfter(observation.observedAt);
       const end = reference + 30 * DAY_MS;
@@ -386,7 +392,12 @@ export async function collectCampaignOutcomes(
     }),
   );
   const results = byObservation.flat();
-  return { outcomeSpecificationId: OUTCOME_SPECIFICATION_ID, results };
+  return {
+    outcomeSpecificationId: OUTCOME_SPECIFICATION_ID,
+    eligibleObservations: maturedObservations.length,
+    skippedImmatureObservations: observations.length - maturedObservations.length,
+    results,
+  };
 }
 
 export async function loadCampaignOutcomes(

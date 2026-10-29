@@ -64,7 +64,7 @@ coverage/reason codes and complete Opportunity fields without I/O.
 
 ## Checkpoint A: Semantic contract
 
-- [ ] Owner reviews synthetic market-gate, candidate and transition tables.
+- [x] Owner reviews synthetic market-gate, candidate and transition tables.
 - [x] `npm run typecheck`
 - [x] `npm run lint`
 - [x] `npm test`
@@ -80,15 +80,15 @@ universe, future start/end and the 00:30–06:00 retry window.
 
 **Acceptance criteria:**
 
-- [ ] Initialization refuses past/non-boundary starts, short ranges, invalid IDs and spec/hash
+- [x] Initialization refuses past/non-boundary starts, short ranges, invalid IDs and spec/hash
       mismatch.
-- [ ] An existing manifest is accepted only when byte-equivalent; conflicting initialization fails.
-- [ ] No network request occurs during initialization.
+- [x] An existing manifest is accepted only when byte-equivalent; conflicting initialization fails.
+- [x] No network request occurs during initialization.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityCampaign.test.ts`
-- [ ] Temporary-store fixtures cover future, past, duplicate and conflicting manifests.
+- [x] `npm test -- scripts/opportunityCampaign.test.ts`
+- [x] Temporary-store fixtures cover future, past, duplicate and conflicting manifests.
 
 **Dependencies:** Task 1
 

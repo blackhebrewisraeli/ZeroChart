@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import type { Candle } from '@/lib/binance';
 import { evaluateScan, UNSUPPORTED_DETAIL, type ScanInput } from '@/lib/marketScanner';
+import {
+  TRADINGVIEW_DEV_PROVIDER_ID,
+  TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+  type TradingViewDevSource,
+} from '@/lib/tradingViewDevScan';
 import { bars, EQUITY_NOW, rising, split, wave } from './usEquityFixtures';
 
 const DAY = 86_400_000;
@@ -153,6 +158,102 @@ describe('MarketScanSummary', () => {
     rerender(<MarketScanSummary scan={undefined} completedAt={0} scanning={false} failed />);
     expect(
       screen.getByText('The market scan could not run. Scores are unavailable.'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('MarketScanSummary as the TradingView development scan', () => {
+  const source: TradingViewDevSource = {
+    tool: 'get_ohlcv',
+    interval: '1D',
+    retrieval: { startedAt: '2026-10-28T16:58:00.000Z', completedAt: '2026-10-28T17:00:00.000Z' },
+    symbols: { AAPL: 'NASDAQ:AAPL', MSFT: 'NASDAQ:MSFT', SPY: 'AMEX:SPY' },
+    notice: 'regular session only; prices are split-adjusted only.',
+    selectionRule: 'Labeled fixture universe.',
+    pineAlerts: { checkedAt: '2026-10-28T17:01:00.000Z', symbols: ['BINANCE:BTCUSDT'] },
+  };
+  const equity = (ticker: string, path: (i: number) => number): ScanInput => ({
+    ticker,
+    instrument: `US:${ticker}`,
+    equity: {
+      provider: TRADINGVIEW_DEV_PROVIDER_ID,
+      range: { from: '2026-01-12', to: '2026-10-27' },
+      series: split(bars(path)),
+      fetchedAt: EQUITY_NOW - 60_000,
+      cached: false,
+    },
+  });
+
+  function renderDev(inputs: ScanInput[], devSource = source) {
+    const scan = evaluateScan(inputs, {
+      evaluationTime: EQUITY_NOW,
+      universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+      equityProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+    });
+    render(
+      <MarketScanSummary
+        scan={scan}
+        completedAt={EQUITY_NOW}
+        scanning={false}
+        failed={false}
+        source={devSource}
+      />,
+    );
+    return { scan, panel: screen.getByRole('region', { name: 'TradingView development scan' }) };
+  }
+
+  it('labels its origin, ranks every valid asset with components, and keeps failures', () => {
+    const failed: ScanInput = {
+      ticker: 'SPY',
+      instrument: 'US:SPY',
+      error: { code: 'FETCH_FAILED', detail: 'TradingView get_ohlcv (AMEX:SPY): HTTP 429' },
+    };
+    const { scan, panel } = renderDev([equity('AAPL', wave), equity('MSFT', rising), failed]);
+    expect(within(panel).getByText('Local dev data')).toBeInTheDocument();
+    expect(within(panel).getByText('Requested')).toBeInTheDocument();
+    expect(within(panel).getByText('3 assets')).toBeInTheDocument();
+    expect(within(panel).getByText('Not evaluated').nextSibling).toHaveTextContent('1');
+    const ranked = panel.querySelector('.market-scan-ranked')!;
+    const rows = within(ranked as HTMLElement).getAllByRole('listitem');
+    const evaluated = scan.results.filter((result) => result.status === 'EVALUATED');
+    expect(rows).toHaveLength(evaluated.length);
+    expect(rows[0]).toHaveTextContent(`#1${evaluated[0]!.ticker}`);
+    expect(rows[0]).toHaveTextContent(source.symbols[evaluated[0]!.ticker]!);
+    expect(rows[0]).toHaveTextContent(/RSI \d+\.\d → \d+ ×0\.\d\d · MACD hist [+-]\d/);
+    const failures = within(panel).getByRole('region', { name: 'Not evaluated this scan' });
+    expect(within(failures).getByText(/HTTP 429/)).toBeInTheDocument();
+    const notes = within(panel).getByRole('region', { name: 'Source and limitations' });
+    expect(
+      within(notes).getByText(/No TradingView alert exists on any of these symbols/),
+    ).toBeInTheDocument();
+    expect(within(notes).getByText(/dividends are not adjusted/)).toBeInTheDocument();
+    expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('says there are no qualifying setups as a full answer only when the scan is complete', () => {
+    const { panel } = renderDev([equity('AAPL', wave)]);
+    expect(
+      within(panel).getAllByText('None — all 1 supported assets were evaluated.'),
+    ).toHaveLength(2);
+  });
+
+  it('explains a risk setup with the readings behind it', () => {
+    // Labeled fixture: closes alternating 6% apart, so ATR/close sits far above the 4% band.
+    const { panel } = renderDev([equity('AAPL', (i) => (i % 2 === 0 ? 100 : 106))]);
+    const risk = within(panel).getByText('Risk setups').closest('.market-scan-setups')!;
+    const item = within(risk as HTMLElement).getByRole('listitem');
+    expect(item).toHaveTextContent('AAPL');
+    expect(item).toHaveTextContent('High-volatility');
+    expect(item).toHaveTextContent(/ATR \d+\.\d\d% → \d+ ×0\.30/);
+  });
+
+  it('names a symbol that does hold a TradingView alert, without calling a setup an alert', () => {
+    const pineAlerts = { checkedAt: '2026-10-28T17:01:00.000Z', symbols: ['NASDAQ:AAPL'] };
+    const { panel } = renderDev([equity('AAPL', wave)], { ...source, pineAlerts });
+    expect(
+      within(panel).getByText(
+        "TradingView alerts exist on NASDAQ:AAPL; a setup here is still ZeroChart's calculation, not proof an alert fired.",
+      ),
     ).toBeInTheDocument();
   });
 });

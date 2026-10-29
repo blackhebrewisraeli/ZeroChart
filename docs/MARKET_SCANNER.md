@@ -143,3 +143,51 @@ to count incomplete scans. The snapshots keep that whole population.
   "no candle source" into `INSUFFICIENT_DATA` ("Not enough data") for equities and forex.
 - App scores use 199 closed candles. Pine `1.0.0-pw200` sees 200 at a bar close, so the windows
   differ by one candle (see `docs/PINE_PARITY_ASSESSMENT.md`).
+
+## TradingView development scan (local, owner-initiated)
+
+A one-off local demonstration: 50 US equities and ETFs scored by this scanner on daily bars that the
+owner's agent session retrieved through TradingView's MCP server. The Markets section shows it as
+**TradingView development scan**, under `vite dev` only. It does not change live coverage: every
+live scan still reports equities as `UNSUPPORTED`.
+
+| Step                    | Who                      | How                                                                                                                                                                                                       |
+| ----------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Choose the universe     | Code, before any data    | `selectDevScanUniverse`: the 50 of the 90 configured equities with the lowest `sha256(ticker)`                                                                                                            |
+| Resolve instruments     | Agent (`search_symbols`) | One listing per ticker on a US primary venue (NASDAQ, NYSE, AMEX = NYSE Arca, CBOE); committed as `TRADINGVIEW_SYMBOLS`. Off-exchange, CFD and foreign listings excluded                                  |
+| Retrieve bars           | Agent (`get_ohlcv`)      | 1D, `count` 1000 per symbol, signed in as the owner (OAuth), well under ~100 calls/min. Each response is copied verbatim into one export file in git-ignored `.zerochart-tradingview/`                    |
+| Check alerts            | Agent (`list_alerts`)    | Records which symbols hold any TradingView alert, so the panel can say whether Pine emitted anything                                                                                                      |
+| Validate, score, record | App (CLI)                | `tradingview-import`: `us-equity-daily-v1`, canonical `1.0.0`, the last 199 final sessions; writes `.zerochart-scans/<SCAN_ID>.json` (reproducible with `scan-reproduce`) and `tradingview-dev-scan.json` |
+| Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan` to this machine's loopback addresses; production builds have no such route            |
+| Decide                  | The owner                | Nothing in the panel is an action                                                                                                                                                                         |
+
+```bash
+npm run evaluate -- tradingview-import .zerochart-tradingview/<RETRIEVAL_ID>.json
+npm run evaluate -- scan-reproduce <SCAN_ID>
+npm run dev   # then open http://localhost:8080/?devAuth=1, Research → Markets
+```
+
+The export file (`scripts/tradingViewImport.ts`, `TradingViewOhlcvExport`) holds `retrieval.startedAt`
+and `completedAt`, the alert check, and one entry per ticker: `symbol`, `receivedAt` and the response,
+or the error the agent got. A selected ticker missing from the file is reported as `FETCH_FAILED`;
+one outside the selection makes the import fail.
+
+Conventions observed on 2026-10-29 and enforced by the import:
+
+- A daily bar's `t` is its session's 09:30 New York open in Unix seconds (13:30 UTC in EDT, 14:30 in
+  EST). Any other stamp is `DATA_INVALID`, never re-dated.
+- TradingView's notice says "regular session only; prices are split-adjusted only", which is
+  `us-equity-daily-v1`'s `SPLIT` basis. Without that notice the asset is `DATA_INVALID`: the basis is
+  not assumed. Dividends are not adjusted. `get_ohlcv` reports no split events, so the
+  `UNADJUSTED_SPLIT` check cannot run.
+- The notice also says the last bar may still be forming and that data may be delayed under the
+  owner's plan. Only final sessions count (9h after the close), as for any equity provider.
+- The evaluation time is the end of retrieval. A retrieval during which another session became final
+  is refused, so every symbol rests on the same required session.
+
+Terms. TradingView's MCP documentation (retrieved 2026-10-29) names no usage terms and says nothing
+about storing or processing what it returns. The general Terms still restrict non-display and
+commercial use ([TRADINGVIEW_ONLY_FEASIBILITY.md](TRADINGVIEW_ONLY_FEASIBILITY.md)). So this stays
+owner-only and local: the export, snapshots and view file are git-ignored, never committed, never
+sent to Supabase or a deployment, and nothing schedules a re-scan. A product scan still needs
+TradingView's written agreement.

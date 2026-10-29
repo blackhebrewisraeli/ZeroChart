@@ -1,5 +1,10 @@
 import { Radar } from 'lucide-react';
-import { LONG_SETUP_MIN_SCORE, REGIME_LABELS, RISK_SETUP_MAX_SCORE } from '@/lib/canonicalModel';
+import {
+  LONG_SETUP_MIN_SCORE,
+  REGIME_LABELS,
+  RISK_SETUP_MAX_SCORE,
+  type CanonicalScore,
+} from '@/lib/canonicalModel';
 import {
   scanStatusLabel,
   type MarketScan,
@@ -7,6 +12,11 @@ import {
   type ScanCohort,
   type ScanStatus,
 } from '@/lib/marketScanner';
+import {
+  TRADINGVIEW_DEV_PROVIDER_ID,
+  TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+  type TradingViewDevSource,
+} from '@/lib/tradingViewDevScan';
 import { cn } from '@/lib/utils';
 
 const STATUS_LABEL: Record<ScanStatus, string> = {
@@ -39,7 +49,10 @@ const CLASS_LABEL: Record<ScanCohort['assetClass'], string> = {
   forex: 'Forex',
 };
 
-const PROVIDER_LABEL: Record<string, string> = { 'binance-spot-klines': 'Binance spot klines' };
+const PROVIDER_LABEL: Record<string, string> = {
+  'binance-spot-klines': 'Binance spot klines',
+  [TRADINGVIEW_DEV_PROVIDER_ID]: 'TradingView MCP get_ohlcv',
+};
 
 /** "candles to 27 Oct close (UTC)" for crypto days, "sessions to 27 Oct close (New York)" for equities. */
 function dataAsOfLabel(cohort: ScanCohort): string | null {
@@ -58,7 +71,117 @@ function ageLabel(ms: number): string {
 }
 
 function universeLabel(source: string): string {
+  if (source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) return 'Requested';
   return source === 'assets_status' ? 'Markets universe' : 'Sample preview universe';
+}
+
+/** "+0.21%": two decimals, since the flat-momentum band is ±0.05%. */
+function percent(fraction: number): string {
+  const value = Number((fraction * 100).toFixed(2)) || 0;
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+/** The three factor readings, their 0–100 scores and the regime weights that blend them. */
+function ComponentLine({ model }: Readonly<{ model: CanonicalScore }>) {
+  const { inputs, components } = model;
+  const { weights } = components;
+  return (
+    <span className="market-scan-fit font-mono">
+      RSI {inputs.rsi.toFixed(1)} → {components.rsiScore.toFixed(0)} ×{weights.rsi.toFixed(2)} ·
+      MACD hist {percent(inputs.momentumPercent)} → {components.momentumScore.toFixed(0)} ×
+      {weights.momentum.toFixed(2)} · ATR {(inputs.volatilityPercent * 100).toFixed(2)}% →{' '}
+      {components.volatilityScore.toFixed(0)} ×{weights.volatility.toFixed(2)}
+    </span>
+  );
+}
+
+function SetupTags({ result }: Readonly<{ result: ScanAssetResult }>) {
+  return (
+    <>
+      {result.setups?.long && <span className="market-scan-tag is-long">Long setup</span>}
+      {result.setups?.risk && <span className="market-scan-tag is-risk">Risk setup</span>}
+    </>
+  );
+}
+
+/** Every evaluated asset in rank order, with what moved its score. Rank is relative only. */
+function RankedList({
+  scan,
+  symbols,
+}: Readonly<{ scan: MarketScan; symbols: Readonly<Record<string, string>> }>) {
+  const ranked = scan.results.filter((result) => result.status === 'EVALUATED');
+  if (ranked.length === 0) return null;
+  return (
+    <details className="market-scan-ranked">
+      <summary className="market-scan-label">
+        Ranked valid assets ({ranked.length}){' '}
+        <span className="market-scan-rule">relative score order, not a probability</span>
+      </summary>
+      <ol className="market-scan-list">
+        {ranked.map((result) => (
+          <li key={result.ticker} className="market-scan-item">
+            <span className="market-scan-item-head">
+              <span className="market-scan-rank">#{result.rank}</span>
+              <span className="market-scan-ticker">{result.ticker}</span>
+              <span className="market-scan-rank">{symbols[result.ticker]}</span>
+              <span className="market-scan-score">{result.model?.signal_score}</span>
+              {result.model && (
+                <span className="market-scan-regime">{REGIME_LABELS[result.model.regime]}</span>
+              )}
+              <SetupTags result={result} />
+            </span>
+            {result.model && <ComponentLine model={result.model} />}
+            <span className="market-scan-rationale">{result.model?.rationale}</span>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+/** Where a development scan's bars came from, and what it does not establish. */
+function DevSourceNotes({
+  scan,
+  source,
+}: Readonly<{ scan: MarketScan; source: TradingViewDevSource }>) {
+  const requested = new Set(Object.values(source.symbols));
+  const asOfLabel = scan.cohorts[0] ? dataAsOfLabel(scan.cohorts[0]) : null;
+  const alerted = source.pineAlerts?.symbols.filter((symbol) => requested.has(symbol)) ?? [];
+  let alerts = 'TradingView alerts were not checked.';
+  if (source.pineAlerts) {
+    alerts =
+      alerted.length === 0
+        ? `No TradingView alert exists on any of these symbols (checked ${UTC_TIME.format(Date.parse(source.pineAlerts.checkedAt))} UTC), so none of these setups was emitted by Pine.`
+        : `TradingView alerts exist on ${alerted.join(', ')}; a setup here is still ZeroChart's calculation, not proof an alert fired.`;
+  }
+  return (
+    <section className="market-scan-coverage" aria-label="Source and limitations">
+      <h3 className="market-scan-label">Source and limitations</h3>
+      <ul className="market-scan-list market-scan-notes">
+        <li>
+          Daily bars retrieved by the owner&rsquo;s agent session through TradingView&rsquo;s MCP
+          server ({source.tool}, {source.interval}) from{' '}
+          {UTC_TIME.format(Date.parse(source.retrieval.startedAt))} to{' '}
+          {UTC_TIME.format(Date.parse(source.retrieval.completedAt))} UTC, then imported and scored
+          locally. The app has no TradingView connection; this is a development scan, not a licensed
+          product feed, and it does not refresh.
+        </li>
+        <li>TradingView&rsquo;s notice: &ldquo;{source.notice}&rdquo;</li>
+        <li>
+          Split-adjusted only: dividends are not adjusted, and TradingView reports no split events,
+          so an unadjusted split could not be cross-checked.
+        </li>
+        <li>
+          The notice&rsquo;s &ldquo;still forming&rdquo; bar is never scored: a session counts only
+          once final (9h after its close), and each score rests on the last{' '}
+          {scan.cohorts[0]?.minClosedCandles} final sessions ({asOfLabel ?? 'none evaluated'}). Data
+          may be delayed under the owner&rsquo;s plan.
+        </li>
+        <li>{alerts}</li>
+        <li>Universe: {source.selectionRule}</li>
+      </ul>
+    </section>
+  );
 }
 
 function unsupportedBreakdown(results: readonly ScanAssetResult[]): string {
@@ -84,7 +207,11 @@ function CachedAge({ result, scan }: Readonly<{ result: ScanAssetResult; scan: M
   );
 }
 
-function SetupItem({ result, scan }: Readonly<{ result: ScanAssetResult; scan: MarketScan }>) {
+function SetupItem({
+  result,
+  scan,
+  detailed,
+}: Readonly<{ result: ScanAssetResult; scan: MarketScan; detailed: boolean }>) {
   const profiles = Object.entries(result.riskProfiles ?? {})
     .filter(([, fits]) => fits)
     .map(([profile]) => profile);
@@ -98,6 +225,7 @@ function SetupItem({ result, scan }: Readonly<{ result: ScanAssetResult; scan: M
           <span className="market-scan-regime">{REGIME_LABELS[result.model.regime]}</span>
         )}
       </span>
+      {detailed && result.model && <ComponentLine model={result.model} />}
       <span className="market-scan-rationale">{result.model?.rationale}</span>
       <span className="market-scan-fit">
         {profiles.length > 0 ? `Fits ${profiles.join(' · ')} profile` : 'Fits no risk profile'}
@@ -113,12 +241,14 @@ function SetupList({
   items,
   cohort,
   scan,
+  detailed,
 }: Readonly<{
   title: string;
   rule: string;
   items: readonly ScanAssetResult[];
   cohort: ScanCohort;
   scan: MarketScan;
+  detailed: boolean;
 }>) {
   let empty = `None — all ${cohort.coverage.evaluated} supported assets were evaluated.`;
   if (cohort.status !== 'COMPLETE') {
@@ -132,7 +262,7 @@ function SetupList({
       {items.length > 0 ? (
         <ul className="market-scan-list">
           {items.map((result) => (
-            <SetupItem key={result.ticker} result={result} scan={scan} />
+            <SetupItem key={result.ticker} result={result} scan={scan} detailed={detailed} />
           ))}
         </ul>
       ) : (
@@ -182,7 +312,11 @@ function CohortRow({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Market
   );
 }
 
-function CohortSetups({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: MarketScan }>) {
+function CohortSetups({
+  cohort,
+  scan,
+  detailed,
+}: Readonly<{ cohort: ScanCohort; scan: MarketScan; detailed: boolean }>) {
   const ranked = scan.results.filter(
     (result) => result.status === 'EVALUATED' && result.assetClass === cohort.assetClass,
   );
@@ -199,6 +333,7 @@ function CohortSetups({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Mar
           items={ranked.filter((result) => result.setups?.long)}
           cohort={cohort}
           scan={scan}
+          detailed={detailed}
         />
         <SetupList
           title="Risk setups"
@@ -206,6 +341,7 @@ function CohortSetups({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Mar
           items={ranked.filter((result) => result.setups?.risk)}
           cohort={cohort}
           scan={scan}
+          detailed={detailed}
         />
       </div>
       {cohort.assetClass === 'equity' && (
@@ -229,11 +365,14 @@ export function MarketScanSummary({
   completedAt,
   scanning,
   failed,
+  source,
 }: Readonly<{
   scan: MarketScan | undefined;
   completedAt: number;
   scanning: boolean;
   failed: boolean;
+  /** Set for the local TradingView development scan, which adds its provenance and full ranking. */
+  source?: TradingViewDevSource;
 }>) {
   if (!scan) {
     return (
@@ -248,18 +387,24 @@ export function MarketScanSummary({
     (result) => result.status !== 'EVALUATED' && result.status !== 'UNSUPPORTED',
   );
   const { coverage } = scan;
+  const title = source ? 'TradingView development scan' : 'Market scan';
+  const firstCohort = scan.cohorts[0];
+  const asOf = firstCohort ? dataAsOfLabel(firstCohort) : null;
   return (
-    <section className="market-scan" aria-label="Market scan">
+    <section className={cn('market-scan', source && 'market-scan-devscan')} aria-label={title}>
       <div className="market-scan-head">
         <span className="market-scan-title">
-          <Radar size={14} /> Market scan
+          <Radar size={14} /> {title}
         </span>
         <span className={cn('market-scan-status', `market-scan-${scan.status.toLowerCase()}`)}>
           {STATUS_LABEL[scan.status]}
         </span>
+        {source && <span className="market-scan-status market-scan-dev">Local dev data</span>}
         <span className="market-scan-meta font-mono">
           {scanning ? 'Re-scanning… · ' : ''}
-          Completed {UTC_TIME.format(completedAt)} UTC
+          {source
+            ? `${asOf ?? 'No evaluated sessions'} · scored ${UTC_TIME.format(completedAt)} UTC`
+            : `Completed ${UTC_TIME.format(completedAt)} UTC`}
         </span>
       </div>
       <dl className="market-scan-stats">
@@ -273,13 +418,20 @@ export function MarketScanSummary({
             {coverage.evaluated} of {coverage.supported} supported
           </dd>
         </div>
-        <div>
-          <dt>Not scanned</dt>
-          <dd>
-            {coverage.unsupported}
-            {coverage.unsupported > 0 && ` (${unsupportedBreakdown(scan.results)})`}
-          </dd>
-        </div>
+        {source ? (
+          <div>
+            <dt>Not evaluated</dt>
+            <dd>{coverage.notEvaluated + coverage.unsupported}</dd>
+          </div>
+        ) : (
+          <div>
+            <dt>Not scanned</dt>
+            <dd>
+              {coverage.unsupported}
+              {coverage.unsupported > 0 && ` (${unsupportedBreakdown(scan.results)})`}
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Model</dt>
           <dd className="font-mono">
@@ -298,8 +450,14 @@ export function MarketScanSummary({
       {scan.cohorts
         .filter((cohort) => cohort.status !== 'UNSUPPORTED')
         .map((cohort) => (
-          <CohortSetups key={cohort.assetClass} cohort={cohort} scan={scan} />
+          <CohortSetups
+            key={cohort.assetClass}
+            cohort={cohort}
+            scan={scan}
+            detailed={source !== undefined}
+          />
         ))}
+      {source && <RankedList scan={scan} symbols={source.symbols} />}
       {failures.length > 0 && (
         <section className="market-scan-failures" aria-label="Not evaluated this scan">
           <h3 className="market-scan-label">Not evaluated this scan</h3>
@@ -322,6 +480,7 @@ export function MarketScanSummary({
         asset class is ranked only within itself: the same score does not mean the same risk or
         predictive value across classes.
       </p>
+      {source && <DevSourceNotes scan={scan} source={source} />}
     </section>
   );
 }

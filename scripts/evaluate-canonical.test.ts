@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { CandleProviderDataError, type Candle } from '@/lib/binance';
+import { evaluateScan } from '@/lib/marketScanner';
 
 const mocks = vi.hoisted(() => ({
   candles: vi.fn(),
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   buildCampaignReportModel: vi.fn(),
   buildSyntheticReportModel: vi.fn(),
   writeDecisionsReport: vi.fn(),
+  importTradingViewScan: vi.fn(),
 }));
 
 // Network edges are stubbed; the evaluation store and the scanner run for real.
@@ -43,6 +45,7 @@ vi.mock('./decisionsReport', () => ({
   buildSyntheticReportModel: mocks.buildSyntheticReportModel,
   writeDecisionsReport: mocks.writeDecisionsReport,
 }));
+vi.mock('./tradingViewImport', () => ({ importTradingViewScan: mocks.importTradingViewScan }));
 
 const { main } = await import('./evaluate-canonical');
 
@@ -106,12 +109,44 @@ describe('evaluate-canonical CLI', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it.each(['replay', 'observe', 'reproduce', 'scan-reproduce', 'campaign-run', 'outcome-collect'])(
-    '%s requires a value',
-    async (command) => {
-      await expect(cli(command)).rejects.toThrow(`${command} requires a value`);
-    },
-  );
+  it.each([
+    'replay',
+    'observe',
+    'reproduce',
+    'scan-reproduce',
+    'campaign-run',
+    'outcome-collect',
+    'tradingview-import',
+  ])('%s requires a value', async (command) => {
+    await expect(cli(command)).rejects.toThrow(`${command} requires a value`);
+  });
+
+  it('imports a TradingView export into the scan store and fails unless every ticker scored', async () => {
+    const scan = evaluateScan([], { evaluationTime: NOW, universeSource: 'tradingview-dev-scan' });
+    mocks.importTradingViewScan.mockResolvedValue({
+      path: 'scans/s.json',
+      snapshot: {
+        scanId: 's',
+        startedAt: '',
+        completedAt: '',
+        universeVersion: 'u',
+        repositoryCommit: 'c',
+        scan,
+      },
+    });
+
+    await cli('tradingview-import', 'exports/x.json', '--store', 'scans');
+    expect(mocks.importTradingViewScan).toHaveBeenCalledWith({
+      file: join(workspace, 'exports/x.json'),
+      store: join(workspace, 'scans'),
+      repositoryCommit: expect.stringMatching(/^[0-9a-f]{40}(-dirty)?$/),
+    });
+    expect(printed()).toMatchObject({ scanId: 's', status: 'FAILED' });
+    expect(process.exitCode).toBe(1);
+    await expect(cli('tradingview-import', '../outside.json')).rejects.toThrow(
+      'EXPORT must be inside the current workspace',
+    );
+  });
 
   it('refuses a store outside the workspace', async () => {
     await expect(cli('report', '--store', '../elsewhere')).rejects.toThrow(

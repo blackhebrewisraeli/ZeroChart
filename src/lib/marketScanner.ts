@@ -295,6 +295,18 @@ async function drain(
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
 }
 
+/** The session range an equity scan at `evaluationTime` requests; null outside the calendar. */
+export function equityRequestRange(evaluationTime: number): { from: string; to: string } | null {
+  const to = latestFinalSession(evaluationTime);
+  const from = to === null ? null : sessionsBack(to, SCAN_EQUITY_REQUEST_SESSIONS);
+  return to === null || from === null ? null : { from, to };
+}
+
+export const EQUITY_CALENDAR_ERROR: ScanFetchError = {
+  code: 'DATA_INVALID',
+  detail: `CALENDAR_OUT_OF_RANGE: the ${SCAN_EQUITY_REQUEST_SESSIONS}-session window is outside the published calendar (${US_EQUITY_CALENDAR.firstYear}–${US_EQUITY_CALENDAR.lastYear}).`,
+};
+
 /**
  * Fetches candles for every supported member: at most one request each, none
  * for an equity already cached for the same session range. Never rejects: a
@@ -319,17 +331,12 @@ export async function collectScanInputs(
 
   const equityQueue: ScanInput[] = [];
   if (provider) {
-    const to = latestFinalSession(options.evaluationTime);
-    const from = to === null ? null : sessionsBack(to, SCAN_EQUITY_REQUEST_SESSIONS);
+    const range = equityRequestRange(options.evaluationTime);
     for (const input of equities) {
-      if (to === null || from === null) {
-        input.error = {
-          code: 'DATA_INVALID',
-          detail: `CALENDAR_OUT_OF_RANGE: the ${SCAN_EQUITY_REQUEST_SESSIONS}-session window is outside the published calendar (${US_EQUITY_CALENDAR.firstYear}–${US_EQUITY_CALENDAR.lastYear}).`,
-        };
+      if (range === null) {
+        input.error = EQUITY_CALENDAR_ERROR;
         continue;
       }
-      const range = { from, to };
       input.equity = { provider: provider.id, range };
       const hit = sources.equityCache?.get(equityCacheKey(provider.id, input.ticker, range));
       if (hit)

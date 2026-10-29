@@ -4,6 +4,7 @@ import tsConfigPaths from 'vite-tsconfig-paths';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import { nitro } from 'nitro/vite';
 import viteReact from '@vitejs/plugin-react';
+import { tradingViewDevScanPlugin } from './scripts/tradingViewDevRoute';
 
 export default defineConfig(({ command }) => ({
   server: { host: '::', port: 8080 },
@@ -24,5 +25,7 @@ export default defineConfig(({ command }) => ({
     // Nitro picks the deploy preset from the host (Vercel in production).
     command === 'build' && nitro(),
     viteReact(),
+    // `vite dev` only: the local TradingView development scan (docs/MARKET_SCANNER.md).
+    tradingViewDevScanPlugin(),
   ],
 }));

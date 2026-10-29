@@ -31,6 +31,7 @@ import { TradeTicket } from '@/components/TradeTicket';
 import { TacticalSignals } from '@/components/TacticalSignals';
 import { TradingViewWidget } from '@/components/TradingViewWidget';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
+import { TradingViewDevScan } from '@/components/TradingViewDevScan';
 import {
   fetchAssets,
   formatChange,
@@ -762,12 +763,15 @@ function Terminal() {
                 rows={rows}
                 scores={scores}
                 scan={
-                  <MarketScanSummary
-                    scan={scan}
-                    completedAt={scanQuery.dataUpdatedAt}
-                    scanning={scanQuery.isFetching}
-                    failed={scanQuery.isError}
-                  />
+                  <>
+                    <MarketScanSummary
+                      scan={scan}
+                      completedAt={scanQuery.dataUpdatedAt}
+                      scanning={scanQuery.isFetching}
+                      failed={scanQuery.isError}
+                    />
+                    {import.meta.env.DEV && <TradingViewDevScan />}
+                  </>
                 }
                 assets={baseAssets}
                 marketView={marketView}

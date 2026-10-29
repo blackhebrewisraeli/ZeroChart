@@ -60,6 +60,7 @@ import {
   scanSummary,
 } from './marketScanStore';
 import { importTradingViewScan } from './tradingViewImport';
+import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -76,7 +77,8 @@ const USAGE = `Usage:
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
-  npm run evaluate -- tradingview-import EXPORT.json [--store DIR]`;
+  npm run evaluate -- tradingview-import EXPORT.json [--store DIR]
+  npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -399,6 +401,22 @@ const commandHandlers: Record<string, CommandHandler> = {
       });
       process.exitCode = 1;
     }
+  },
+  // Retrospective study frozen in docs/scanner-research.v1.json; writes only git-ignored files.
+  'scanner-research': async (value, args) => {
+    const result = await runScannerResearch({
+      file: safeCliPath(requiredValue('scanner-research', value), 'EXPORT'),
+      outputDir: safeCliPath(option(args, '--output-dir') ?? RESEARCH_OUTPUT_DIR, '--output-dir'),
+      repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
+    });
+    printJson({
+      status: result.status,
+      resultHash: result.resultHash,
+      resultsPath: result.resultsPath,
+      reportPath: result.status === 'CONFLICT' ? null : result.reportPath,
+      ...researchSummary(result.results),
+    });
+    if (result.status === 'CONFLICT') process.exitCode = 1;
   },
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>

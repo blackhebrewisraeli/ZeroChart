@@ -222,6 +222,30 @@ function failure(error: unknown): ScanFetchError {
   return { code: 'FETCH_FAILED', detail: error instanceof Error ? error.message : String(error) };
 }
 
+/** A selected ticker's bars from `from` on, as exported, or why the export has none. */
+export function exportedSeries(
+  entry: TradingViewOhlcvExport['instruments'][number] | undefined,
+  ticker: string,
+  from: string,
+): { series: EquityDailySeries; receivedAt: number } | { error: ScanFetchError } {
+  const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+  if (!entry) return { error: { code: 'FETCH_FAILED', detail: `${symbol} was never retrieved.` } };
+  if (entry.symbol !== symbol) {
+    const detail = `${entry.symbol} was retrieved; the instrument map names ${symbol}.`;
+    return { error: { code: 'DATA_INVALID', detail } };
+  }
+  if (entry.response === undefined) {
+    const detail = `TradingView get_ohlcv (${symbol}): ${entry.error ?? 'no response recorded'}`;
+    return { error: { code: 'FETCH_FAILED', detail } };
+  }
+  try {
+    const series = tradingViewSeries(entry.response, { symbol, from });
+    return { series, receivedAt: Date.parse(entry.receivedAt!) };
+  } catch (error) {
+    return { error: failure(error) };
+  }
+}
+
 /** One scan input per selected ticker: a series, or the reason there is none. Never drops one. */
 export function importInputs(file: TradingViewOhlcvExport, evaluationTime: number): ScanInput[] {
   const range = equityRequestRange(evaluationTime);
@@ -229,34 +253,11 @@ export function importInputs(file: TradingViewOhlcvExport, evaluationTime: numbe
   return selectDevScanUniverse().map((ticker): ScanInput => {
     const input: ScanInput = { ticker, instrument: usEquityInstrument(ticker) };
     if (range === null) return { ...input, error: EQUITY_CALENDAR_ERROR };
-    input.equity = { provider: TRADINGVIEW_DEV_PROVIDER_ID, range };
-    const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
-    const entry = entries.get(ticker);
-    if (!entry) {
-      return {
-        ...input,
-        error: { code: 'FETCH_FAILED', detail: `${symbol} was never retrieved.` },
-      };
-    }
-    if (entry.symbol !== symbol) {
-      const detail = `${entry.symbol} was retrieved; the instrument map names ${symbol}.`;
-      return { ...input, error: { code: 'DATA_INVALID', detail } };
-    }
-    if (entry.response === undefined) {
-      const detail = `TradingView get_ohlcv (${symbol}): ${entry.error ?? 'no response recorded'}`;
-      return { ...input, error: { code: 'FETCH_FAILED', detail } };
-    }
-    try {
-      const series = tradingViewSeries(entry.response, { symbol, from: range.from });
-      Object.assign(input.equity, {
-        series,
-        fetchedAt: Date.parse(entry.receivedAt!),
-        cached: false,
-      });
-      return input;
-    } catch (error) {
-      return { ...input, error: failure(error) };
-    }
+    const equity = { provider: TRADINGVIEW_DEV_PROVIDER_ID, range };
+    const exported = exportedSeries(entries.get(ticker), ticker, range.from);
+    if ('error' in exported) return { ...input, equity, error: exported.error };
+    const { series, receivedAt } = exported;
+    return { ...input, equity: { ...equity, series, fetchedAt: receivedAt, cached: false } };
   });
 }
 

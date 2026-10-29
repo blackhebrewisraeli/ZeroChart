@@ -60,6 +60,13 @@ import {
   scanSummary,
 } from './marketScanStore';
 import { importTradingViewScan } from './tradingViewImport';
+import {
+  initializeOpportunityCampaign,
+  opportunityCampaignStatus,
+  opportunityRunSummary,
+  reproduceOpportunitySlot,
+  runOpportunitySlot,
+} from './opportunityCampaign';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
@@ -75,6 +82,10 @@ const USAGE = `Usage:
   npm run evaluate -- campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
   npm run evaluate -- outcome-collect CAMPAIGN_ID [--store DIR]
   npm run evaluate -- decisions-report CAMPAIGN_ID [--store DIR] [--output FILE]
+  npm run evaluate -- opportunity-campaign-init CAMPAIGN_ID --start ISO --end ISO [--store DIR]
+  npm run evaluate -- opportunity-campaign-run CAMPAIGN_ID [--store DIR]
+  npm run evaluate -- opportunity-campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
+  npm run evaluate -- opportunity-campaign-status CAMPAIGN_ID [--store DIR]
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
@@ -349,6 +360,29 @@ function requiredValue(command: string, value?: string): string {
   return value;
 }
 
+/** Rejects any argument that is not a known option with its value, or a known flag. */
+function assertOptions(
+  command: string,
+  args: string[],
+  valueOptions: readonly string[],
+  flags: readonly string[] = [],
+): void {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (valueOptions.includes(arg) && index + 1 < args.length) index += 1;
+    else if (!flags.includes(arg))
+      throw new Error(`${command}: unknown or incomplete option ${arg}`);
+  }
+}
+
+function isoOption(args: string[], name: string): number | undefined {
+  const value = option(args, name);
+  if (value === undefined) return undefined;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) throw new Error(`${name} must be an ISO timestamp`);
+  return time;
+}
+
 type CommandHandler = (value: string | undefined, args: string[]) => Promise<void>;
 
 /** Runs one frozen study version and prints its status and aggregate summary only. */
@@ -505,6 +539,68 @@ const commandHandlers: Record<string, CommandHandler> = {
     );
     printJson({ output: await writeDecisionsReport(model, output), errors: model.errors });
     if (model.errors.length) process.exitCode = 1;
+  },
+  // Opportunity Radar v1 (docs/opportunity-radar.v1.json): evidence under STORE/campaigns/ID.
+  'opportunity-campaign-init': async (value, args) => {
+    const command = 'opportunity-campaign-init';
+    assertOptions(command, args, ['--start', '--end', '--store']);
+    const startSlot = isoOption(args, '--start');
+    const endSlot = isoOption(args, '--end');
+    if (startSlot === undefined || endSlot === undefined) {
+      throw new Error(`${command} requires --start and --end`);
+    }
+    // The manifest binds the exact implementation commit, so uncommitted code cannot start one.
+    if (await worktreeDirty()) throw new Error(`${command} requires a clean worktree`);
+    const manifest = await initializeOpportunityCampaign({
+      campaignId: requiredValue(command, value),
+      store: storePath(args, '.zerochart-campaigns'),
+      startSlot,
+      endSlot,
+      implementationCommit: await repositoryCommit(),
+    });
+    printJson({
+      campaignId: manifest.campaignId,
+      specificationId: manifest.specificationId,
+      implementationCommit: manifest.implementationCommit,
+      startSlot: manifest.startSlot,
+      endSlot: manifest.endSlot,
+      slotCount: manifest.slotCount,
+    });
+  },
+  'opportunity-campaign-run': async (value, args) => {
+    assertOptions('opportunity-campaign-run', args, ['--store']);
+    const run = await runOpportunitySlot({
+      campaignId: requiredValue('opportunity-campaign-run', value),
+      store: storePath(args, '.zerochart-campaigns'),
+    });
+    printJson(opportunityRunSummary(run));
+    if (run.status === 'FAILED' || run.status === 'MISSED') process.exitCode = 1;
+  },
+  'opportunity-campaign-reproduce': async (value, args) => {
+    assertOptions(
+      'opportunity-campaign-reproduce',
+      args,
+      ['--slot', '--store'],
+      ['--block-network'],
+    );
+    const slot = isoOption(args, '--slot');
+    const receipt = await reproduceOpportunitySlot({
+      campaignId: requiredValue('opportunity-campaign-reproduce', value),
+      store: storePath(args, '.zerochart-campaigns'),
+      ...(slot === undefined ? {} : { slot: new Date(slot).toISOString() }),
+      blockNetwork: args.includes('--block-network'),
+    });
+    printJson(receipt);
+    if (receipt.status === 'MISMATCH') process.exitCode = 1;
+  },
+  'opportunity-campaign-status': async (value, args) => {
+    assertOptions('opportunity-campaign-status', args, ['--store']);
+    printJson(
+      await opportunityCampaignStatus({
+        campaignId: requiredValue('opportunity-campaign-status', value),
+        store: storePath(args, '.zerochart-campaigns'),
+      }),
+    );
   },
   'decisions-demo': async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));

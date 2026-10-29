@@ -9,6 +9,9 @@ import { evaluateScan } from '@/lib/marketScanner';
 
 const mocks = vi.hoisted(() => ({
   candles: vi.fn(),
+  symbolCandles: vi.fn(),
+  /** `git status --porcelain` output; null runs the real command. */
+  gitStatus: { value: null as string | null },
   universe: vi.fn(),
   initializeCampaign: vi.fn(),
   runDueCampaign: vi.fn(),
@@ -27,7 +30,27 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/binance', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/binance')>()),
   fetchHistoricalCandles: mocks.candles,
+  fetchSymbolCandles: mocks.symbolCandles,
 }));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    execFile: (
+      file: string,
+      args: readonly string[],
+      callback: (error: Error | null, result: { stdout: string; stderr: string }) => void,
+    ) => {
+      if (file === 'git' && args[0] === 'status' && mocks.gitStatus.value !== null) {
+        callback(null, { stdout: mocks.gitStatus.value, stderr: '' });
+        return;
+      }
+      actual.execFile(file, args, (error, stdout, stderr) =>
+        callback(error, { stdout: String(stdout), stderr: String(stderr) }),
+      );
+    },
+  };
+});
 vi.mock('./marketScanStore', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./marketScanStore')>()),
   fetchAssetsStatusUniverse: mocks.universe,
@@ -103,6 +126,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  mocks.gitStatus.value = null;
   vi.restoreAllMocks();
   vi.clearAllMocks();
   vi.useRealTimers();
@@ -381,5 +405,135 @@ describe('evaluate-canonical CLI', () => {
 
     expect(printed()).toEqual({ output: join(workspace, 'out', 'demo.html') });
     expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe('Opportunity Radar CLI', () => {
+  const START = Date.UTC(2026, 9, 30, 0, 30);
+  const END = START + 179 * DAY;
+  const iso = (time: number) => new Date(time).toISOString();
+
+  /** Synthetic Binance: 200 closed daily candles ending at the requested endTime. */
+  function closedCandles(_symbol: string, request: { limit: number; endTime: number }): Candle[] {
+    const lastOpen = request.endTime + 1 - DAY;
+    return Array.from({ length: request.limit }, (_, i) => {
+      const timestamp = lastOpen - (request.limit - 1 - i) * DAY;
+      const close = 100 + i * 0.1;
+      return {
+        timestamp,
+        closeTime: timestamp + DAY - 1,
+        open: close,
+        high: close + 0.5,
+        low: close - 0.5,
+        close,
+      };
+    });
+  }
+
+  it('rejects unknown options, unsafe paths, bad dates and a dirty worktree', async () => {
+    await expect(cli('opportunity-campaign-run', 'c-1', '--verbose')).rejects.toThrow(
+      'unknown or incomplete option --verbose',
+    );
+    await expect(cli('opportunity-campaign-status', 'c-1', '--store')).rejects.toThrow(
+      'unknown or incomplete option --store',
+    );
+    await expect(cli('opportunity-campaign-run', 'c-1', '--store', '../outside')).rejects.toThrow(
+      'inside the current workspace',
+    );
+    await expect(cli('opportunity-campaign-status', 'missing')).rejects.toThrow(
+      'Campaign missing has no manifest in the evidence store.',
+    );
+    await expect(cli('opportunity-campaign-init', 'c-1', '--start', iso(START))).rejects.toThrow(
+      'requires --start and --end',
+    );
+    await expect(
+      cli('opportunity-campaign-init', 'c-1', '--start', 'soon', '--end', iso(END)),
+    ).rejects.toThrow('--start must be an ISO timestamp');
+
+    mocks.gitStatus.value = ' M scripts/opportunityCampaign.ts\n';
+    await expect(
+      cli('opportunity-campaign-init', 'c-1', '--start', iso(START), '--end', iso(END)),
+    ).rejects.toThrow('requires a clean worktree');
+    expect(await readdir(workspace)).toEqual([]);
+  });
+
+  it('runs every command against a synthetic campaign and prints no market evidence', async () => {
+    mocks.gitStatus.value = '';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 29, 12));
+    mocks.symbolCandles.mockImplementation(async (symbol, request) =>
+      closedCandles(symbol, request),
+    );
+    const outputs: string[] = [];
+    const run = async (...args: string[]) => {
+      await cli(...args);
+      outputs.push(String(stdout.mock.calls.at(-1)?.[0]));
+      return printed();
+    };
+
+    expect(
+      await run('opportunity-campaign-init', 'c-1', '--start', iso(START), '--end', iso(END)),
+    ).toMatchObject({ campaignId: 'c-1', slotCount: 180, startSlot: iso(START) });
+
+    vi.setSystemTime(START + 60_000);
+    expect(await run('opportunity-campaign-run', 'c-1')).toEqual({
+      status: 'COMPLETED',
+      slot: iso(START),
+      attemptNumber: 1,
+      failures: {},
+      scanStatus: 'COMPLETE',
+      coverage: { configured: 12, evaluated: 12, notEvaluated: 0 },
+      opportunities: 0,
+    });
+    expect(mocks.symbolCandles).toHaveBeenCalledTimes(12);
+    expect(await run('opportunity-campaign-run', 'c-1')).toEqual({
+      status: 'ALREADY_COMPLETED',
+      slot: iso(START),
+    });
+    expect(mocks.symbolCandles).toHaveBeenCalledTimes(12);
+    expect(
+      await run('opportunity-campaign-reproduce', 'c-1', '--slot', iso(START), '--block-network'),
+    ).toMatchObject({ slot: iso(START), networkBlocked: true, status: 'MATCH', reason: null });
+    expect(process.exitCode).toBeUndefined();
+
+    vi.setSystemTime(START + DAY + 60_000);
+    mocks.symbolCandles.mockRejectedValue(
+      new Error('Binance klines request failed with status 451'),
+    );
+    expect(await run('opportunity-campaign-run', 'c-1')).toEqual({
+      status: 'FAILED',
+      slot: iso(START + DAY),
+      attemptNumber: 1,
+      failures: { FETCH_FAILED: 12 },
+    });
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    vi.setSystemTime(START + DAY + 6 * 60 * 60_000);
+    expect(await run('opportunity-campaign-run', 'c-1')).toEqual({
+      status: 'MISSED',
+      slot: iso(START + DAY),
+    });
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    expect(await run('opportunity-campaign-status', 'c-1')).toEqual({
+      campaignId: 'c-1',
+      specificationId: '0eddcc4f81ba47d74168392bb50af64050d3a9db2ab56da914c3814087d64483',
+      implementationCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+      startSlot: iso(START),
+      endSlot: iso(END),
+      asOf: iso(START + DAY + 6 * 60 * 60_000),
+      slots: { scheduled: 180, due: 2, completed: 1, pending: 0, missed: 1 },
+      failedAttempts: 1,
+      reproduction: { match: 1, mismatch: 0, notReproduced: 0 },
+    });
+    expect(process.exitCode).toBeUndefined();
+
+    // Every command prints statuses, hashes and counts: no paths, tickers or prices.
+    expect(outputs).toHaveLength(7);
+    for (const output of outputs) {
+      expect(output).not.toMatch(/USD|close|candles|zerochart-campaigns|\//);
+    }
   });
 });

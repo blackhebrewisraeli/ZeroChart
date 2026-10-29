@@ -46,6 +46,7 @@ export type OpportunityCampaignErrorCode =
   | 'MANIFEST_CONFLICT'
   | 'MANIFEST_INVALID'
   | 'EVIDENCE_CONFLICT'
+  | 'CAMPAIGN_NOT_FOUND'
   | 'SLOT_NOT_FOUND';
 
 export class OpportunityCampaignError extends Error {
@@ -302,10 +303,21 @@ export async function loadOpportunityCampaign(
   specificationPath?: string,
 ): Promise<LoadedOpportunityCampaign> {
   assertCampaignId(campaignId);
-  const directory = await assertCampaignDirectory(store, campaignId, false);
-  const path = resolve(directory, 'manifest.json');
-  await assertNotSymbolicLink(path);
-  const manifest = JSON.parse(await readFile(path, 'utf8')) as OpportunityCampaignManifest;
+  const directory = await assertCampaignDirectory(store, campaignId, false).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    },
+  );
+  const bytes =
+    directory === null ? null : await readIfPresent(resolve(directory, 'manifest.json'));
+  if (directory === null || bytes === null) {
+    throw new OpportunityCampaignError(
+      'CAMPAIGN_NOT_FOUND',
+      `Campaign ${campaignId} has no manifest in the evidence store.`,
+    );
+  }
+  const manifest = JSON.parse(bytes) as OpportunityCampaignManifest;
   const { runtime } = await loadOpportunitySpecification(specificationPath);
   let expected: OpportunityCampaignManifest | null = null;
   try {
@@ -409,21 +421,23 @@ async function readIfPresent(path: string): Promise<string | null> {
   }
 }
 
-async function failedAttempts(slotDirectory: string): Promise<OpportunitySlotAttempt[]> {
-  const names = await readdir(slotDirectory).catch((error: NodeJS.ErrnoException) => {
+/** Every JSON evidence file in `directory` whose name matches `pattern`; none when it is absent. */
+async function readEvidence<T>(directory: string, pattern: RegExp): Promise<T[]> {
+  const names = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return [];
     throw error;
   });
-  const attempts = await Promise.all(
+  return Promise.all(
     names
-      .filter((name) => /^attempt-\d+\.json$/.test(name))
+      .filter((name) => pattern.test(name))
       .map(
-        async (name) =>
-          JSON.parse(
-            (await readIfPresent(resolve(slotDirectory, name))) ?? 'null',
-          ) as OpportunitySlotAttempt,
+        async (name) => JSON.parse((await readIfPresent(resolve(directory, name))) ?? 'null') as T,
       ),
   );
+}
+
+async function failedAttempts(slotDirectory: string): Promise<OpportunitySlotAttempt[]> {
+  const attempts = await readEvidence<OpportunitySlotAttempt>(slotDirectory, /^attempt-\d+\.json$/);
   return attempts.sort((a, b) => a.attemptNumber - b.attemptNumber);
 }
 
@@ -718,4 +732,89 @@ export async function reproduceOpportunitySlot(options: {
     'EVIDENCE_CONFLICT',
   );
   return receipt;
+}
+
+/** What `opportunity-campaign-run` prints: statuses and counts, never candles, prices or tickers. */
+export function opportunityRunSummary(run: OpportunitySlotRun) {
+  if (run.status !== 'COMPLETED' && run.status !== 'FAILED') return run;
+  const failures: Record<string, number> = {};
+  for (const failure of run.attempt.failures) {
+    failures[failure.code] = (failures[failure.code] ?? 0) + 1;
+  }
+  return {
+    status: run.status,
+    slot: run.slot,
+    attemptNumber: run.attempt.attemptNumber,
+    failures,
+    ...(run.status === 'COMPLETED'
+      ? {
+          scanStatus: run.artifact.result.scan.status,
+          coverage: {
+            configured: run.artifact.result.scan.coverage.configured,
+            evaluated: run.artifact.result.scan.coverage.evaluated,
+            notEvaluated: run.artifact.result.scan.coverage.notEvaluated,
+          },
+          opportunities: run.artifact.result.opportunities.length,
+        }
+      : {}),
+  };
+}
+
+/**
+ * Operational health only: slot, attempt and reproduction counts. No candles,
+ * tickers, prices, Opportunities or evidence paths.
+ */
+export async function opportunityCampaignStatus(options: {
+  campaignId: string;
+  store: string;
+  now?: () => number;
+  specificationPath?: string;
+}) {
+  const { directory, manifest } = await loadOpportunityCampaign(
+    options.store,
+    options.campaignId,
+    options.specificationPath,
+  );
+  const now = (options.now ?? Date.now)();
+  const slots = { scheduled: manifest.slotCount, due: 0, completed: 0, pending: 0, missed: 0 };
+  let failedAttemptCount = 0;
+  // A receipt counts only for the slot bytes it reproduced.
+  const reproduction = { match: 0, mismatch: 0, notReproduced: 0 };
+  for (const entry of manifest.slots) {
+    if (Date.parse(entry.slot) > now) break;
+    slots.due += 1;
+    const slotDirectory = opportunitySlotDirectory(directory, entry.slot);
+    failedAttemptCount += (await failedAttempts(slotDirectory)).length;
+    const bytes = await readIfPresent(resolve(slotDirectory, 'slot.json'));
+    if (bytes === null) {
+      if (now >= Date.parse(entry.retryDeadline)) slots.missed += 1;
+      else slots.pending += 1;
+      continue;
+    }
+    slots.completed += 1;
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const latest = (
+      await readEvidence<OpportunityReproduction>(
+        resolve(slotDirectory, 'reproductions'),
+        /\.json$/,
+      )
+    )
+      .filter((receipt) => receipt.slotSha256 === sha256)
+      .sort((a, b) => a.reproducedAt.localeCompare(b.reproducedAt))
+      .at(-1);
+    if (latest === undefined) reproduction.notReproduced += 1;
+    else if (latest.status === 'MATCH') reproduction.match += 1;
+    else reproduction.mismatch += 1;
+  }
+  return {
+    campaignId: manifest.campaignId,
+    specificationId: manifest.specificationId,
+    implementationCommit: manifest.implementationCommit,
+    startSlot: manifest.startSlot,
+    endSlot: manifest.endSlot,
+    asOf: new Date(now).toISOString(),
+    slots,
+    failedAttempts: failedAttemptCount,
+    reproduction,
+  };
 }

@@ -161,15 +161,15 @@ mismatches.
 
 **Acceptance criteria:**
 
-- [ ] Usage and argument parsing match the frozen command contract.
-- [ ] JSON stdout is machine-readable; sensitive paths, candles and per-asset evidence are not
+- [x] Usage and argument parsing match the frozen command contract.
+- [x] JSON stdout is machine-readable; sensitive paths, candles and per-asset evidence are not
       printed by status commands.
-- [ ] Unknown flags, unsafe paths and failed attempts exit non-zero.
+- [x] Unknown flags, unsafe paths and failed attempts exit non-zero.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/evaluate-canonical.test.ts scripts/opportunityCampaign.test.ts`
-- [ ] Run every command against a temporary synthetic campaign.
+- [x] `npm test -- scripts/evaluate-canonical.test.ts scripts/opportunityCampaign.test.ts`
+- [x] Run every command against a temporary synthetic campaign.
 
 **Dependencies:** Tasks 3–5
 

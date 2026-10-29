@@ -6,6 +6,7 @@ import { PricingModal } from '@/components/PricingModal';
 import { AssetChart } from '@/components/AssetChart';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { NoScoreBadge } from '@/components/NoScoreBadge';
+import { FactorBars } from '@/components/ScanReview';
 import { formatPrice, getAssetClass, type Asset } from '@/lib/assets';
 import { REGIME_LABELS, type CanonicalResult, type CanonicalScore } from '@/lib/canonicalModel';
 import { formatShares, recommendPositionSize } from '@/lib/risk';
@@ -19,12 +20,6 @@ const CLOSE_MS = 260;
 
 /** Reference account the ATR position size is quoted against. */
 const REFERENCE_CAPITAL = 10_000;
-
-const QUANT_FACTORS = [
-  { label: 'Mean Reversion', source: 'RSI', score: 'rsiScore', weight: 'rsi' },
-  { label: 'Momentum', source: 'MACD', score: 'momentumScore', weight: 'momentum' },
-  { label: 'Volatility Regime', source: 'ATR', score: 'volatilityScore', weight: 'volatility' },
-] as const;
 
 /** Why the engine has no score for an asset, in one or two sentences. */
 function noScoreNote(ticker: string, result: Exclude<CanonicalResult, CanonicalScore>): string {
@@ -79,26 +74,7 @@ function QuantDetails({
         </span>
       </div>
       <p className="quant-rationale">{result.rationale}</p>
-      <ul className="quant-factors">
-        {QUANT_FACTORS.map((factor) => {
-          const value = result.components[factor.score];
-          const weight = result.components.weights[factor.weight];
-          return (
-            <li key={factor.label} className="quant-factor">
-              <span className="quant-factor-label">
-                {factor.label} <span>({factor.source})</span>
-              </span>
-              <span className="quant-factor-track" aria-hidden="true">
-                <span className="quant-factor-bar" style={{ width: `${value}%` }} />
-              </span>
-              <span className="quant-factor-value">{Math.round(value)}</span>
-              <span className="quant-factor-weight" title="Applied weight">
-                {Math.round(weight * 100)}%
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      <FactorBars model={result} />
       <p className="quant-sizing">
         ATR position size · ${REFERENCE_CAPITAL.toLocaleString('en-US')} account, 2% risk:{' '}
         {sizing.shares > 0 ? (

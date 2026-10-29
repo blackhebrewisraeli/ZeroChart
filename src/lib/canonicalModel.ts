@@ -62,12 +62,12 @@ export const REGIME_HIGH_VOLATILITY = 0.04;
 /** Volatility below 2% reads as "calm" in the rationale. */
 const CALM_VOLATILITY = 0.02;
 /** |MACD histogram|/price at or above 0.5% (half saturation) classifies TRENDING. */
-const REGIME_TRENDING_MOMENTUM = 0.005;
+export const REGIME_TRENDING_MOMENTUM = 0.005;
 /** Momentum inside ±0.05% reads as "flat" in the rationale (and in Pine's setups). */
 export const FLAT_MOMENTUM = 0.0005;
 /** RSI at or beyond 30/70 is "extreme" — MEAN_REVERTING when volatility is moderate. */
-const RSI_OVERSOLD = 30;
-const RSI_OVERBOUGHT = 70;
+export const RSI_OVERSOLD = 30;
+export const RSI_OVERBOUGHT = 70;
 
 export type MarketRegime = 'TRENDING' | 'MEAN_REVERTING' | 'HIGH_VOLATILITY' | 'NEUTRAL';
 
@@ -244,7 +244,7 @@ function signedPercent(fraction: number): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
 }
 
-function momentumBias(momentumPercent: number): string {
+export function momentumBias(momentumPercent: number): 'Bullish' | 'Bearish' | 'Flat' {
   if (momentumPercent >= FLAT_MOMENTUM) return 'Bullish';
   if (momentumPercent <= -FLAT_MOMENTUM) return 'Bearish';
   return 'Flat';

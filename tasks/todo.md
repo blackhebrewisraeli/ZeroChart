@@ -183,13 +183,13 @@ mismatches.
 
 ## Checkpoint B: Capture and reproduction
 
-- [ ] A synthetic three-slot campaign emits only the expected false→true transition.
-- [ ] Its second run is idempotent and its offline reproduction is byte-equivalent.
-- [ ] Legacy campaign, scan-store and outcome tests remain unchanged and passing.
-- [ ] `npm run typecheck`
-- [ ] `npm run lint`
-- [ ] `npm test`
-- [ ] `npm run build`
+- [x] A synthetic three-slot campaign emits only the expected false→true transition.
+- [x] Its second run is idempotent and its offline reproduction is byte-equivalent.
+- [x] Legacy campaign, scan-store and outcome tests remain unchanged and passing.
+- [x] `npm run typecheck`
+- [x] `npm run lint`
+- [x] `npm test`
+- [x] `npm run build`
 - [ ] Owner approves the evidence tree before outcome work.
 
 ## Phase 3 — Outcomes and frozen evidence gate

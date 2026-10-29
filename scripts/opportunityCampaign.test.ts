@@ -588,3 +588,123 @@ describe('Opportunity Radar offline reproduction', () => {
     });
   });
 });
+
+describe('Checkpoint B: synthetic three-slot campaign', () => {
+  /** Path day 257 is the last candle slot 1 sees; slots 2 and 3 see days 258 and 259. */
+  const PATH_ORIGIN = Date.UTC(2026, 9, 29) - 257 * DAY_MS;
+
+  /** Daily closes compounding the given return; each candle opens at the prior close, ±h wicks. */
+  function compounding(dailyReturn: (day: number) => number, h: number) {
+    const closes = [100];
+    for (let day = 1; day < 300; day += 1) closes.push(closes[day - 1]! * (1 + dailyReturn(day)));
+    return { closes, h };
+  }
+
+  const PATHS: Record<string, ReturnType<typeof compounding>> = {
+    // A long uptrend, an 11-day 3% pullback, then a slow drift: oversold RSI with turning
+    // momentum (MEAN_REVERTING, score 85), whose close crosses back above SMA(50) on day 258.
+    ETHUSDT: compounding((day) => (day < 201 ? 0.006 : day < 212 ? -0.03 : 0.0001), 0.004),
+    // A steady rise keeps the BTC market gate open while BTC itself never qualifies.
+    BTCUSDT: compounding(() => 0.002, 0.002),
+  };
+  const DECLINING = compounding(() => -0.001, 0.002);
+
+  function pathProvider() {
+    const calls: string[] = [];
+    const fetchCandles: FetchOpportunityCandles = async (instrument, request) => {
+      calls.push(instrument);
+      const { closes, h } = PATHS[instrument] ?? DECLINING;
+      const lastDay = (request.endTime + 1 - DAY_MS - PATH_ORIGIN) / DAY_MS;
+      return Array.from({ length: request.limit }, (_, index): Candle => {
+        const day = lastDay - (request.limit - 1 - index);
+        const timestamp = PATH_ORIGIN + day * DAY_MS;
+        const close = closes[day]!;
+        const open = closes[day - 1]!;
+        return {
+          timestamp,
+          closeTime: timestamp + DAY_MS - 1,
+          open,
+          high: Math.max(open, close) * (1 + h),
+          low: Math.min(open, close) * (1 - h),
+          close,
+        };
+      });
+    };
+    return { calls, fetchCandles };
+  }
+
+  it('emits exactly one Opportunity, on the false→true slot, and reproduces byte-for-byte', async () => {
+    const { root, campaignId, directory } = await campaign();
+    const slots = [0, 1, 2].map((day) => START + day * DAY_MS);
+    const runs: OpportunitySlotArtifact[] = [];
+    for (const slot of slots) {
+      const run = await runOpportunitySlot({
+        campaignId,
+        store: root,
+        fetchCandles: pathProvider().fetchCandles,
+        now: () => slot + 60_000,
+      });
+      if (run.status !== 'COMPLETED') throw new Error(`slot ${slot} was ${run.status}`);
+      runs.push(run.artifact);
+    }
+    const eth = (index: number) =>
+      runs[index]!.result.assets.find((asset) => asset.ticker === 'ETH-USD');
+
+    expect(runs.map((artifact) => artifact.result.marketGate.passed)).toEqual([true, true, true]);
+    expect(runs.map((artifact) => artifact.result.scan.status)).toEqual([
+      'COMPLETE',
+      'COMPLETE',
+      'COMPLETE',
+    ]);
+    expect(eth(0)).toMatchObject({
+      qualified: false,
+      reasons: ['CLOSE_NOT_ABOVE_FAST_SMA'],
+      newTransition: false,
+    });
+    expect(eth(1)).toMatchObject({ qualified: true, reasons: [], newTransition: true });
+    expect(eth(2)).toMatchObject({ qualified: true, reasons: [], newTransition: false });
+    expect(runs.map((artifact) => artifact.previous?.qualifiedTickers ?? null)).toEqual([
+      null,
+      [],
+      ['ETH-USD'],
+    ]);
+    expect(runs.flatMap((artifact) => artifact.result.opportunities)).toEqual([
+      expect.objectContaining({
+        id: `${new Date(slots[1]!).toISOString()}|ETH-USD`,
+        ticker: 'ETH-USD',
+        instrument: 'ETHUSDT',
+        evaluationTime: slots[1],
+        score: 85,
+        regime: 'MEAN_REVERTING',
+      }),
+    ]);
+
+    const slotPaths = slots.map((slot) =>
+      join(opportunitySlotDirectory(directory, new Date(slot).toISOString()), 'slot.json'),
+    );
+    const before = await Promise.all(slotPaths.map((path) => readFile(path, 'utf8')));
+
+    const rerun = pathProvider();
+    await expect(
+      runOpportunitySlot({
+        campaignId,
+        store: root,
+        fetchCandles: rerun.fetchCandles,
+        now: () => slots[2]! + 2 * 60 * 60_000,
+      }),
+    ).resolves.toEqual({ status: 'ALREADY_COMPLETED', slot: new Date(slots[2]!).toISOString() });
+    expect(rerun.calls).toEqual([]);
+
+    for (const slot of slots) {
+      await expect(
+        reproduceOpportunitySlot({
+          campaignId,
+          store: root,
+          slot: new Date(slot).toISOString(),
+          blockNetwork: true,
+        }),
+      ).resolves.toMatchObject({ status: 'MATCH', reason: null, networkBlocked: true });
+    }
+    expect(await Promise.all(slotPaths.map((path) => readFile(path, 'utf8')))).toEqual(before);
+  });
+});

@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { CandleProviderDataError } from '@/lib/binance';
 import {
+  compareTickers,
   EQUITY_CALENDAR_ERROR,
   equityRequestRange,
   type ScanFetchError,
@@ -49,7 +50,7 @@ export function selectDevScanUniverse(
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .slice(0, DEV_SCAN_SIZE)
     .map(([, ticker]) => ticker)
-    .sort();
+    .sort(compareTickers);
 }
 
 /**
@@ -147,30 +148,40 @@ function invalid(message: string): never {
   throw new Error(`Invalid TradingView export: ${message}`);
 }
 
+/** NaN-safe: an unparseable time is never inside the window. */
+function within(time: number, from: number, to: number): boolean {
+  return Number.isFinite(time) && time >= from && time <= to;
+}
+
+function checkEntry(
+  entry: TradingViewOhlcvExport['instruments'][number] | null,
+  seen: Set<string>,
+  window: { from: number; to: number },
+): void {
+  if (typeof entry?.ticker !== 'string' || typeof entry.symbol !== 'string')
+    invalid('every instrument needs ticker and symbol');
+  if (!Object.hasOwn(TRADINGVIEW_SYMBOLS, entry.ticker))
+    invalid(`${entry.ticker} is not in the dev-scan universe`);
+  if (seen.has(entry.ticker)) invalid(`${entry.ticker} appears twice`);
+  seen.add(entry.ticker);
+  if (
+    entry.response !== undefined &&
+    !within(Date.parse(entry.receivedAt ?? ''), window.from, window.to)
+  )
+    invalid(`${entry.ticker}: receivedAt must fall inside the retrieval window`);
+}
+
 /** Trust-boundary check on the agent's file; the bars themselves are checked per instrument. */
 export function parseExport(raw: unknown): TradingViewOhlcvExport {
   const file = raw as Partial<TradingViewOhlcvExport> | null;
   if (file?.schemaVersion !== '1' || file.source !== 'tradingview-mcp')
     invalid('schemaVersion 1, source tradingview-mcp expected');
-  const startedAt = Date.parse(file.retrieval?.startedAt ?? '');
-  const completedAt = Date.parse(file.retrieval?.completedAt ?? '');
-  if (!(startedAt <= completedAt))
-    invalid('retrieval.startedAt/completedAt are not ordered ISO times');
+  const from = Date.parse(file.retrieval?.startedAt ?? '');
+  const to = Date.parse(file.retrieval?.completedAt ?? '');
+  if (!within(from, from, to)) invalid('retrieval.startedAt/completedAt are not ordered ISO times');
   if (!Array.isArray(file.instruments)) invalid('instruments must be an array');
-  const universe = new Set(selectDevScanUniverse());
   const seen = new Set<string>();
-  for (const entry of file.instruments) {
-    if (typeof entry?.ticker !== 'string' || typeof entry.symbol !== 'string')
-      invalid('every instrument needs ticker and symbol');
-    if (!universe.has(entry.ticker)) invalid(`${entry.ticker} is not in the dev-scan universe`);
-    if (seen.has(entry.ticker)) invalid(`${entry.ticker} appears twice`);
-    seen.add(entry.ticker);
-    if (entry.response !== undefined) {
-      const receivedAt = Date.parse(entry.receivedAt ?? '');
-      if (!(receivedAt >= startedAt && receivedAt <= completedAt))
-        invalid(`${entry.ticker}: receivedAt must fall inside the retrieval window`);
-    }
-  }
+  for (const entry of file.instruments) checkEntry(entry, seen, { from, to });
   return file as TradingViewOhlcvExport;
 }
 

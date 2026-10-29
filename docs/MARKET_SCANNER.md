@@ -158,7 +158,7 @@ live scan still reports equities as `UNSUPPORTED`.
 | Retrieve bars           | Agent (`get_ohlcv`)      | 1D, `count` 1000 per symbol, signed in as the owner (OAuth), well under ~100 calls/min. Each response is copied verbatim into one export file in git-ignored `.zerochart-tradingview/`                    |
 | Check alerts            | Agent (`list_alerts`)    | Records which symbols hold any TradingView alert, so the panel can say whether Pine emitted anything                                                                                                      |
 | Validate, score, record | App (CLI)                | `tradingview-import`: `us-equity-daily-v1`, canonical `1.0.0`, the last 199 final sessions; writes `.zerochart-scans/<SCAN_ID>.json` (reproducible with `scan-reproduce`) and `tradingview-dev-scan.json` |
-| Display                 | App (dev server)         | `vite.config.ts` serves that file at `/__zerochart/tradingview-dev-scan` to loopback addresses only; production builds have no such route                                                                 |
+| Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan` to this machine's loopback addresses; production builds have no such route            |
 | Decide                  | The owner                | Nothing in the panel is an action                                                                                                                                                                         |
 
 ```bash

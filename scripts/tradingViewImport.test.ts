@@ -8,6 +8,7 @@ import { sessionOpen, US_EQUITY_INSTRUMENTS } from '@/lib/usEquityDaily';
 import { bars, EQUITY_NOW, falling, rising, wave } from '@/test/usEquityFixtures';
 import { reproduceScan } from './marketScanStore';
 import {
+  importInputs,
   importTradingViewScan,
   parseExport,
   selectDevScanUniverse,
@@ -160,23 +161,26 @@ describe('importTradingViewScan', () => {
   });
 
   it('keeps every failure, with its reason, instead of dropping the ticker', async () => {
-    const [a, b, c, d] = selectDevScanUniverse();
+    const [a, b, c, d, e] = selectDevScanUniverse();
     const { snapshot } = await importInto(
       exportOf((entries) => {
         entries[0] = { ticker: a!, symbol: TRADINGVIEW_SYMBOLS[a!]!, error: 'HTTP 429' };
         entries.splice(1, 1);
         entries[1]!.symbol = 'BOATS:X';
         (entries[2]!.response as { notice: string }).notice = 'delayed';
+        (entries[3]!.response as { success: boolean }).success = false;
       }),
     );
     const byTicker = new Map(snapshot.scan.results.map((result) => [result.ticker, result]));
     expect(snapshot.scan.status).toBe('PARTIAL');
-    expect(snapshot.scan.coverage).toMatchObject({ configured: 50, evaluated: 46 });
+    expect(snapshot.scan.coverage).toMatchObject({ configured: 50, evaluated: 45 });
     expect(byTicker.get(a!)).toMatchObject({ status: 'FETCH_FAILED' });
     expect(byTicker.get(a!)?.detail).toMatch(/HTTP 429/);
     expect(byTicker.get(b!)?.detail).toMatch(/was never retrieved/);
     expect(byTicker.get(c!)).toMatchObject({ status: 'DATA_INVALID' });
     expect(byTicker.get(d!)?.detail).toMatch(/adjustment basis is unresolved/);
+    expect(byTicker.get(e!)).toMatchObject({ status: 'FETCH_FAILED' });
+    expect(byTicker.get(e!)?.detail).toMatch(/did not succeed/);
   });
 
   it('refuses a retrieval that a session close interrupted, and files it does not recognise', async () => {
@@ -190,5 +194,48 @@ describe('importTradingViewScan', () => {
     const late = exportOf((entries) => (entries[0]!.receivedAt = '2027-01-01T00:00:00Z'));
     expect(() => parseExport(late)).toThrow(/inside the retrieval window/);
     expect(() => parseTradingViewDevScan({ kind: 'tradingview-dev-scan' })).toThrow();
+  });
+
+  it('rejects a malformed export at the boundary', () => {
+    const file = exportOf();
+    expect(() => parseExport({ schemaVersion: '2' })).toThrow(/schemaVersion 1/);
+    expect(() =>
+      parseExport({
+        ...file,
+        retrieval: { startedAt: file.retrieval.completedAt, completedAt: 'x' },
+      }),
+    ).toThrow(/not ordered ISO times/);
+    expect(() => parseExport({ ...file, instruments: {} })).toThrow(/must be an array/);
+    const unnamed = exportOf((entries) => Object.assign(entries[0]!, { symbol: 7 }));
+    expect(() => parseExport(unnamed)).toThrow(/needs ticker and symbol/);
+    expect(() => parseExport(exportOf((entries) => entries.push({ ...entries[0]! })))).toThrow(
+      /appears twice/,
+    );
+    const noBars = { ...response('NYSE:BAC'), bars: undefined };
+    expect(() => tradingViewSeries(noBars, { symbol: 'NYSE:BAC', from: '2026-01-13' })).toThrow(
+      /no bars array/,
+    );
+  });
+
+  it('reports a scan outside the published calendar rather than guessing sessions', () => {
+    const inputs = importInputs(exportOf(), Date.UTC(2029, 0, 10));
+    expect(inputs).toHaveLength(50);
+    expect(inputs.every((input) => input.error?.detail.startsWith('CALENDAR_OUT_OF_RANGE'))).toBe(
+      true,
+    );
+  });
+
+  it('records a retrieval in which every call failed as a failed scan, with no notice to quote', async () => {
+    const { snapshot, view } = await importInto(
+      exportOf((entries) =>
+        entries.forEach((entry) => {
+          delete entry.response;
+          entry.error = 'HTTP 500';
+        }),
+      ),
+    );
+    expect(snapshot.scan.status).toBe('FAILED');
+    expect(snapshot.scan.coverage.byStatus.FETCH_FAILED).toBe(50);
+    expect(view.source.notice).toBe('No market-data notice was returned.');
   });
 });

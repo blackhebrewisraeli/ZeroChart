@@ -54,6 +54,7 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   ├── evaluationStore.ts            Evaluation-run store, keyed by input and config hashes
 │   ├── marketScanStore.ts            Market-scan snapshots: run, store, reproduce offline
 │   ├── tradingViewImport.ts          Local TradingView development scan: import agent-fetched bars
+│   ├── tradingViewDevRoute.ts        `vite dev`-only route that shows that scan on this machine
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)

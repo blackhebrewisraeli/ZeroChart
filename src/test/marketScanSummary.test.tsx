@@ -184,7 +184,7 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     },
   });
 
-  function renderDev(inputs: ScanInput[]) {
+  function renderDev(inputs: ScanInput[], devSource = source) {
     const scan = evaluateScan(inputs, {
       evaluationTime: EQUITY_NOW,
       universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
@@ -196,7 +196,7 @@ describe('MarketScanSummary as the TradingView development scan', () => {
         completedAt={EQUITY_NOW}
         scanning={false}
         failed={false}
-        source={source}
+        source={devSource}
       />,
     );
     return { scan, panel: screen.getByRole('region', { name: 'TradingView development scan' }) };
@@ -235,5 +235,25 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     expect(
       within(panel).getAllByText('None — all 1 supported assets were evaluated.'),
     ).toHaveLength(2);
+  });
+
+  it('explains a risk setup with the readings behind it', () => {
+    // Labeled fixture: closes alternating 6% apart, so ATR/close sits far above the 4% band.
+    const { panel } = renderDev([equity('AAPL', (i) => (i % 2 === 0 ? 100 : 106))]);
+    const risk = within(panel).getByText('Risk setups').closest('.market-scan-setups')!;
+    const item = within(risk as HTMLElement).getByRole('listitem');
+    expect(item).toHaveTextContent('AAPL');
+    expect(item).toHaveTextContent('High-volatility');
+    expect(item).toHaveTextContent(/ATR \d+\.\d\d% → \d+ ×0\.30/);
+  });
+
+  it('names a symbol that does hold a TradingView alert, without calling a setup an alert', () => {
+    const pineAlerts = { checkedAt: '2026-10-28T17:01:00.000Z', symbols: ['NASDAQ:AAPL'] };
+    const { panel } = renderDev([equity('AAPL', wave)], { ...source, pineAlerts });
+    expect(
+      within(panel).getByText(
+        "TradingView alerts exist on NASDAQ:AAPL; a setup here is still ZeroChart's calculation, not proof an alert fired.",
+      ),
+    ).toBeInTheDocument();
   });
 });

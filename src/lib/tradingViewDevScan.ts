@@ -5,7 +5,8 @@
  * engine (`npm run evaluate -- tradingview-import`, scripts/tradingViewImport.ts).
  *
  * The app never calls TradingView. The Vite dev server alone serves this file
- * from the git-ignored scan store to the local machine (vite.config.ts); a
+ * from the git-ignored scan store to the local machine
+ * (scripts/tradingViewDevRoute.ts, loaded by vite.config.ts); a
  * production build has neither the route nor the file.
  */
 import type { MarketScan } from '@/lib/marketScanner';

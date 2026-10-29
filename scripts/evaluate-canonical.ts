@@ -58,6 +58,7 @@ import {
   SCAN_STORE,
   scanSummary,
 } from './marketScanStore';
+import { importTradingViewScan } from './tradingViewImport';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -73,7 +74,8 @@ const USAGE = `Usage:
   npm run evaluate -- decisions-report CAMPAIGN_ID [--store DIR] [--output FILE]
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
-  npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]`;
+  npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
+  npm run evaluate -- tradingview-import EXPORT.json [--store DIR]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -368,6 +370,16 @@ const commandHandlers: Record<string, CommandHandler> = {
     );
     printJson(result);
     if (result.status === 'MISMATCH') process.exitCode = 1;
+  },
+  // Development only: bars the owner's agent session fetched through TradingView's MCP server.
+  'tradingview-import': async (value, args) => {
+    const { path, snapshot } = await importTradingViewScan({
+      file: safeCliPath(requiredValue('tradingview-import', value), 'EXPORT'),
+      store: storePath(args, SCAN_STORE),
+      repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
+    });
+    printJson(scanSummary(path, snapshot));
+    if (snapshot.scan.status !== 'COMPLETE') process.exitCode = 1;
   },
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>

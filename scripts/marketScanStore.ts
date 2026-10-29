@@ -95,19 +95,43 @@ export async function runScan(options: {
   const inputs = await collectScanInputs(options.universe, options.sources, {
     evaluationTime: startedAt,
   });
-  const scan = evaluateScan(inputs, {
+  return saveScan({
+    ...options,
+    inputs,
     evaluationTime: startedAt,
-    universeSource: options.universeSource,
     equityProvider: options.sources.equity?.id ?? null,
+    completedAt: now(),
+  });
+}
+
+/**
+ * Scores already-collected inputs and writes the snapshot. `runScan` collects
+ * them itself; an import (scripts/tradingViewImport.ts) passes inputs another
+ * process collected, with the time collection ended as `evaluationTime`.
+ */
+export async function saveScan(options: {
+  inputs: readonly ScanInput[];
+  evaluationTime: number;
+  universeSource: string;
+  equityProvider: string | null;
+  repositoryCommit: string;
+  store: string;
+  completedAt: number;
+}): Promise<{ path: string; snapshot: ScanSnapshot }> {
+  const { inputs, evaluationTime } = options;
+  const scan = evaluateScan(inputs, {
+    evaluationTime,
+    universeSource: options.universeSource,
+    equityProvider: options.equityProvider,
   });
   const version = universeVersion(scan.universe.source, scan.universe.members);
   const snapshot: ScanSnapshot = {
     schemaVersion: '1',
     evidenceType: 'market-scan',
-    scanId: scanIdFor(startedAt, version),
+    scanId: scanIdFor(evaluationTime, version),
     repositoryCommit: options.repositoryCommit,
-    startedAt: new Date(startedAt).toISOString(),
-    completedAt: new Date(now()).toISOString(),
+    startedAt: new Date(evaluationTime).toISOString(),
+    completedAt: new Date(options.completedAt).toISOString(),
     universeVersion: version,
     inputHashes: hashInputs(inputs),
     inputs,

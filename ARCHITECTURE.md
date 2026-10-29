@@ -53,6 +53,7 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   ├── evaluate-canonical.ts         `npm run evaluate`: replay, observe, campaigns, outcomes, reports, scans
 │   ├── evaluationStore.ts            Evaluation-run store, keyed by input and config hashes
 │   ├── marketScanStore.ts            Market-scan snapshots: run, store, reproduce offline
+│   ├── tradingViewImport.ts          Local TradingView development scan: import agent-fetched bars
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)
@@ -71,7 +72,8 @@ Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
 `supabase/` and `public/` are fixed by TanStack Start, the Supabase CLI and Vite.
 
 `.zerochart-evaluations/`, `.zerochart-campaigns/`, `.zerochart-reports/` and
-`.zerochart-scans/` are local, git-ignored stores written by `npm run evaluate`.
+`.zerochart-scans/` are local, git-ignored stores written by `npm run evaluate`;
+`.zerochart-tradingview/` holds the owner's agent-fetched TradingView exports.
 
 ## Where things live
 

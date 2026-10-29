@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fetchSymbolCandles, type Candle } from '@/lib/binance';
 import { compareTickers } from '@/lib/marketScanner';
@@ -460,15 +460,11 @@ export async function collectOpportunityOutcomes(options: {
       return { path, content: serialize(record) };
     });
 
-    const conflicting = records.filter(
+    let conflicts = records.filter(
       ({ path, content }) => existing.has(path) && existing.get(path) !== content,
-    );
-    if (conflicting.length > 0) {
-      summary.conflicts += conflicting.length;
-      continue;
-    }
+    ).length;
     await mkdir(outcomeDirectory, { recursive: true });
-    for (const { path, content } of records) {
+    for (const { path, content } of conflicts === 0 ? records : []) {
       try {
         const status = await createOrVerify(path, content, 'EVIDENCE_CONFLICT');
         summary[status === 'CREATED' ? 'created' : 'unchanged'] += 1;
@@ -476,9 +472,76 @@ export async function collectOpportunityOutcomes(options: {
         if (!(error instanceof OpportunityCampaignError) || error.code !== 'EVIDENCE_CONFLICT') {
           throw error;
         }
-        summary.conflicts += 1;
+        conflicts += 1;
       }
+    }
+    if (conflicts > 0) {
+      // Every detection is kept, so the decision gate's zero-conflict condition can see it.
+      const detectedAt = new Date(now).toISOString();
+      const receipt: OpportunityOutcomeConflict = {
+        schemaVersion: '1',
+        evidenceType: 'opportunity-radar-outcome-conflict',
+        slot: entry.slot,
+        detectedAt,
+        records: conflicts,
+      };
+      await mkdir(resolve(outcomeDirectory, 'conflicts'), { recursive: true });
+      await createOrVerify(
+        resolve(
+          outcomeDirectory,
+          'conflicts',
+          `${detectedAt.replaceAll(':', '-')}-${randomUUID()}.json`,
+        ),
+        serialize(receipt),
+        'EVIDENCE_CONFLICT',
+      );
+      summary.conflicts += conflicts;
     }
   }
   return summary;
+}
+
+export interface OpportunityOutcomeConflict {
+  schemaVersion: '1';
+  evidenceType: 'opportunity-radar-outcome-conflict';
+  slot: string;
+  detectedAt: string;
+  /** Records whose re-measurement differed from the immutable file. */
+  records: number;
+}
+
+/** Every outcome record and the total conflicting records ever detected for the campaign. */
+export async function loadOpportunityOutcomes(
+  directory: string,
+  specificationId: string,
+): Promise<{ records: OpportunityOutcomeRecord[]; conflicts: number }> {
+  const root = resolve(directory, 'outcomes', specificationId);
+  const list = (path: string) =>
+    readdir(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return [] as string[];
+      throw error;
+    });
+  const records: OpportunityOutcomeRecord[] = [];
+  let conflicts = 0;
+  for (const slot of (await list(root)).sort()) {
+    const slotDirectory = resolve(root, slot);
+    for (const name of (await list(slotDirectory))
+      .filter((item) => item.endsWith('.json'))
+      .sort()) {
+      records.push(
+        JSON.parse(
+          (await readIfPresent(resolve(slotDirectory, name)))!,
+        ) as OpportunityOutcomeRecord,
+      );
+    }
+    for (const name of (await list(resolve(slotDirectory, 'conflicts'))).filter((item) =>
+      item.endsWith('.json'),
+    )) {
+      const receipt = JSON.parse(
+        (await readIfPresent(resolve(slotDirectory, 'conflicts', name)))!,
+      ) as OpportunityOutcomeConflict;
+      conflicts += receipt.records;
+    }
+  }
+  return { records, conflicts };
 }

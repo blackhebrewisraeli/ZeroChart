@@ -68,6 +68,12 @@ import {
   runOpportunitySlot,
 } from './opportunityCampaign';
 import { collectOpportunityOutcomes } from './opportunityOutcomes';
+import {
+  buildOpportunityReport,
+  OpportunityReportRefusal,
+  opportunityReportSummary,
+  writeOpportunityReport,
+} from './opportunityReport';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
@@ -88,6 +94,7 @@ const USAGE = `Usage:
   npm run evaluate -- opportunity-campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
   npm run evaluate -- opportunity-campaign-status CAMPAIGN_ID [--store DIR]
   npm run evaluate -- opportunity-outcomes CAMPAIGN_ID [--store DIR] [--matured-only]
+  npm run evaluate -- opportunity-report CAMPAIGN_ID [--store DIR] [--operational-only | --final] [--output FILE]
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
@@ -613,6 +620,37 @@ const commandHandlers: Record<string, CommandHandler> = {
     });
     printJson(summary);
     if (summary.conflicts > 0 || summary.fetchFailed > 0) process.exitCode = 1;
+  },
+  // Operational health by default; --final refuses until the frozen decision gate is met.
+  'opportunity-report': async (value, args) => {
+    const command = 'opportunity-report';
+    assertOptions(command, args, ['--store', '--output'], ['--operational-only', '--final']);
+    const final = args.includes('--final');
+    if (final && args.includes('--operational-only')) {
+      throw new Error(`${command}: --final and --operational-only are mutually exclusive`);
+    }
+    const campaignId = requiredValue(command, value);
+    const output = safeCliPath(
+      option(args, '--output') ??
+        `.zerochart-reports/opportunity-${campaignId}${final ? '-final' : ''}.html`,
+      '--output',
+    );
+    try {
+      const report = await buildOpportunityReport({
+        campaignId,
+        store: storePath(args, '.zerochart-campaigns'),
+        final,
+      });
+      const written = await writeOpportunityReport(report, output);
+      printJson({
+        ...opportunityReportSummary(report),
+        output: relative(process.cwd(), written),
+      });
+    } catch (error) {
+      if (!(error instanceof OpportunityReportRefusal)) throw error;
+      printJson({ status: 'REFUSED', mode: 'FINAL', phase: error.phase, reasons: error.reasons });
+      process.exitCode = 1;
+    }
   },
   'decisions-demo': async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));

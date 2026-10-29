@@ -9,6 +9,7 @@ import type { Candle } from '@/lib/binance';
 import { initializeOpportunityCampaign, opportunitySlotDirectory } from './opportunityCampaign';
 import {
   collectOpportunityOutcomes,
+  loadOpportunityOutcomes,
   measureOpportunityOutcome,
   type FetchOutcomeCandles,
   type OpportunityOutcome,
@@ -439,6 +440,10 @@ describe('Opportunity outcome collection', () => {
     );
     expect(await readFile(campaign.recordPath(10), 'utf8')).toBe(before);
     await expect(access(campaign.recordPath(20))).rejects.toThrow();
+    // The detection itself is evidence: the decision gate reads it back.
+    const loaded = await loadOpportunityOutcomes(campaign.directory, SPECIFICATION_ID);
+    expect(loaded.records.map((item) => item.horizonDays)).toEqual([10, 5]);
+    expect(loaded.conflicts).toBe(2);
   });
 
   it('records matured missing data explicitly and averages only available members', async () => {

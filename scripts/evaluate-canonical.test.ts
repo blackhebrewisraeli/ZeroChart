@@ -551,5 +551,28 @@ describe('Opportunity Radar CLI', () => {
     for (const output of outputs) {
       expect(output).not.toMatch(/USD|close|candles|zerochart-campaigns|\//);
     }
+
+    // The report writes its private page and prints only counts, phase and that page's path.
+    expect(await run('opportunity-report', 'c-1', '--operational-only')).toMatchObject({
+      mode: 'OPERATIONAL',
+      phase: 'COLLECTING',
+      slots: { due: 2, completed: 1, missed: 1 },
+      decisionGateEligible: false,
+      output: '.zerochart-reports/opportunity-c-1.html',
+    });
+    expect(await readdir(join(workspace, '.zerochart-reports'))).toEqual(['opportunity-c-1.html']);
+    expect(outputs.at(-1)).not.toMatch(/USD|close|candles|zerochart-campaigns/);
+
+    expect(await run('opportunity-report', 'c-1', '--final')).toMatchObject({
+      status: 'REFUSED',
+      mode: 'FINAL',
+      phase: 'COLLECTING',
+      reasons: expect.arrayContaining(['CALENDAR_SLOTS_BELOW_MINIMUM']),
+    });
+    expect(process.exitCode).toBe(1);
+    expect(await readdir(join(workspace, '.zerochart-reports'))).toEqual(['opportunity-c-1.html']);
+    await expect(cli('opportunity-report', 'c-1', '--final', '--operational-only')).rejects.toThrow(
+      'mutually exclusive',
+    );
   });
 });

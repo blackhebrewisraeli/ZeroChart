@@ -284,7 +284,7 @@ implement the deterministic 20-day moving-block bootstrap and return `INSUFFICIE
 - [x] `npm run lint`
 - [x] `npm test`
 - [x] `npm run build`
-- [ ] Owner approves the analysis refusal behavior.
+- [x] Owner approves the analysis refusal behavior.
 
 ## Phase 4 — Reports and unattended operation
 
@@ -296,17 +296,17 @@ flag is supplied; otherwise the command refuses.
 
 **Acceptance criteria:**
 
-- [ ] Before eligibility, no return, benchmark, hit-rate, excursion or per-asset value appears in
+- [x] Before eligibility, no return, benchmark, hit-rate, excursion or per-asset value appears in
       HTML, JSON stdout or logs.
-- [ ] The final report includes every frozen primary/secondary result and limitation in either
+- [x] The final report includes every frozen primary/secondary result and limitation in either
       direction.
-- [ ] Public/sanitized summary contains counts and phase statuses only.
+- [x] Public/sanitized summary contains counts and phase statuses only.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityReport.test.ts scripts/evaluate-canonical.test.ts`
-- [ ] DOM/string tests assert forbidden interim fields are absent.
-- [ ] Manual desktop and phone-width inspection of the synthetic private report.
+- [x] `npm test -- scripts/opportunityReport.test.ts scripts/evaluate-canonical.test.ts`
+- [x] DOM/string tests assert forbidden interim fields are absent.
+- [x] Manual desktop and phone-width inspection of the synthetic private report.
 
 **Dependencies:** Tasks 6 and 9
 

@@ -58,6 +58,8 @@ export interface OpportunityHorizonSummary {
   meanMaxFavorableExcursionPct: number | null;
   meanMaxAdverseExcursionPct: number | null;
   invalidationTouchedFraction: number | null;
+  /** Among touched Opportunities: days from the reference open to the touching candle. */
+  medianDaysToInvalidation: number | null;
 }
 
 export interface OpportunityBootstrapInterval {
@@ -228,6 +230,20 @@ function summarize(
     ),
     invalidationTouchedFraction: fraction(
       measured.map((record) => record.outcome.invalidationTouchedAt !== null),
+    ),
+    medianDaysToInvalidation: quantile(
+      measured
+        .flatMap((record) =>
+          record.outcome.invalidationTouchedAt === null
+            ? []
+            : [
+                (Date.parse(record.outcome.invalidationTouchedAt) -
+                  Date.parse(record.referenceOpenTime)) /
+                  DAY_MS,
+              ],
+        )
+        .sort((a, b) => a - b),
+      0.5,
     ),
   };
 }

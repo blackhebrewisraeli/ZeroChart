@@ -407,13 +407,17 @@ function windowIssues(
   return issues;
 }
 
-/** assessEquity's decision order, on the bars the scan would have requested on the evaluation date. */
+/**
+ * assessEquity's decision order, on the bars the scan would have requested on
+ * the evaluation date; also the model's ATR/close when it scored the member.
+ */
 function assess(
   member: ResearchMember,
   at: number,
   sessions: readonly string[],
   index: ReadonlyMap<string, number>,
-): ReplayResult {
+): { result: ReplayResult; volatility: number | null } {
+  const result = (value: ReplayResult) => ({ result: value, volatility: null });
   const session = sessions[at] ?? '';
   const base: ReplayResult = {
     ticker: member.ticker,
@@ -425,7 +429,8 @@ function assess(
     regime: null,
     setups: null,
   };
-  if (member.error) return { ...base, status: member.error.code, detail: member.error.detail };
+  if (member.error)
+    return result({ ...base, status: member.error.code, detail: member.error.detail });
   // The scan requests the 200 sessions ending at the evaluation date, then scores the last 199.
   const from = sessions[Math.max(0, at - SCAN_EQUITY_REQUEST_SESSIONS + 1)] ?? '';
   const window = member.bars
@@ -435,27 +440,59 @@ function assess(
   const issues = windowIssues(window, index);
   if (issues.length > 0) {
     const detail = `${US_EQUITY_DAILY_CANDLE_POLICY_VERSION}: ${formatCandleIssues(issues)}`;
-    return { ...observed, status: 'DATA_INVALID', detail };
+    return result({ ...observed, status: 'DATA_INVALID', detail });
   }
   const latest = observed.dataAsOf === null ? undefined : index.get(observed.dataAsOf);
   if (latest !== undefined && latest < at - 1) {
     const detail = `Latest final session is ${observed.dataAsOf}; the scan needs ${session} or the session before it.`;
-    return { ...observed, status: 'STALE_DATA', detail };
+    return result({ ...observed, status: 'STALE_DATA', detail });
   }
   if (window.length < SCAN_MIN_CLOSED_CANDLES) {
     const detail = `${window.length} final sessions; the scan ranks only full ${SCAN_MIN_CLOSED_CANDLES}-session windows.`;
-    return { ...observed, status: 'INSUFFICIENT_HISTORY', detail };
+    return result({ ...observed, status: 'INSUFFICIENT_HISTORY', detail });
   }
   const model = evaluateCandles(window);
   if (model.status !== 'OK') {
     const detail = 'The canonical model had no finite reading on the last closed candle.';
-    return { ...observed, status: 'INSUFFICIENT_HISTORY', detail };
+    return result({ ...observed, status: 'INSUFFICIENT_HISTORY', detail });
   }
   return {
-    ...observed,
-    score: model.signal_score,
-    regime: model.regime,
-    setups: modelSetups(model),
+    result: {
+      ...observed,
+      score: model.signal_score,
+      regime: model.regime,
+      setups: modelSetups(model),
+    },
+    volatility: model.inputs.volatilityPercent,
+  };
+}
+
+/**
+ * The scan as it would have read on `sessions[at]` (no bar of a later session
+ * is passed in), with each EVALUATED member's ATR/close by ticker.
+ */
+export function replayWithVolatility(
+  members: readonly ResearchMember[],
+  sessions: readonly string[],
+  at: number,
+  index: ReadonlyMap<string, number> = new Map(sessions.map((session, i) => [session, i])),
+): { date: ReplayDate; volatility: Map<string, number> } {
+  const assessed = members.map((member) => assess(member, at, sessions, index));
+  const results = assessed.map(({ result }) => result);
+  const ranked = results
+    .filter((result) => result.score !== null)
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || compareTickers(a.ticker, b.ticker));
+  const ranks = new Map(ranked.map((result, i) => [result.ticker, i + 1]));
+  return {
+    date: {
+      session: sessions[at] ?? '',
+      results: results.map((result) => ({ ...result, rank: ranks.get(result.ticker) ?? null })),
+    },
+    volatility: new Map(
+      assessed.flatMap(({ result, volatility }) =>
+        volatility === null ? [] : [[result.ticker, volatility] as const],
+      ),
+    ),
   };
 }
 
@@ -464,17 +501,9 @@ export function replayDate(
   members: readonly ResearchMember[],
   sessions: readonly string[],
   at: number,
-  index: ReadonlyMap<string, number> = new Map(sessions.map((session, i) => [session, i])),
+  index?: ReadonlyMap<string, number>,
 ): ReplayDate {
-  const results = members.map((member) => assess(member, at, sessions, index));
-  const ranked = results
-    .filter((result) => result.score !== null)
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || compareTickers(a.ticker, b.ticker));
-  const ranks = new Map(ranked.map((result, i) => [result.ticker, i + 1]));
-  return {
-    session: sessions[at] ?? '',
-    results: results.map((result) => ({ ...result, rank: ranks.get(result.ticker) ?? null })),
-  };
+  return replayWithVolatility(members, sessions, at, index).date;
 }
 
 /** Session → the member's one bar for it, or null when it has more than one. */
@@ -637,9 +666,9 @@ export function studyObservations(
 }
 
 export type GroupId = (typeof RESEARCH_SPECIFICATION.comparisons.groups)[number];
-type MemberGroupId = Exclude<GroupId, 'benchmark-spy'>;
+export type MemberGroupId = Exclude<GroupId, 'benchmark-spy'>;
 
-const MEMBERSHIP: Record<MemberGroupId, (observation: StudyObservation) => boolean> = {
+export const GROUP_MEMBERSHIP: Record<MemberGroupId, (observation: StudyObservation) => boolean> = {
   universe: () => true,
   'long-setup': (o) => o.long,
   'long-setup-transition': (o) => o.longTransition,
@@ -653,7 +682,7 @@ const MEMBERSHIP: Record<MemberGroupId, (observation: StudyObservation) => boole
   'rank-quintile-4': (o) => o.quintile === 4,
   'rank-quintile-5': (o) => o.quintile === 5,
 };
-export const MEMBER_GROUPS = Object.keys(MEMBERSHIP) as MemberGroupId[];
+export const MEMBER_GROUPS = Object.keys(GROUP_MEMBERSHIP) as MemberGroupId[];
 
 /** One measured change with what it is compared against on the same date. */
 export interface ResearchPoint {
@@ -716,7 +745,7 @@ export function summarize(points: readonly ResearchPoint[]): GroupStats {
   };
 }
 
-function groupBy<T>(items: readonly T[], key: (item: T) => string): Map<string, T[]> {
+export function groupBy<T>(items: readonly T[], key: (item: T) => string): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const item of items) groups.set(key(item), [...(groups.get(key(item)) ?? []), item]);
   return groups;
@@ -754,10 +783,10 @@ export interface HorizonResults {
   >;
 }
 
-function meansBy(
-  observations: readonly StudyObservation[],
+export function meansBy<T extends StudyObservation>(
+  observations: readonly T[],
   horizon: ResearchHorizon,
-  key: (observation: StudyObservation) => string,
+  key: (observation: T) => string,
 ): Map<string, number> {
   return new Map(
     [...groupBy(observations, key)].map(([group, members]) => [
@@ -793,7 +822,7 @@ export function horizonResults(
     benchmark: benchmark.get(o.session) ?? null,
   });
   const pointsOf = (id: MemberGroupId) =>
-    measured.filter(MEMBERSHIP[id]).map((o) => point(o, dateMeans.get(o.session)));
+    measured.filter(GROUP_MEMBERSHIP[id]).map((o) => point(o, dateMeans.get(o.session)));
   const benchmarkPoints = [...benchmark].flatMap(([session, change]): ResearchPoint[] => {
     const baseline = dateMeans.get(session);
     return change === null || baseline === undefined
@@ -812,7 +841,7 @@ export function horizonResults(
     byType: memberGroups((id) => {
       const typed = (type: InstrumentType) =>
         measured
-          .filter((o) => o.type === type && MEMBERSHIP[id](o))
+          .filter((o) => o.type === type && GROUP_MEMBERSHIP[id](o))
           .map((o) => point(o, typeMeans.get(`${o.session}|${type}`)));
       return { stock: summarize(typed('stock')), etf: summarize(typed('etf')) };
     }) as HorizonResults['byType'],
@@ -917,29 +946,54 @@ function coverageOf(
   };
 }
 
-/** The whole study on one parsed export. Pure: the same export always gives the same results. */
-export function runStudy(file: TradingViewOhlcvExport, exportSha256: string): StudyResults {
+/** What every study version shares: the replay, its observations and SPY's outcomes. */
+export interface PreparedStudy {
+  members: ResearchMember[];
+  sessions: string[];
+  replay: ReplayDate[];
+  /** Per replayed date: each EVALUATED member's ATR/close. */
+  volatility: ReadonlyMap<string, number>[];
+  observations: StudyObservation[];
+  /** SPY's change per evaluation date for one horizon. */
+  benchmark: (horizon: ResearchHorizon) => Map<string, number | null>;
+}
+
+export function prepareStudy(file: TradingViewOhlcvExport): PreparedStudy {
   const cutoff = Date.parse(file.retrieval.startedAt);
   const members = researchMembers(file);
   const sessions = observedSessions(members, cutoff);
   const index = new Map(sessions.map((session, i) => [session, i]));
   const start = firstFullWindowIndex(members, index);
-  const dates = sessions.slice(start).map((_, k) => start + k);
-  const replay = dates.map((at) => replayDate(members, sessions, at, index));
+  const replayed = sessions
+    .slice(start)
+    .map((_, k) => replayWithVolatility(members, sessions, start + k, index));
+  const replay = replayed.map(({ date }) => date);
   const bars = new Map(members.map((member) => [member.ticker, barsBySession(member.bars)]));
   const outcome = (ticker: string, k: number, horizon: number) =>
     measureOutcome(bars.get(ticker) ?? new Map(), sessions, start + k, horizon);
-  const observations = studyObservations(
-    replay,
-    new Map(members.map((member) => [member.ticker, member.type])),
-    outcome,
-  );
   return {
-    schemaVersion: '1',
-    specificationId: RESEARCH_SPECIFICATION_ID,
-    studyId: RESEARCH_SPECIFICATION.studyId,
-    evidenceType: RESEARCH_SPECIFICATION.evidenceType,
-    specification: RESEARCH_SPECIFICATION,
+    members,
+    sessions,
+    replay,
+    volatility: replayed.map(({ volatility }) => volatility),
+    observations: studyObservations(
+      replay,
+      new Map(members.map((member) => [member.ticker, member.type])),
+      outcome,
+    ),
+    benchmark: (horizon) =>
+      new Map(replay.map((date, k) => [date.session, outcome('SPY', k, horizon).change])),
+  };
+}
+
+/** The coverage and identity every study version reports first. */
+export function studyBase(
+  file: TradingViewOhlcvExport,
+  exportSha256: string,
+  study: PreparedStudy,
+) {
+  const { members, sessions, replay, observations } = study;
+  return {
     export: { sha256: exportSha256, retrieval: file.retrieval },
     calendar: {
       observedSessions: sessions.length,
@@ -953,14 +1007,34 @@ export function runStudy(file: TradingViewOhlcvExport, exportSha256: string): St
     },
     parity: scannerParity(file, replay),
     coverage: coverageOf(members, replay, observations),
-    horizons: RESEARCH_HORIZONS.map((horizon) => {
-      const spy = replay.map((date, k): [string, number | null] => [
-        date.session,
-        outcome('SPY', k, horizon).change,
-      ]);
-      return horizonResults(observations, horizon, new Map(spy));
-    }),
-    replay,
+  };
+}
+
+/** The whole study on one parsed export. Pure: the same export always gives the same results. */
+export function runStudy(file: TradingViewOhlcvExport, exportSha256: string): StudyResults {
+  const study = prepareStudy(file);
+  const {
+    export: exported,
+    calendar,
+    evaluationDates,
+    parity,
+    coverage,
+  } = studyBase(file, exportSha256, study);
+  return {
+    schemaVersion: '1',
+    specificationId: RESEARCH_SPECIFICATION_ID,
+    studyId: RESEARCH_SPECIFICATION.studyId,
+    evidenceType: RESEARCH_SPECIFICATION.evidenceType,
+    specification: RESEARCH_SPECIFICATION,
+    export: exported,
+    calendar,
+    evaluationDates,
+    parity,
+    coverage,
+    horizons: RESEARCH_HORIZONS.map((horizon) =>
+      horizonResults(study.observations, horizon, study.benchmark(horizon)),
+    ),
+    replay: study.replay,
   };
 }
 
@@ -980,7 +1054,9 @@ export async function saveResearchResults(
 }
 
 /** The run must rest on exactly what the specification froze, or it is not this study. */
-export function frozenFactDifferences(results: StudyResults): string[] {
+export function frozenFactDifferences(
+  results: Pick<StudyResults, 'calendar' | 'evaluationDates' | 'export' | 'parity'>,
+): string[] {
   const spec = RESEARCH_SPECIFICATION;
   const expected: Record<string, [unknown, unknown]> = {
     'calendar.observedSessions': [
@@ -1031,14 +1107,39 @@ export async function runScannerResearch(options: {
   repositoryCommit: string;
   now?: () => number;
 }) {
-  const raw = await readFile(options.file);
+  const { file, exportSha256 } = await loadFrozenExport(options.file);
+  const results = runStudy(file, exportSha256);
+  return {
+    ...(await writeStudy(results, RESEARCH_SPECIFICATION_ID, options, renderScannerResearchReport)),
+    results,
+  };
+}
+
+/** The parsed export, only if it is the file every study version was frozen on. */
+export async function loadFrozenExport(path: string) {
+  const raw = await readFile(path);
   const exportSha256 = createHash('sha256').update(raw).digest('hex');
   if (exportSha256 !== RESEARCH_SPECIFICATION.data.exportSha256) {
     throw new Error(
       `The study is frozen on export ${RESEARCH_SPECIFICATION.data.exportSha256}; this file is ${exportSha256}.`,
     );
   }
-  const results = runStudy(parseExport(JSON.parse(raw.toString('utf8'))), exportSha256);
+  return { file: parseExport(JSON.parse(raw.toString('utf8'))), exportSha256 };
+}
+
+/**
+ * Refuses results that depart from the frozen facts, writes them once under
+ * the specification's ID, and renders the private report unless they conflict.
+ */
+export async function writeStudy<T extends Parameters<typeof frozenFactDifferences>[0]>(
+  results: T,
+  specificationId: string,
+  options: { outputDir: string; repositoryCommit: string; now?: () => number },
+  render: (
+    results: T,
+    meta: { generatedAt: string; repositoryCommit: string; resultHash: string },
+  ) => string,
+) {
   const differences = frozenFactDifferences(results);
   if (differences.length > 0) {
     const sample = results.parity.mismatches.slice(0, 5).map((item) => JSON.stringify(item));
@@ -1048,18 +1149,18 @@ export async function runScannerResearch(options: {
   }
   const content = `${JSON.stringify(results)}\n`;
   const resultHash = createHash('sha256').update(content).digest('hex');
-  const name = `scanner-research-${RESEARCH_SPECIFICATION_ID.slice(0, 12)}`;
+  const name = `scanner-research-${specificationId.slice(0, 12)}`;
   const root = resolve(options.outputDir);
   const resultsPath = join(root, `${name}.json`);
   const status = await saveResearchResults(resultsPath, content);
   const reportPath = join(root, `${name}.html`);
   if (status !== 'CONFLICT') {
-    const html = renderScannerResearchReport(results, {
+    const html = render(results, {
       generatedAt: new Date((options.now ?? Date.now)()).toISOString(),
       repositoryCommit: options.repositoryCommit,
       resultHash,
     });
     await writeFile(reportPath, html, 'utf8');
   }
-  return { status, resultHash, resultsPath, reportPath, results };
+  return { status, resultHash, resultsPath, reportPath };
 }

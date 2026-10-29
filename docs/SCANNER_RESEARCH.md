@@ -109,7 +109,7 @@ Whether trading on the scanner would have been profitable after costs; whether a
 than chance; whether it would recur on future data, other instruments or other periods; or whether
 point-in-time data would have given the same scores.
 
-## v2: a volatility-matched baseline (frozen, not run)
+## v2: a volatility-matched baseline
 
 v1 found that higher ranks were followed by smaller changes than the same-date universe, and risk
 warnings by larger ones. The model rewards quiet regimes and flags high-volatility ones, so that may
@@ -129,4 +129,15 @@ before any volatility-stratified figure exists:
   stocks alone. ETFs alone are too few for terciles.
 
 It was specified after v1's results were seen and uses the same data, so it can explain them, not
-confirm them. It is not implemented or run yet.
+confirm them.
+
+Code: `scripts/scannerResearchV2.ts`, on v1's replay unchanged (a v1 rerun still prints
+`UNCHANGED`). Run it with:
+
+```bash
+npm run evaluate -- scanner-research-v2 .zerochart-tradingview/20261029T103004Z.json
+```
+
+It refuses what v1 refuses and writes, git-ignored, `.zerochart-reports/scanner-research-117f36fd7b24.json`
+(written once, with each evaluated member's ATR/close per date) and `.html` (coverage and method,
+then each population's tercile mix and every horizon, by year and by asset).

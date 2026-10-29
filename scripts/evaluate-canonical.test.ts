@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   writeDecisionsReport: vi.fn(),
   importTradingViewScan: vi.fn(),
   runScannerResearch: vi.fn(),
+  runScannerResearchV2: vi.fn(),
 }));
 
 // Network edges are stubbed; the evaluation store and the scanner run for real.
@@ -51,6 +52,10 @@ vi.mock('./scannerResearch', () => ({
   RESEARCH_OUTPUT_DIR: '.zerochart-reports',
   runScannerResearch: mocks.runScannerResearch,
   researchSummary: () => ({ specificationId: 'spec' }),
+}));
+vi.mock('./scannerResearchV2', () => ({
+  runScannerResearchV2: mocks.runScannerResearchV2,
+  researchSummaryV2: () => ({ specificationId: 'spec-v2' }),
 }));
 
 const { main } = await import('./evaluate-canonical');
@@ -124,6 +129,7 @@ describe('evaluate-canonical CLI', () => {
     'outcome-collect',
     'tradingview-import',
     'scanner-research',
+    'scanner-research-v2',
   ])('%s requires a value', async (command) => {
     await expect(cli(command)).rejects.toThrow(`${command} requires a value`);
   });
@@ -176,6 +182,30 @@ describe('evaluate-canonical CLI', () => {
       specificationId: 'spec',
     });
     expect(process.exitCode).toBe(1);
+  });
+
+  it('runs the frozen v2 study and prints its aggregate summary', async () => {
+    mocks.runScannerResearchV2.mockResolvedValue({
+      status: 'CREATED',
+      resultHash: 'h',
+      resultsPath: 'reports/r.json',
+      reportPath: 'reports/r.html',
+      results: {},
+    });
+
+    await cli('scanner-research-v2', 'exports/x.json');
+    expect(mocks.runScannerResearchV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file: join(workspace, 'exports/x.json'),
+        outputDir: join(workspace, '.zerochart-reports'),
+      }),
+    );
+    expect(printed()).toMatchObject({
+      status: 'CREATED',
+      reportPath: 'reports/r.html',
+      specificationId: 'spec-v2',
+    });
+    expect(process.exitCode).toBeUndefined();
   });
 
   it('refuses a store outside the workspace', async () => {

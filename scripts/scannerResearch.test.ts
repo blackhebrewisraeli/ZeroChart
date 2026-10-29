@@ -18,6 +18,7 @@ import {
   measureOutcome,
   observedSessions,
   replayDate,
+  replayWithVolatility,
   RESEARCH_SPECIFICATION,
   RESEARCH_SPECIFICATION_ID,
   RESEARCH_SPECIFICATION_V2,
@@ -34,7 +35,20 @@ import {
   type ResearchOutcome,
   type StudyObservation,
 } from './scannerResearch';
-import { renderScannerResearchReport } from './scannerResearchReport';
+import {
+  renderScannerResearchReport,
+  renderScannerResearchV2Report,
+} from './scannerResearchReport';
+import {
+  composition,
+  MATCHED_GROUPS,
+  populationObservations,
+  researchSummaryV2,
+  runScannerResearchV2,
+  runStudyV2,
+  v2HorizonResults,
+  type V2Observation,
+} from './scannerResearchV2';
 import {
   selectDevScanUniverse,
   TRADINGVIEW_SYMBOLS,
@@ -585,6 +599,238 @@ describe('summary and report', () => {
         expect(html).toContain(label);
       expect(html).not.toMatch(/<script/i);
       expect(html).not.toContain('-0.00'); // the universe's own difference is zero, never negative zero
+    },
+    STUDY_TIMEOUT,
+  );
+});
+
+describe('v2: volatility from the replay', () => {
+  const bars = pathBars(LONG, pathOf(5));
+  const members = [member('AAA', bars), member('SHORT', bars.slice(-20))];
+
+  it("records the model's own ATR/close for evaluated members only", () => {
+    const at = 230;
+    const { date, volatility } = replayWithVolatility(members, LONG, at);
+    const model = evaluateCandles(bars.slice(at - 198, at + 1));
+    expect(model.status).toBe('OK');
+    expect(volatility.get('AAA')).toBe(
+      model.status === 'OK' ? model.inputs.volatilityPercent : Number.NaN,
+    );
+    expect(volatility.has('SHORT')).toBe(false);
+    expect(date).toEqual(replayDate(members, LONG, at));
+  });
+
+  it('reads no bar after the evaluation date', () => {
+    const at = 230;
+    const scrambled = members.map((m) => ({
+      ...m,
+      bars: m.bars.map((bar, i) =>
+        i > at ? { ...bar, high: bar.high * 5, low: bar.low / 5 } : bar,
+      ),
+    }));
+    expect(replayWithVolatility(scrambled, LONG, at)).toEqual(
+      replayWithVolatility(members, LONG, at),
+    );
+  });
+});
+
+describe('v2: ranks and volatility terciles within a population', () => {
+  const day = '2026-03-02';
+  const vols = new Map([
+    [
+      day,
+      new Map([
+        ['A', 0.01],
+        ['B', 0.05],
+        ['C', 0.02],
+        ['D', 0.03],
+        ['E', 0.02],
+        ['F', 0.04],
+      ]),
+    ],
+  ]);
+  const observations = ['A', 'B', 'C', 'D', 'E', 'F'].map((ticker, i) =>
+    observation(ticker, day, 0, { rank: i + 1, type: ticker === 'D' ? 'etf' : 'stock' }),
+  );
+  const placed = (population: 'all' | 'stocks') =>
+    populationObservations(observations, vols, population).map(
+      (o) => `${o.ticker} r${o.rank} q${o.quintile} t${o.tercile}`,
+    );
+
+  it('splits all members into terciles by ATR/close, ties by ticker', () => {
+    // Volatility order A, C, E (tie with C), D, F, B: tercile = ceil(3 x position / 6).
+    expect(placed('all')).toEqual([
+      'A r1 q1 t1',
+      'B r2 q2 t3',
+      'C r3 q3 t1',
+      'D r4 q4 t2',
+      'E r5 q5 t2',
+      'F r6 q5 t3',
+    ]);
+  });
+
+  it('re-ranks and re-splits stocks among stocks alone', () => {
+    // Without D: ranks A1 B2 C3 E4 F5; volatility order A, C, E, F, B; tercile = ceil(3 x position / 5).
+    expect(placed('stocks')).toEqual([
+      'A r1 q1 t1',
+      'B r2 q2 t3',
+      'C r3 q3 t2',
+      'E r4 q4 t2',
+      'F r5 q5 t3',
+    ]);
+  });
+
+  it('refuses an evaluated member without a volatility reading', () => {
+    expect(() => populationObservations(observations, new Map([[day, new Map()]]), 'all')).toThrow(
+      /No ATR\/close for [A-F] on 2026-03-02/,
+    );
+  });
+});
+
+describe('v2: the volatility-matched baseline', () => {
+  const d1 = '2026-03-02';
+  const v2 = (
+    ticker: string,
+    change: number | null,
+    tercile: 1 | 2 | 3,
+    extra: Partial<StudyObservation> = {},
+  ): V2Observation => ({ ...observation(ticker, d1, change, extra), tercile });
+  const observations = [
+    v2('A', 1, 1, { long: true }),
+    v2('C', 3, 1),
+    v2('G', null, 1), // pending: in no mean, still in the composition
+    v2('E', -2, 2),
+    v2('D', 0, 2),
+    v2('F', 6, 3),
+    v2('B', 2, 3, { risk: true }),
+  ];
+  const result = v2HorizonResults(observations, 1, new Map([[d1, 1]]));
+
+  it("compares v1's groups with the same-date mean of their own tercile", () => {
+    // Tercile means: 1 -> (1 + 3) / 2 = 2, 2 -> (-2 + 0) / 2 = -1, 3 -> (6 + 2) / 2 = 4.
+    expect(result.groups['long-setup']).toMatchObject({
+      observations: 1,
+      mean: 1,
+      baselineMean: 2,
+      meanDifferenceVsBaseline: -1,
+      fractionAboveBaseline: 0,
+      meanDifferenceVsBenchmark: 0,
+    });
+    expect(result.groups['risk-warning']).toMatchObject({
+      baselineMean: 4,
+      meanDifferenceVsBaseline: -2,
+      meanDifferenceVsBenchmark: 1,
+    });
+    expect(result.groups.universe.meanDifferenceVsBaseline).toBe(0);
+    expect(result.outcomes).toEqual({ AVAILABLE: 6, PENDING: 1, MISSING: 0, INVALID: 0 });
+    expect(result.withoutBaseline).toBe(0);
+  });
+
+  it('compares each tercile with the same-date population mean', () => {
+    // Population mean (1 + 3 - 2 + 0 + 6 + 2) / 6 = 10 / 6.
+    expect(result.groups['volatility-tercile-3'].mean).toBe(4);
+    expect(result.groups['volatility-tercile-3'].meanDifferenceVsBaseline).toBeCloseTo(
+      4 - 10 / 6,
+      12,
+    );
+    expect(result.groups['volatility-tercile-3'].fractionAboveBaseline).toBe(1);
+    expect(result.groups['volatility-tercile-2'].meanDifferenceVsBaseline).toBeCloseTo(
+      -1 - 10 / 6,
+      12,
+    );
+  });
+
+  it("reports where each group's observations sit by volatility", () => {
+    const mix = composition(observations);
+    expect(mix['long-setup']).toEqual({ observations: 1, terciles: [1, 0, 0] });
+    expect(mix['risk-warning']).toEqual({ observations: 1, terciles: [0, 0, 1] });
+    expect(mix.universe).toEqual({ observations: 7, terciles: [3 / 7, 2 / 7, 2 / 7] });
+    expect(mix.top5.observations).toBe(7); // every fixture observation has rank 1
+    expect(mix['long-setup-transition']).toEqual({ observations: 0, terciles: null });
+  });
+});
+
+describe('v2 on a fixture export', () => {
+  let v2: ReturnType<typeof runStudyV2> | undefined;
+  const study = () => (v2 ??= runStudyV2(exportOf(), 'fixture'));
+
+  it(
+    'rests on the same replay as v1 and splits 50 and 38 members exactly',
+    () => {
+      const results = study();
+      expect(results.parity.status).toBe('MATCH');
+      expect(results.evaluationDates).toEqual(cleanStudy().evaluationDates);
+      // ceil(3p / 50): positions 1-16, 17-33, 34-50; ceil(3p / 38): 1-12, 13-25, 26-38.
+      expect(results.populations.all.composition.universe.terciles).toEqual([
+        16 / 50,
+        17 / 50,
+        17 / 50,
+      ]);
+      expect(results.populations.stocks.composition.universe.terciles).toEqual([
+        12 / 38,
+        13 / 38,
+        13 / 38,
+      ]);
+      expect(results.populations.stocks.membersPerDate).toEqual({ min: 38, max: 38 });
+    },
+    STUDY_TIMEOUT,
+  );
+
+  it(
+    "keeps v1's group membership for all members and zero difference for the population",
+    () => {
+      const results = study();
+      results.populations.all.horizons.forEach((horizon, k) => {
+        for (const id of MATCHED_GROUPS)
+          expect(horizon.groups[id].observations).toBe(
+            cleanStudy().horizons[k]?.groups[id].observations,
+          );
+        expect(horizon.withoutBaseline).toBe(0);
+      });
+      // 20 sessions has no matured outcome in this short fixture; 1 and 5 do.
+      for (const horizon of results.populations.all.horizons.slice(0, 2)) {
+        expect(horizon.groups.universe.observations).toBeGreaterThan(0);
+        expect(horizon.groups.universe.meanDifferenceVsBaseline ?? Number.NaN).toBeCloseTo(0, 12);
+      }
+    },
+    STUDY_TIMEOUT,
+  );
+
+  it(
+    'is deterministic, aggregate-only in its summary, and runs only on the frozen export',
+    async () => {
+      const file = exportOf();
+      const reordered = { ...file, instruments: [...file.instruments].reverse() };
+      expect(JSON.stringify(runStudyV2(reordered, 'fixture'))).toBe(JSON.stringify(study()));
+      const summary = JSON.stringify(researchSummaryV2(study()));
+      expect(UNIVERSE.filter((ticker) => summary.includes(`"${ticker}"`))).toEqual([]);
+      const dir = await mkdtemp(join(tmpdir(), 'zerochart-research-'));
+      const path = join(dir, 'export.json');
+      await writeFile(path, JSON.stringify(file));
+      await expect(
+        runScannerResearchV2({ file: path, outputDir: dir, repositoryCommit: 'c'.repeat(40) }),
+      ).rejects.toThrow(/frozen on export/);
+    },
+    STUDY_TIMEOUT,
+  );
+
+  it(
+    'reports both populations, every horizon and the v2 caveat, without scripts',
+    () => {
+      const html = renderScannerResearchV2Report(study(), {
+        generatedAt: '2026-10-29T00:00:00.000Z',
+        repositoryCommit: 'c'.repeat(40),
+        resultHash: 'f'.repeat(64),
+      });
+      for (const text of [
+        'Population: all members',
+        'Population: stocks only',
+        '20 sessions:',
+        'specified after v1',
+      ])
+        expect(html).toContain(text);
+      expect(html).not.toMatch(/<script/i);
+      expect(html).not.toContain('-0.00');
     },
     STUDY_TIMEOUT,
   );

@@ -9,11 +9,12 @@ import {
   STORAGE_OWNER_ID,
   stopCampaignStorageFakes,
 } from '@/test/campaignStorageFake';
-import { opportunityPathProvider } from '@/test/opportunityFixtures';
+import { opportunityOutcomeCandles, opportunityPathProvider } from '@/test/opportunityFixtures';
 import type { CommandResult } from './campaignAutomation';
 import {
   automationSummaryLines,
   durableTransport,
+  frozenEnvironment,
   importOpportunityCampaign,
   main,
   OpportunityAutomationError,
@@ -29,7 +30,17 @@ import {
   runOpportunitySlot,
   type FetchOpportunityCandles,
 } from './opportunityCampaign';
-import { collectOpportunityOutcomes } from './opportunityOutcomes';
+import {
+  collectOpportunityOutcomes,
+  type FetchOutcomeCandles,
+  type OpportunityOutcomeRecord,
+} from './opportunityOutcomes';
+import {
+  buildOpportunityReport,
+  OpportunityReportRefusal,
+  renderOpportunityReport,
+} from './opportunityReport';
+import { restoreCampaign } from './privateCampaignStorage';
 import type { NotificationTransport, TransportResult } from './telegramTransport';
 
 const DAY = 86_400_000;
@@ -75,6 +86,7 @@ function frozenAt(
   now: number,
   options: {
     fetchCandles?: FetchOpportunityCandles;
+    outcomeCandles?: FetchOutcomeCandles;
     overrides?: Record<string, () => CommandResult>;
     commit?: string;
     clean?: boolean;
@@ -111,9 +123,11 @@ function frozenAt(
       const outcomes = await collectOpportunityOutcomes({
         campaignId,
         store,
-        fetchCandles: async () => {
-          throw new Error('no horizon matures within these three days');
-        },
+        fetchCandles:
+          options.outcomeCandles ??
+          (async () => {
+            throw new Error('no horizon matures within these three days');
+          }),
         now: () => now,
       });
       return answer(outcomes);
@@ -389,6 +403,108 @@ describe('owner restore', () => {
     await expect(
       readFile(join(local, 'campaigns', CAMPAIGN, 'manifest.json'), 'utf8'),
     ).resolves.toContain(CAMPAIGN);
+  });
+});
+
+describe('Checkpoint D: synthetic end-to-end campaign', () => {
+  it('restores, collects, persists, reproduces, notifies once, matures an outcome and refuses performance', async () => {
+    const fake = await importedCampaign();
+    const { sent, transport: telegram } = transport();
+    // The Opportunity is observed on day 1; its 5-day endpoint is collectable from day 7's slot.
+    const days = Array.from({ length: 8 }, (_, day) => START + day * DAY + 60_000);
+
+    const summaries = [];
+    for (const now of days) {
+      summaries.push(
+        await automate(fake, now, {
+          frozen: frozenAt(now, { outcomeCandles: opportunityOutcomeCandles }).frozen,
+          transport: telegram,
+        }),
+      );
+    }
+
+    expect(summaries.every((item) => item.collection === 'COMPLETED')).toBe(true);
+    expect(summaries.every((item) => item.reproduction === 'MATCH')).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(summaries.map((item) => item.notifications?.delivered)).toEqual([
+      0, 1, 0, 0, 0, 0, 0, 0,
+    ]);
+    expect(summaries.at(-2)!.outcomes).toMatchObject({ created: 0, pending: 4 });
+    expect(summaries.at(-1)!.outcomes).toMatchObject({
+      created: 1,
+      pending: 3,
+      conflicts: 0,
+      fetchFailed: 0,
+    });
+
+    // The owner restores privately and sees operational health only.
+    const owner = await mkdtemp(join(tmpdir(), 'zerochart-owner-'));
+    await restoreCampaign(
+      fake.session,
+      opportunityStorageId(CAMPAIGN),
+      join(owner, 'campaigns', CAMPAIGN),
+    );
+    const recordPath = remoteKeys(fake.objects, '/outcomes/').find((item) =>
+      item.endsWith('-5d.json'),
+    )!;
+    const record = JSON.parse(fake.objects.get(recordPath)!.toString()) as OpportunityOutcomeRecord;
+    expect(record).toMatchObject({
+      ticker: 'ETH-USD',
+      horizonDays: 5,
+      outcome: { status: 'AVAILABLE' },
+      btc: { status: 'AVAILABLE' },
+      equalWeight: { available: 12 },
+    });
+
+    const report = await buildOpportunityReport({
+      campaignId: CAMPAIGN,
+      store: owner,
+      now: () => days.at(-1)!,
+    });
+    expect(report).toMatchObject({
+      mode: 'OPERATIONAL',
+      phase: 'COLLECTING',
+      slots: { due: 8, completed: 8, pending: 0, missed: 0 },
+      reproduction: { match: 8, mismatch: 0, notReproduced: 0 },
+      outcomes: { records: 1, available: 1, missing: 0, invalid: 0, conflicts: 0 },
+      gate: { eligible: false },
+    });
+    const html = renderOpportunityReport(report);
+    for (const hidden of [
+      'ETH',
+      '-USD',
+      record.outcome.netChangePct!.toFixed(2),
+      record.btc.grossChangePct!.toFixed(2),
+      'primary-results',
+    ]) {
+      expect(html).not.toContain(hidden);
+      expect(JSON.stringify(report)).not.toContain(hidden);
+    }
+    await expect(
+      buildOpportunityReport({
+        campaignId: CAMPAIGN,
+        store: owner,
+        final: true,
+        now: () => days.at(-1)!,
+      }),
+    ).rejects.toBeInstanceOf(OpportunityReportRefusal);
+    // Eight fresh runners, each round-tripping every stored object over HTTP: ~1.5 s alone.
+  }, 30_000);
+});
+
+describe('frozen implementation environment', () => {
+  it('passes no storage or Telegram secret to the frozen CLI', () => {
+    expect(
+      frozenEnvironment({
+        PATH: '/usr/bin',
+        CAMPAIGN_ID: CAMPAIGN,
+        SUPABASE_URL: 'https://example.invalid',
+        SUPABASE_CAMPAIGN_EMAIL: 'automation@example.invalid',
+        SUPABASE_CAMPAIGN_PASSWORD: 'secret-password',
+        ZEROCHART_TELEGRAM_BOT_TOKEN: '1:secret-token',
+        ZEROCHART_TELEGRAM_CHAT_ID: '-100',
+      }),
+    ).toEqual({ PATH: '/usr/bin', CAMPAIGN_ID: CAMPAIGN, SUPABASE_URL: 'https://example.invalid' });
   });
 });
 

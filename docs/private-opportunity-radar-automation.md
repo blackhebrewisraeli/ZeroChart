@@ -17,8 +17,13 @@ Evidence reuses the private Supabase Storage bucket `private-campaign-evidence` 
 `campaign_automation` Auth user from the
 [observation campaign](private-campaign-automation.md#security-model). That user can only `SELECT`
 and `INSERT` below its own UID prefix: no update, delete or upsert. Opportunity Radar evidence lives
-under `<uid>/opportunity-radar-<CAMPAIGN_ID>/`, apart from the legacy campaigns. Never add a
-service-role key to GitHub Actions.
+under `<uid>/opportunity-radar-<CAMPAIGN_ID>/`, apart from the legacy campaigns, so the existing
+storage policies cover it without a migration. Never add a service-role key to GitHub Actions.
+
+Secrets reach only the two workflow steps that read them (configuration validation and the
+orchestration), never the checkout, setup or install steps or the disabled-state jobs. The
+orchestration also strips the storage and Telegram credentials before it starts the frozen
+implementation, which needs only Binance and its local evidence store.
 
 | Kind     | Name                                   | Purpose                                                  |
 | -------- | -------------------------------------- | -------------------------------------------------------- |

@@ -411,13 +411,14 @@ disablement, backup and regional Binance failure.
 
 ## Checkpoint D: Ready for owner activation review
 
-- [ ] All focused and legacy tests pass.
-- [ ] `npm run typecheck`
-- [ ] `npm run lint`
-- [ ] `npm test`
-- [ ] `npm run build`
-- [ ] Synthetic end-to-end campaign restores, collects, persists, reproduces, matures outcomes,
+- [x] All focused and legacy tests pass.
+- [x] `npm run typecheck`
+- [x] `npm run lint`
+- [x] `npm test`
+- [x] `npm run build`
+- [x] Synthetic end-to-end campaign restores, collects, persists, reproduces, matures outcomes,
       refuses interim performance and sends one synthetic notification.
-- [ ] Security review confirms least-privilege storage and secret redaction.
-- [ ] No live campaign exists and the workflow remains disabled.
+- [x] Security review confirms least-privilege storage and secret redaction.
+- [x] No live campaign exists and the workflow remains disabled. (2026-10-29: no local campaign,
+      0 `opportunity-radar-*` objects in production storage, activation variable unset, pins unset.)
 - [ ] Owner reviews and separately authorizes campaign initialization and activation.

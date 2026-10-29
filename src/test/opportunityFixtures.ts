@@ -1,13 +1,14 @@
-import type { Candle } from '@/lib/binance';
-import type { FetchOpportunityCandles } from '../../scripts/opportunityCampaign';
-
-const DAY_MS = 86_400_000;
-
 /**
  * Synthetic Binance history for an Opportunity Radar campaign starting at
  * 2026-10-30 00:30 UTC: ETH qualifies from the second slot on (one false→true
  * transition), BTC keeps the market gate open, every other member declines.
  */
+import type { Candle } from '@/lib/binance';
+import type { FetchOpportunityCandles } from '../../scripts/opportunityCampaign';
+import type { FetchOutcomeCandles } from '../../scripts/opportunityOutcomes';
+
+const DAY_MS = 86_400_000;
+
 /** Path day 257 is the last candle slot 1 sees; slots 2 and 3 see days 258 and 259. */
 const PATH_ORIGIN = Date.UTC(2026, 9, 29) - 257 * DAY_MS;
 
@@ -27,26 +28,39 @@ const PATHS: Record<string, ReturnType<typeof compounding>> = {
 };
 const DECLINING = compounding(() => -0.001, 0.002);
 
+function candleOn(instrument: string, day: number): Candle {
+  const { closes, h } = PATHS[instrument] ?? DECLINING;
+  const timestamp = PATH_ORIGIN + day * DAY_MS;
+  const close = closes[day]!;
+  const open = closes[day - 1]!;
+  return {
+    timestamp,
+    closeTime: timestamp + DAY_MS - 1,
+    open,
+    high: Math.max(open, close) * (1 + h),
+    low: Math.min(open, close) * (1 - h),
+    close,
+  };
+}
+
+/** Slot collection: `limit` daily candles ending at `endTime`. */
 export function opportunityPathProvider() {
   const calls: string[] = [];
   const fetchCandles: FetchOpportunityCandles = async (instrument, request) => {
     calls.push(instrument);
-    const { closes, h } = PATHS[instrument] ?? DECLINING;
     const lastDay = (request.endTime + 1 - DAY_MS - PATH_ORIGIN) / DAY_MS;
-    return Array.from({ length: request.limit }, (_, index): Candle => {
-      const day = lastDay - (request.limit - 1 - index);
-      const timestamp = PATH_ORIGIN + day * DAY_MS;
-      const close = closes[day]!;
-      const open = closes[day - 1]!;
-      return {
-        timestamp,
-        closeTime: timestamp + DAY_MS - 1,
-        open,
-        high: Math.max(open, close) * (1 + h),
-        low: Math.min(open, close) * (1 - h),
-        close,
-      };
-    });
+    return Array.from({ length: request.limit }, (_, index) =>
+      candleOn(instrument, lastDay - (request.limit - 1 - index)),
+    );
   };
   return { calls, fetchCandles };
 }
+
+/** Outcome collection: every daily candle opening within [startTime, endTime], up to `limit`. */
+export const opportunityOutcomeCandles: FetchOutcomeCandles = async (instrument, range) => {
+  const first = (range.startTime - PATH_ORIGIN) / DAY_MS;
+  const last = (range.endTime - PATH_ORIGIN) / DAY_MS;
+  return Array.from({ length: Math.min(last - first + 1, range.limit) }, (_, index) =>
+    candleOn(instrument, first + index),
+  );
+};

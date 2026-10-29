@@ -362,9 +362,23 @@ async function storageSession(): Promise<SupabaseStorageSession> {
   );
 }
 
+/** Storage and Telegram credentials the frozen CLI never needs: it reads Binance and local disk. */
+const ORCHESTRATION_SECRETS = [
+  'SUPABASE_CAMPAIGN_EMAIL',
+  'SUPABASE_CAMPAIGN_PASSWORD',
+  TELEGRAM_TOKEN_ENV,
+  TELEGRAM_CHAT_ENV,
+] as const;
+
+export function frozenEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const scoped = { ...env };
+  for (const name of ORCHESTRATION_SECRETS) delete scoped[name];
+  return scoped;
+}
+
 function frozenCheckout(directory: string): FrozenImplementation {
   return {
-    run: (args) => command(directory, args),
+    run: (args) => command(directory, args, frozenEnvironment(process.env)),
     commit: async () =>
       (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: directory })).stdout.trim(),
     clean: async () =>

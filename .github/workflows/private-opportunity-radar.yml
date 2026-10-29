@@ -115,13 +115,12 @@ jobs:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
       SUPABASE_CAMPAIGN_BUCKET: private-campaign-evidence
-      SUPABASE_CAMPAIGN_EMAIL: ${{ secrets.SUPABASE_CAMPAIGN_EMAIL }}
-      SUPABASE_CAMPAIGN_PASSWORD: ${{ secrets.SUPABASE_CAMPAIGN_PASSWORD }}
-      # Optional: without both, nothing is sent and the summary says so.
-      ZEROCHART_TELEGRAM_BOT_TOKEN: ${{ secrets.ZEROCHART_TELEGRAM_BOT_TOKEN }}
-      ZEROCHART_TELEGRAM_CHAT_ID: ${{ secrets.ZEROCHART_TELEGRAM_CHAT_ID }}
+    # Secrets are scoped to the two steps that read them: never the actions or installs.
     steps:
       - name: Validate the pinned campaign and required configuration
+        env:
+          SUPABASE_CAMPAIGN_EMAIL: ${{ secrets.SUPABASE_CAMPAIGN_EMAIL }}
+          SUPABASE_CAMPAIGN_PASSWORD: ${{ secrets.SUPABASE_CAMPAIGN_PASSWORD }}
         run: |
           [[ "$CAMPAIGN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ && "$CAMPAIGN_ID" != UNSET-REVIEW-REQUIRED ]] \
             || { echo "::error title=CONFIGURATION failure::Pin the reviewed CAMPAIGN_ID in this workflow"; exit 1; }
@@ -160,4 +159,10 @@ jobs:
 
       - name: Run private Opportunity Radar orchestration
         working-directory: orchestration
+        env:
+          SUPABASE_CAMPAIGN_EMAIL: ${{ secrets.SUPABASE_CAMPAIGN_EMAIL }}
+          SUPABASE_CAMPAIGN_PASSWORD: ${{ secrets.SUPABASE_CAMPAIGN_PASSWORD }}
+          # Optional: without both, nothing is sent and the summary says so.
+          ZEROCHART_TELEGRAM_BOT_TOKEN: ${{ secrets.ZEROCHART_TELEGRAM_BOT_TOKEN }}
+          ZEROCHART_TELEGRAM_CHAT_ID: ${{ secrets.ZEROCHART_TELEGRAM_CHAT_ID }}
         run: ./node_modules/.bin/tsx scripts/opportunityAutomation.ts run

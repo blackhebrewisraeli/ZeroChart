@@ -59,11 +59,15 @@ async function session(): Promise<SupabaseStorageSession> {
   });
 }
 
-export async function command(cwd: string, args: string[]): Promise<CommandResult> {
+export async function command(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<CommandResult> {
   try {
     const result = await execFileAsync('npm', ['run', 'evaluate', '--', ...args], {
       cwd,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: { ...env, NO_COLOR: '1' },
       maxBuffer: 20 * 1024 * 1024,
       timeout: 20 * 60_000,
     });

@@ -11,8 +11,10 @@ import {
   campaignManifestPath,
   initializeOpportunityCampaign,
   opportunitySlotDirectory,
+  reproduceOpportunitySlot,
   runOpportunitySlot,
   type FetchOpportunityCandles,
+  type OpportunitySlotArtifact,
 } from './opportunityCampaign';
 
 const DAY_MS = 86_400_000;
@@ -436,5 +438,153 @@ describe('Opportunity Radar slot collection', () => {
     await expect(
       runOpportunitySlot({ campaignId, store: root, now: () => START }),
     ).rejects.toMatchObject({ code: 'MANIFEST_INVALID' });
+  });
+});
+
+describe('Opportunity Radar offline reproduction', () => {
+  const SECOND = new Date(START + DAY_MS).toISOString();
+
+  /** Two completed slots, so the second has a previous-slot link to verify. */
+  async function completedCampaign() {
+    const created = await campaign();
+    for (const time of [START, START + DAY_MS]) {
+      await runOpportunitySlot({
+        campaignId: created.campaignId,
+        store: created.root,
+        fetchCandles: provider().fetchCandles,
+        now: () => time,
+      });
+    }
+    const slotPath = (slot: string) =>
+      join(opportunitySlotDirectory(created.directory, slot), 'slot.json');
+    return { ...created, slotPath };
+  }
+
+  it('matches untouched evidence with the network blocked and restores fetch afterwards', async () => {
+    const { root, campaignId } = await completedCampaign();
+    const original = globalThis.fetch;
+    const fetchSpy = vi.fn<typeof fetch>();
+    globalThis.fetch = fetchSpy;
+    try {
+      const receipt = await reproduceOpportunitySlot({
+        campaignId,
+        store: root,
+        blockNetwork: true,
+        now: () => START + 2 * DAY_MS,
+      });
+
+      expect(receipt).toMatchObject({
+        campaignId,
+        slot: SECOND,
+        networkBlocked: true,
+        status: 'MATCH',
+        reason: null,
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(globalThis.fetch).toBe(fetchSpy);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it('appends a receipt per reproduction and never rewrites the slot', async () => {
+    const { root, campaignId, directory, slotPath } = await completedCampaign();
+    const before = await readFile(slotPath(SECOND), 'utf8');
+
+    const first = await reproduceOpportunitySlot({ campaignId, store: root, slot: SECOND });
+    const second = await reproduceOpportunitySlot({ campaignId, store: root, slot: SECOND });
+
+    expect([first.status, second.status]).toEqual(['MATCH', 'MATCH']);
+    expect(first.slotSha256).toBe(createHash('sha256').update(before).digest('hex'));
+    expect(
+      await readdir(join(opportunitySlotDirectory(directory, SECOND), 'reproductions')),
+    ).toHaveLength(2);
+    expect(await readFile(slotPath(SECOND), 'utf8')).toBe(before);
+  });
+
+  it.each([
+    [
+      'a changed input candle',
+      (artifact: OpportunitySlotArtifact) => {
+        artifact.inputs[0]!.candles![199]!.close += 1;
+      },
+      'INPUT_HASH_MISMATCH',
+    ],
+    [
+      'a changed specification ID',
+      (artifact: OpportunitySlotArtifact) => {
+        artifact.specificationId = 'f'.repeat(64);
+      },
+      'SPECIFICATION_MISMATCH',
+    ],
+    [
+      'a changed implementation commit',
+      (artifact: OpportunitySlotArtifact) => {
+        artifact.implementationCommit = 'b'.repeat(40);
+      },
+      'IMPLEMENTATION_MISMATCH',
+    ],
+    [
+      'a changed previous-slot link',
+      (artifact: OpportunitySlotArtifact) => {
+        artifact.previous!.sha256 = '0'.repeat(64);
+      },
+      'PREVIOUS_SLOT_MISMATCH',
+    ],
+    [
+      'an injected Opportunity',
+      (artifact: OpportunitySlotArtifact) => {
+        (artifact.result.opportunities as unknown[]).push({ id: `${SECOND}|ETH-USD` });
+      },
+      'OUTPUT_MISMATCH',
+    ],
+  ])(
+    'reports %s as a specific mismatch without rewriting evidence',
+    async (_label, tamper, reason) => {
+      const { root, campaignId, slotPath } = await completedCampaign();
+      const artifact = JSON.parse(await readFile(slotPath(SECOND), 'utf8'));
+      tamper(artifact);
+      const tampered = `${JSON.stringify(artifact, null, 2)}\n`;
+      await writeFile(slotPath(SECOND), tampered);
+
+      await expect(
+        reproduceOpportunitySlot({ campaignId, store: root, slot: SECOND, blockNetwork: true }),
+      ).resolves.toMatchObject({ status: 'MISMATCH', reason });
+      expect(await readFile(slotPath(SECOND), 'utf8')).toBe(tampered);
+    },
+  );
+
+  it('breaks the chain when an earlier slot is altered after the next one linked it', async () => {
+    const { root, campaignId, slotPath } = await completedCampaign();
+    const firstSlot = new Date(START).toISOString();
+    await writeFile(slotPath(firstSlot), `${await readFile(slotPath(firstSlot), 'utf8')} `);
+
+    await expect(
+      reproduceOpportunitySlot({ campaignId, store: root, slot: SECOND }),
+    ).resolves.toMatchObject({ status: 'MISMATCH', reason: 'PREVIOUS_SLOT_MISMATCH' });
+    await expect(
+      reproduceOpportunitySlot({ campaignId, store: root, slot: firstSlot }),
+    ).resolves.toMatchObject({ status: 'MISMATCH', reason: 'ARTIFACT_MISMATCH' });
+  });
+
+  it('refuses a changed manifest and a slot that was never completed', async () => {
+    const { root, campaignId } = await completedCampaign();
+
+    await expect(
+      reproduceOpportunitySlot({
+        campaignId,
+        store: root,
+        slot: new Date(START + 2 * DAY_MS).toISOString(),
+      }),
+    ).rejects.toMatchObject({ code: 'SLOT_NOT_FOUND' });
+
+    const path = campaignManifestPath(root, campaignId);
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    manifest.implementationCommit = 'b'.repeat(40);
+    manifest.endSlot = new Date(END + DAY_MS).toISOString();
+    await writeFile(path, JSON.stringify(manifest));
+    await expect(reproduceOpportunitySlot({ campaignId, store: root })).rejects.toMatchObject({
+      code: 'MANIFEST_INVALID',
+    });
   });
 });

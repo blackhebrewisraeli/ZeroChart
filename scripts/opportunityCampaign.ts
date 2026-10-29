@@ -11,9 +11,11 @@ import {
 } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { fetchSymbolCandles, type Candle } from '@/lib/binance';
+import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
 import {
   collectScanInputs,
   SCAN_CANDLE_REQUEST,
+  SCANNER_VERSION,
   SCAN_TIMEFRAME,
   scanInstrument,
   type ScanFetchError,
@@ -43,7 +45,8 @@ export type OpportunityCampaignErrorCode =
   | 'INVALID_STORAGE_PATH'
   | 'MANIFEST_CONFLICT'
   | 'MANIFEST_INVALID'
-  | 'EVIDENCE_CONFLICT';
+  | 'EVIDENCE_CONFLICT'
+  | 'SLOT_NOT_FOUND';
 
 export class OpportunityCampaignError extends Error {
   constructor(
@@ -425,6 +428,67 @@ async function failedAttempts(slotDirectory: string): Promise<OpportunitySlotAtt
 }
 
 /**
+ * Pinning the newest candle to the day that closed before the slot keeps all
+ * 200 candles closed (SMA(200) needs them) and makes every retry request the
+ * same window.
+ */
+function candleRequestFor(slotTime: number): { limit: number; endTime: number } {
+  return { limit: SCAN_CANDLE_REQUEST, endTime: slotTime - (slotTime % DAY_MS) - 1 };
+}
+
+/** The link to the calendar-previous slot's exact bytes; null when it was not completed. */
+async function previousLink(
+  directory: string,
+  slotTime: number,
+): Promise<OpportunitySlotArtifact['previous']> {
+  const slot = new Date(slotTime - DAY_MS).toISOString();
+  const bytes = await readIfPresent(
+    resolve(opportunitySlotDirectory(directory, slot), 'slot.json'),
+  );
+  if (bytes === null) return null;
+  const prior = JSON.parse(bytes) as OpportunitySlotArtifact;
+  return {
+    slot,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    status: prior.result.scan.status,
+    qualifiedTickers: prior.result.assets
+      .filter((asset) => asset.qualified)
+      .map((asset) => asset.ticker),
+  };
+}
+
+/** The one place a slot artifact is derived, so collection and reproduction cannot drift. */
+function buildSlotArtifact(
+  campaign: LoadedOpportunityCampaign,
+  slot: string,
+  previous: OpportunitySlotArtifact['previous'],
+  attempts: OpportunitySlotAttempt[],
+  inputs: ScanInput[],
+): OpportunitySlotArtifact {
+  const { manifest, runtime } = campaign;
+  const slotTime = Date.parse(slot);
+  const request = candleRequestFor(slotTime);
+  return {
+    schemaVersion: '1',
+    evidenceType: 'opportunity-radar-slot',
+    campaignId: manifest.campaignId,
+    specificationId: manifest.specificationId,
+    implementationCommit: manifest.implementationCommit,
+    slot,
+    candleRequest: {
+      interval: SCAN_TIMEFRAME,
+      limit: request.limit,
+      endTime: new Date(request.endTime).toISOString(),
+    },
+    previous,
+    attempts,
+    inputHashes: hashInputs(inputs),
+    inputs,
+    result: evaluateOpportunitySlot(inputs, runtime, slotTime, previous ?? undefined),
+  };
+}
+
+/**
  * Collects the due logical slot once. A completed slot is never fetched again;
  * a failed attempt is kept and the same slot retried until its deadline; a slot
  * still incomplete at the deadline is MISSED and never backdated.
@@ -437,11 +501,12 @@ export async function runOpportunitySlot(options: {
   specificationPath?: string;
 }): Promise<OpportunitySlotRun> {
   const now = options.now ?? Date.now;
-  const { directory, manifest, runtime } = await loadOpportunityCampaign(
+  const campaign = await loadOpportunityCampaign(
     options.store,
     options.campaignId,
     options.specificationPath,
   );
+  const { directory, manifest } = campaign;
   const startedAt = now();
   const due = manifest.slots.filter((entry) => Date.parse(entry.slot) <= startedAt).at(-1);
   if (!due) return { status: 'NOT_DUE', slot: null };
@@ -453,10 +518,7 @@ export async function runOpportunitySlot(options: {
   if (startedAt >= deadline) return { status: 'MISSED', slot: due.slot };
 
   const slotTime = Date.parse(due.slot);
-  // Pinning the newest candle to the day that closed before the slot keeps all
-  // 200 candles closed (SMA(200) needs them) and makes every retry request
-  // the same window.
-  const request = { limit: SCAN_CANDLE_REQUEST, endTime: slotTime - (slotTime % DAY_MS) - 1 };
+  const request = candleRequestFor(slotTime);
   const instruments = new Map(
     manifest.universe.map((member) => [member.ticker, member.instrument]),
   );
@@ -482,14 +544,13 @@ export async function runOpportunitySlot(options: {
     });
   }
   const priorAttempts = await failedAttempts(slotDirectory);
-  const inputHashes = hashInputs(inputs);
   const attempt: OpportunitySlotAttempt = {
     slot: due.slot,
     attemptNumber: priorAttempts.length + 1,
     startedAt: new Date(startedAt).toISOString(),
     finishedAt: new Date(finishedAt).toISOString(),
     status: failures.length === 0 ? 'COMPLETED' : 'FAILED',
-    inputHashes,
+    inputHashes: hashInputs(inputs),
     failures,
   };
   await mkdir(slotDirectory, { recursive: true });
@@ -502,45 +563,159 @@ export async function runOpportunitySlot(options: {
     return { status: 'FAILED', slot: due.slot, attempt };
   }
 
-  const previousSlot = new Date(slotTime - DAY_MS).toISOString();
-  const previousBytes = await readIfPresent(
-    resolve(opportunitySlotDirectory(directory, previousSlot), 'slot.json'),
-  );
-  const prior =
-    previousBytes === null ? null : (JSON.parse(previousBytes) as OpportunitySlotArtifact);
-  const previous =
-    prior === null
-      ? null
-      : {
-          slot: previousSlot,
-          sha256: createHash('sha256').update(previousBytes!).digest('hex'),
-          status: prior.result.scan.status,
-          qualifiedTickers: prior.result.assets
-            .filter((asset) => asset.qualified)
-            .map((asset) => asset.ticker),
-        };
-  const artifact: OpportunitySlotArtifact = {
-    schemaVersion: '1',
-    evidenceType: 'opportunity-radar-slot',
-    campaignId: manifest.campaignId,
-    specificationId: manifest.specificationId,
-    implementationCommit: manifest.implementationCommit,
-    slot: due.slot,
-    candleRequest: {
-      interval: SCAN_TIMEFRAME,
-      limit: request.limit,
-      endTime: new Date(request.endTime).toISOString(),
-    },
-    previous,
-    attempts: [...priorAttempts, attempt],
-    inputHashes,
+  const artifact = buildSlotArtifact(
+    campaign,
+    due.slot,
+    await previousLink(directory, slotTime),
+    [...priorAttempts, attempt],
     inputs,
-    result: evaluateOpportunitySlot(inputs, runtime, slotTime, previous ?? undefined),
-  };
+  );
   await createOrVerify(
     resolve(slotDirectory, 'slot.json'),
     serialize(artifact),
     'EVIDENCE_CONFLICT',
   );
   return { status: 'COMPLETED', slot: due.slot, attempt, artifact };
+}
+
+/** Checked in this order; the first that differs is reported. */
+export type OpportunityReproductionReason =
+  | 'SLOT_METADATA_MISMATCH'
+  | 'SPECIFICATION_MISMATCH'
+  | 'IMPLEMENTATION_MISMATCH'
+  | 'INPUT_HASH_MISMATCH'
+  | 'PREVIOUS_SLOT_MISMATCH'
+  | 'OUTPUT_MISMATCH'
+  | 'ARTIFACT_MISMATCH';
+
+export interface OpportunityReproduction {
+  schemaVersion: '1';
+  campaignId: string;
+  slot: string;
+  /** sha256 of the slot file as reproduced; the file itself is never rewritten. */
+  slotSha256: string;
+  reproducedAt: string;
+  networkBlocked: boolean;
+  status: 'MATCH' | 'MISMATCH';
+  reason: OpportunityReproductionReason | null;
+}
+
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function reproductionReason(
+  stored: OpportunitySlotArtifact,
+  rebuilt: OpportunitySlotArtifact,
+  bytes: string,
+): OpportunityReproductionReason | null {
+  if (
+    stored.schemaVersion !== rebuilt.schemaVersion ||
+    stored.evidenceType !== rebuilt.evidenceType ||
+    stored.campaignId !== rebuilt.campaignId ||
+    stored.slot !== rebuilt.slot ||
+    !same(stored.candleRequest, rebuilt.candleRequest) ||
+    stored.attempts.at(-1)?.status !== 'COMPLETED'
+  ) {
+    return 'SLOT_METADATA_MISMATCH';
+  }
+  if (stored.specificationId !== rebuilt.specificationId) return 'SPECIFICATION_MISMATCH';
+  if (
+    stored.implementationCommit !== rebuilt.implementationCommit ||
+    stored.result.scan.scannerVersion !== SCANNER_VERSION ||
+    stored.result.scan.modelVersion !== CANONICAL_MODEL_VERSION
+  ) {
+    return 'IMPLEMENTATION_MISMATCH';
+  }
+  if (
+    !same(stored.inputHashes, rebuilt.inputHashes) ||
+    !same(stored.attempts.at(-1)?.inputHashes, rebuilt.inputHashes)
+  ) {
+    return 'INPUT_HASH_MISMATCH';
+  }
+  if (!same(stored.previous, rebuilt.previous)) return 'PREVIOUS_SLOT_MISMATCH';
+  if (!same(stored.result, rebuilt.result)) return 'OUTPUT_MISMATCH';
+  return serialize(rebuilt) === bytes ? null : 'ARTIFACT_MISMATCH';
+}
+
+/**
+ * Re-derives a completed slot from its own stored inputs and the evidence
+ * before it, and appends a receipt. Evidence is read, never rewritten. With
+ * `blockNetwork`, any fetch during reproduction fails the reproduction.
+ */
+export async function reproduceOpportunitySlot(options: {
+  campaignId: string;
+  store: string;
+  /** Defaults to the latest completed slot. */
+  slot?: string;
+  blockNetwork?: boolean;
+  now?: () => number;
+  specificationPath?: string;
+}): Promise<OpportunityReproduction> {
+  const campaign = await loadOpportunityCampaign(
+    options.store,
+    options.campaignId,
+    options.specificationPath,
+  );
+  const { directory, manifest } = campaign;
+  let slot = options.slot;
+  if (slot === undefined) {
+    for (const entry of [...manifest.slots].reverse()) {
+      const path = resolve(opportunitySlotDirectory(directory, entry.slot), 'slot.json');
+      if ((await readIfPresent(path)) !== null) {
+        slot = entry.slot;
+        break;
+      }
+    }
+  }
+  const bytes =
+    slot !== undefined && manifest.slots.some((entry) => entry.slot === slot)
+      ? await readIfPresent(resolve(opportunitySlotDirectory(directory, slot), 'slot.json'))
+      : null;
+  if (slot === undefined || bytes === null) {
+    throw new OpportunityCampaignError(
+      'SLOT_NOT_FOUND',
+      `No completed campaign slot ${slot ?? '(none completed)'}.`,
+    );
+  }
+
+  const previous = await previousLink(directory, Date.parse(slot));
+  const originalFetch = globalThis.fetch;
+  if (options.blockNetwork) {
+    globalThis.fetch = () => Promise.reject(new Error('network explicitly blocked'));
+  }
+  let reason: OpportunityReproductionReason | null;
+  try {
+    const stored = JSON.parse(bytes) as OpportunitySlotArtifact;
+    let rebuilt: OpportunitySlotArtifact | null = null;
+    try {
+      rebuilt = buildSlotArtifact(campaign, slot, previous, stored.attempts, stored.inputs);
+    } catch {
+      // Inputs that can no longer be evaluated are reported as a metadata mismatch below.
+    }
+    reason =
+      rebuilt === null ? 'SLOT_METADATA_MISMATCH' : reproductionReason(stored, rebuilt, bytes);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const reproducedAt = new Date((options.now ?? Date.now)()).toISOString();
+  const receipt: OpportunityReproduction = {
+    schemaVersion: '1',
+    campaignId: manifest.campaignId,
+    slot,
+    slotSha256: createHash('sha256').update(bytes).digest('hex'),
+    reproducedAt,
+    networkBlocked: Boolean(options.blockNetwork),
+    status: reason === null ? 'MATCH' : 'MISMATCH',
+    reason,
+  };
+  const receipts = resolve(opportunitySlotDirectory(directory, slot), 'reproductions');
+  await mkdir(receipts, { recursive: true });
+  await createOrVerify(
+    resolve(receipts, `${reproducedAt.replaceAll(':', '-')}-${randomUUID()}.json`),
+    serialize(receipt),
+    'EVIDENCE_CONFLICT',
+  );
+  return receipt;
 }

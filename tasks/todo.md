@@ -134,15 +134,15 @@ Opportunity output with network explicitly blocked, and append a reproduction re
 
 **Acceptance criteria:**
 
-- [ ] Untouched evidence returns `MATCH`; input, manifest, output or implementation changes return
+- [x] Untouched evidence returns `MATCH`; input, manifest, output or implementation changes return
       a specific mismatch without rewriting evidence.
-- [ ] `--block-network` proves no fetch occurs during reproduction.
-- [ ] Repeated identical reproductions append receipts but do not alter the completed slot.
+- [x] `--block-network` proves no fetch occurs during reproduction.
+- [x] Repeated identical reproductions append receipts but do not alter the completed slot.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityCampaign.test.ts`
-- [ ] Tamper tests cover input hash, prior-slot link, spec ID and Opportunity output.
+- [x] `npm test -- scripts/opportunityCampaign.test.ts`
+- [x] Tamper tests cover input hash, prior-slot link, spec ID and Opportunity output.
 
 **Dependencies:** Task 4
 

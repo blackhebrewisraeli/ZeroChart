@@ -89,7 +89,7 @@ Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
 | Server-side market data    | `supabase/functions/{crypto-price-feed,equity-forex-price-feed,market-analytics}`                                                                                           |
 | TradingView signals        | `supabase/functions/tv-webhook` → `trading_signals`; shown in `components/ActionCenter.tsx`, `TacticalSignals.tsx`                                                          |
 | Paper trading              | `components/PaperTradingTerminal.tsx`, `lib/brokers/`, `lib/tradeLedger.ts`, `hooks/usePaperRisk.ts`, `lib/risk.ts`                                                         |
-| Market scan                | `src/lib/marketScanner.ts` (pure), `hooks/useMarketScan.ts`, `components/MarketScanSummary.tsx`, `scripts/marketScanStore.ts` (`docs/MARKET_SCANNER.md`)                    |
+| Market scan                | `src/lib/marketScanner.ts` (pure), `hooks/useMarketScan.ts`, `components/MarketScanSummary.tsx` + `ScanReview.tsx`, `scripts/marketScanStore.ts` (`docs/MARKET_SCANNER.md`) |
 | Signal journal (read-only) | `src/lib/decisionJournal.ts` (pure), `db.ts` `loadJournalPage`, `components/DecisionJournal.tsx` (`docs/DECISION_JOURNAL.md`)                                               |
 | Portfolio accounting       | `src/lib/portfolioAccounting.ts`, `portfolioStore.tsx` (state), `db.ts` + `hydrationStore.ts` (cloud sync)                                                                  |
 | Robo advisor / rebalancing | `src/lib/roboAdvisor.ts`, `portfolioBuilder.ts`, `rebalance.ts`, `allocation.ts`, `dca.ts`                                                                                  |

@@ -6,7 +6,8 @@ reports everything it could not score with the reason. It never places, sizes or
 
 Code: `src/lib/marketScanner.ts` (pure engine), `src/lib/usEquityDaily.ts` (equity calendar,
 candle policy and provider seam), `src/hooks/useMarketScan.ts` (Markets page),
-`src/components/MarketScanSummary.tsx`, `scripts/marketScanStore.ts` (CLI evidence).
+`src/components/MarketScanSummary.tsx`, `src/components/ScanReview.tsx` and `src/lib/scanReview.ts`
+(reviewing a scan), `scripts/marketScanStore.ts` (CLI evidence).
 
 Equities and ETFs: see [EQUITY_DATA.md](EQUITY_DATA.md) for the provider decision, the
 `us-equity-daily-v1` contract and what it takes to switch them on.
@@ -123,6 +124,37 @@ compares every output: `MATCH`, or `MISMATCH` with `UNIVERSE_HASH_MISMATCH`,
 Scan status is `COMPLETE` only when every supported asset was scored, `PARTIAL` when some were, and
 `FAILED` when none were. Each cohort has its own status too. "No qualifying setups" is stated as a
 full answer only for a complete cohort.
+
+## Reviewing a scan
+
+Each scan panel (the live Markets scan and the TradingView development scan) shows its results in
+three views: **Long setups** (ZC LONG holds), **Risk warnings** (ZC RISK holds) and **All ranked**
+(every evaluated asset by rank; most meet no setup). A search box (ticker, instrument or requested
+symbol) and filters on recorded fields narrow them: regime, the model's own momentum bias (±0.05% of
+price is flat) and risk-profile fit. "No setups" is a full answer only for a complete cohort; an
+empty filter result says how many it hid. Next to the results each cohort shows its coverage, data
+as of, and whether the data still passes the scan's own freshness rule now: crypto's latest close
+within 48h, equities' latest final session or the one before. Past that the data is marked **Stale**.
+A scan is never called live.
+
+**Explain** opens one asset's explanation, derived only from its recorded values
+(`explainResult`): each ZC LONG and ZC RISK clause with the recorded value against the threshold,
+RSI(14), MACD histogram / price, ATR(14) / price, the factor scores and weights, and the regime with
+the first-match rule that chose it. Supports and weakens weigh each factor against the setup in
+focus: its weight × its component's distance from the threshold (78 for ZC LONG, 28 for ZC RISK).
+The three sum to the unrounded score's margin. A risk warning held by the high-volatility regime
+alone lists the regime, not factor points. Source, timeframe, model, scanner and candle-policy
+versions, last evaluated session, window and fetch time follow, then the limitations that apply:
+historical import, split-only adjustment, equities unvalidated, the 199/200-bar window, no
+liquidity filter, an incomplete scan, stale data, and what is known about a TradingView alert. A
+field the scan did not record reads "Not recorded". Nothing is generated, and no confidence is
+invented.
+
+**Compare** puts up to three assets of one cohort side by side: rank, score, regime, each setup
+condition, the three readings with their factor scores and weights, risk-profile fit, last evaluated
+session, window and fetch time. Assets from different asset classes cannot be selected together.
+
+Neither view offers an order, a size or a broker link.
 
 ## Evaluating the scanner
 

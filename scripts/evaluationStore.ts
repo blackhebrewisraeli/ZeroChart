@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile, unlink, writeFile, link } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import {
   assertSupportedEvaluationVersion,
   evaluateInput,
@@ -115,13 +116,22 @@ function safeStoragePath(root: string, relativePath: string): string {
   return absolutePath;
 }
 
-async function readExisting(path: string): Promise<string | null> {
+/**
+ * Reads a store file, or null when it does not exist. The path is canonicalized
+ * first, so a symlink inside the store cannot lead a read outside it.
+ */
+async function readExisting(root: string, path: string): Promise<string | null> {
+  let canonical: string;
   try {
-    return await readFile(path, 'utf8');
+    canonical = realpathSync(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
+  if (!canonical.startsWith(realpathSync(root) + sep)) {
+    throw new EvaluationStoreError(`Invalid storage path: ${path}`);
+  }
+  return readFile(canonical, 'utf8');
 }
 
 async function atomicCreateOrVerify(
@@ -183,7 +193,7 @@ export async function loadEvaluationRun(
 ): Promise<StoredEvaluationRun> {
   const paths = pathsFor(store, runKey, 'unused');
   await assertNoIncompleteArtifacts(paths.root);
-  const content = await readExisting(safeStoragePath(paths.root, paths.run));
+  const content = await readExisting(paths.root, safeStoragePath(paths.root, paths.run));
   if (!content) throw new EvaluationStoreError(`No saved evaluation run for ${runKey}`);
   let stored: StoredEvaluationRun;
   try {
@@ -206,7 +216,7 @@ export async function loadEvaluationRun(
     paths.root,
     pathsFor(store, runKey, stored.contract.configurationId).contract,
   );
-  const contractContent = await readExisting(contractPath);
+  const contractContent = await readExisting(paths.root, contractPath);
   let persistedContract: unknown;
   try {
     persistedContract = contractContent ? JSON.parse(contractContent) : null;

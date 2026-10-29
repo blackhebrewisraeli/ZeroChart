@@ -74,6 +74,8 @@ import {
   opportunityReportSummary,
   writeOpportunityReport,
 } from './opportunityReport';
+import { deliverOpportunityNotifications, SYNTHETIC_NOTIFICATION } from './opportunityNotification';
+import { telegramTransportFromEnv } from './telegramTransport';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
@@ -95,6 +97,8 @@ const USAGE = `Usage:
   npm run evaluate -- opportunity-campaign-status CAMPAIGN_ID [--store DIR]
   npm run evaluate -- opportunity-outcomes CAMPAIGN_ID [--store DIR] [--matured-only]
   npm run evaluate -- opportunity-report CAMPAIGN_ID [--store DIR] [--operational-only | --final] [--output FILE]
+  npm run evaluate -- opportunity-notify CAMPAIGN_ID [--store DIR]   (needs ZEROCHART_TELEGRAM_BOT_TOKEN, ZEROCHART_TELEGRAM_CHAT_ID)
+  npm run evaluate -- opportunity-notify-test                        (sends one synthetic message)
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
@@ -651,6 +655,27 @@ const commandHandlers: Record<string, CommandHandler> = {
       printJson({ status: 'REFUSED', mode: 'FINAL', phase: error.phase, reasons: error.reasons });
       process.exitCode = 1;
     }
+  },
+  // Telegram delivery: at most one message per Opportunity; unknown outcomes are never resent.
+  'opportunity-notify': async (value, args) => {
+    assertOptions('opportunity-notify', args, ['--store']);
+    const summary = await deliverOpportunityNotifications({
+      campaignId: requiredValue('opportunity-notify', value),
+      store: storePath(args, '.zerochart-campaigns'),
+      transport: telegramTransportFromEnv(),
+    });
+    printJson(summary);
+    if (summary.rejected > 0 || summary.unknown > 0) process.exitCode = 1;
+  },
+  'opportunity-notify-test': async (value, args) => {
+    assertOptions(
+      'opportunity-notify-test',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await telegramTransportFromEnv().send(SYNTHETIC_NOTIFICATION);
+    printJson({ channel: 'telegram', synthetic: true, ...result });
+    if (result.status !== 'DELIVERED') process.exitCode = 1;
   },
   'decisions-demo': async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));

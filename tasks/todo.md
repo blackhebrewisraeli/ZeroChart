@@ -327,15 +327,16 @@ evidence.
 
 **Acceptance criteria:**
 
-- [ ] The owner explicitly selects the channel before implementation begins.
-- [ ] One Opportunity ID produces at most one logical notification despite retries or lost replies.
-- [ ] Secrets and private evidence never appear in logs; transport failure cannot change campaign
+- [x] The owner explicitly selects the channel before implementation begins. (Telegram bot, 2026-10-29)
+- [x] One Opportunity ID produces at most one logical notification despite retries or lost replies.
+- [x] Secrets and private evidence never appear in logs; transport failure cannot change campaign
       output.
 
 **Verification:**
 
-- [ ] Focused adapter tests with a fake transport cover success, timeout, retry and duplicate receipt.
-- [ ] Manual delivery test uses synthetic data only.
+- [x] Focused adapter tests with a fake transport cover success, timeout, retry and duplicate receipt.
+- [ ] Manual delivery test uses synthetic data only. (Owner: set ZEROCHART_TELEGRAM_BOT_TOKEN and
+      ZEROCHART_TELEGRAM_CHAT_ID, then run `npm run evaluate -- opportunity-notify-test`.)
 
 **Dependencies:** Tasks 4 and 6; owner channel decision
 

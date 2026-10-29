@@ -430,6 +430,41 @@ describe('Opportunity Radar CLI', () => {
     });
   }
 
+  it('sends one synthetic Telegram message only with both secrets set, never printing them', async () => {
+    const token = '123456:cli-secret-token';
+    await expect(cli('opportunity-notify-test')).rejects.toThrow(
+      'ZEROCHART_TELEGRAM_BOT_TOKEN and ZEROCHART_TELEGRAM_CHAT_ID',
+    );
+    vi.stubEnv('ZEROCHART_TELEGRAM_BOT_TOKEN', token);
+    vi.stubEnv('ZEROCHART_TELEGRAM_CHAT_ID', '-100777');
+    const telegram = vi.fn<typeof fetch>(
+      async () => new Response(JSON.stringify({ ok: true, result: { message_id: 7 } })),
+    );
+    vi.stubGlobal('fetch', telegram);
+    try {
+      await expect(cli('opportunity-notify-test', '--chat', 'x')).rejects.toThrow(
+        'unknown or incomplete option --chat',
+      );
+      await cli('opportunity-notify-test');
+
+      expect(printed()).toEqual({
+        channel: 'telegram',
+        synthetic: true,
+        status: 'DELIVERED',
+        messageId: '7',
+      });
+      expect(telegram).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(telegram.mock.calls[0]![1]?.body)).text).toContain(
+        'SYNTHETIC DELIVERY TEST',
+      );
+      expect(JSON.stringify(stdout.mock.calls)).not.toContain('cli-secret-token');
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('rejects unknown options, unsafe paths, bad dates and a dirty worktree', async () => {
     await expect(cli('opportunity-campaign-run', 'c-1', '--verbose')).rejects.toThrow(
       'unknown or incomplete option --verbose',
@@ -546,8 +581,28 @@ describe('Opportunity Radar CLI', () => {
     expect(mocks.symbolCandles).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
 
+    vi.stubEnv('ZEROCHART_TELEGRAM_BOT_TOKEN', '123456:e2e-secret');
+    vi.stubEnv('ZEROCHART_TELEGRAM_CHAT_ID', '-100777');
+    const telegram = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', telegram);
+    try {
+      expect(await run('opportunity-notify', 'c-1')).toEqual({
+        delivered: 0,
+        rejected: 0,
+        unknown: 0,
+        alreadyDelivered: 0,
+        unresolved: 0,
+        expired: 0,
+        exhausted: 0,
+      });
+      expect(telegram).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+
     // Every command prints statuses, hashes and counts: no paths, tickers or prices.
-    expect(outputs).toHaveLength(8);
+    expect(outputs).toHaveLength(9);
     for (const output of outputs) {
       expect(output).not.toMatch(/USD|close|candles|zerochart-campaigns|\//);
     }

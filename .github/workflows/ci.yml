@@ -52,8 +52,8 @@ jobs:
       - name: Test
         run: npm test -- --coverage
 
-      # Skipped until the SONAR_TOKEN secret exists; Automatic Analysis in
-      # SonarQube Cloud must be off by then (sonar-project.properties).
+      # Skipped where SONAR_TOKEN is unavailable (pull requests from forks).
+      # Automatic Analysis in SonarQube Cloud must stay off (sonar-project.properties).
       - name: SonarQube Cloud scan
         if: env.HAS_SONAR_TOKEN == 'true'
         # Pinned to a commit: this third-party action receives SONAR_TOKEN.

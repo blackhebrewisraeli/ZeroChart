@@ -243,6 +243,8 @@ describe('Opportunity outcome collection', () => {
   const ELIGIBLE = TICKERS.filter((base) => base !== 'DOT' && base !== 'AVAX').map(
     (base) => `${base}-USD`,
   );
+  /** The frozen 00:30 primary slot offset: outcomes are collected from it on. */
+  const SLOT = 30 * 60_000;
   /** Linear daily drift per instrument: open(day) = 100 × (1 + rate × day). */
   const RATES: Record<string, number> = { ETHUSDT: 0.01, BTCUSDT: 0.005 };
 
@@ -343,22 +345,31 @@ describe('Opportunity outcome collection', () => {
     ...changes,
   });
 
-  it('skips an immature Opportunity without fetching or writing a placeholder', async () => {
+  it.each([
+    ['before the 5-day endpoint opens', REF + 5 * DAY - 1],
+    ['at the 5-day endpoint open, before its 00:30 slot', REF + 5 * DAY],
+    ['one millisecond before that slot', REF + 5 * DAY + SLOT - 1],
+  ])('skips an immature Opportunity %s, fetching and writing nothing', async (_label, now) => {
     const campaign = await campaignWithOpportunity();
     const { calls, fetchCandles } = provider();
 
-    await expect(collect(campaign, REF + 5 * DAY - 1, fetchCandles)).resolves.toEqual(
-      counts({ pending: 4 }),
-    );
+    await expect(collect(campaign, now, fetchCandles)).resolves.toEqual(counts({ pending: 4 }));
     expect(calls).toEqual([]);
     await expect(access(join(campaign.directory, 'outcomes'))).rejects.toThrow();
+  });
+
+  it("collects a horizon from its endpoint day's 00:30 slot", async () => {
+    const campaign = await campaignWithOpportunity();
+    await expect(collect(campaign, REF + 5 * DAY + SLOT, provider().fetchCandles)).resolves.toEqual(
+      counts({ created: 1, pending: 3 }),
+    );
   });
 
   it('measures BTC and the frozen eligible universe over identical timestamps', async () => {
     const campaign = await campaignWithOpportunity();
     const { calls, fetchCandles } = provider();
 
-    await expect(collect(campaign, REF + 10 * DAY, fetchCandles)).resolves.toEqual(
+    await expect(collect(campaign, REF + 10 * DAY + SLOT, fetchCandles)).resolves.toEqual(
       counts({ created: 2, pending: 2 }),
     );
     // Exactly the eligible members (BTC among them), each over the exact matured range.
@@ -395,17 +406,17 @@ describe('Opportunity outcome collection', () => {
 
   it('does not refetch until a horizon matures, then re-verifies earlier records unchanged', async () => {
     const campaign = await campaignWithOpportunity();
-    await collect(campaign, REF + 10 * DAY, provider().fetchCandles);
+    await collect(campaign, REF + 10 * DAY + SLOT, provider().fetchCandles);
     const before = await Promise.all([5, 10].map((days) => readFile(campaign.recordPath(days))));
 
     const idle = provider();
-    await expect(collect(campaign, REF + 12 * DAY, idle.fetchCandles)).resolves.toEqual(
+    await expect(collect(campaign, REF + 12 * DAY + SLOT, idle.fetchCandles)).resolves.toEqual(
       counts({ recorded: 2, pending: 2 }),
     );
     expect(idle.calls).toEqual([]);
 
     const later = provider();
-    await expect(collect(campaign, REF + 20 * DAY, later.fetchCandles)).resolves.toEqual(
+    await expect(collect(campaign, REF + 20 * DAY + SLOT, later.fetchCandles)).resolves.toEqual(
       counts({ created: 1, unchanged: 2, pending: 1 }),
     );
     expect(later.calls[0]).toMatchObject({ endTime: REF + 20 * DAY, limit: 21 });
@@ -416,14 +427,14 @@ describe('Opportunity outcome collection', () => {
 
   it('reports revised provider bytes as CONFLICT and writes nothing new for that slot', async () => {
     const campaign = await campaignWithOpportunity();
-    await collect(campaign, REF + 10 * DAY, provider().fetchCandles);
+    await collect(campaign, REF + 10 * DAY + SLOT, provider().fetchCandles);
     const before = await readFile(campaign.recordPath(10), 'utf8');
     const revised = provider({
       revise: (instrument, candle, day) =>
         instrument === 'ETHUSDT' && day === 3 ? { ...candle, high: candle.high + 5 } : candle,
     });
 
-    await expect(collect(campaign, REF + 20 * DAY, revised.fetchCandles)).resolves.toEqual(
+    await expect(collect(campaign, REF + 20 * DAY + SLOT, revised.fetchCandles)).resolves.toEqual(
       counts({ conflicts: 2, pending: 1 }),
     );
     expect(await readFile(campaign.recordPath(10), 'utf8')).toBe(before);
@@ -434,7 +445,7 @@ describe('Opportunity outcome collection', () => {
     const campaign = await campaignWithOpportunity();
     const { fetchCandles } = provider({ omit: { ETHUSDT: [5], SOLUSDT: [10] } });
 
-    await expect(collect(campaign, REF + 10 * DAY, fetchCandles)).resolves.toEqual(
+    await expect(collect(campaign, REF + 10 * DAY + SLOT, fetchCandles)).resolves.toEqual(
       counts({ created: 2, pending: 2 }),
     );
     const five = await campaign.record(5);
@@ -459,12 +470,12 @@ describe('Opportunity outcome collection', () => {
     const campaign = await campaignWithOpportunity();
 
     await expect(
-      collect(campaign, REF + 10 * DAY, provider({ fail: 'LINKUSDT' }).fetchCandles),
+      collect(campaign, REF + 10 * DAY + SLOT, provider({ fail: 'LINKUSDT' }).fetchCandles),
     ).resolves.toEqual(counts({ fetchFailed: 2, pending: 2 }));
     await expect(access(join(campaign.directory, 'outcomes'))).rejects.toThrow();
 
-    await expect(collect(campaign, REF + 10 * DAY, provider().fetchCandles)).resolves.toEqual(
-      counts({ created: 2, pending: 2 }),
-    );
+    await expect(
+      collect(campaign, REF + 10 * DAY + SLOT, provider().fetchCandles),
+    ).resolves.toEqual(counts({ created: 2, pending: 2 }));
   });
 });

@@ -11,6 +11,7 @@ import {
   opportunitySlotDirectory,
   readIfPresent,
   serialize,
+  timeOfDay,
   type OpportunitySlotArtifact,
 } from './opportunityCampaign';
 import {
@@ -315,6 +316,9 @@ export async function collectOpportunityOutcomes(options: {
     manifest.universe.map((member) => [member.ticker, member.instrument]),
   );
   const benchmark = runtime.marketGate.benchmark;
+  // An endpoint is collected from that day's primary slot on, never in the seconds after
+  // its 00:00 open when the provider may not have the candle yet: a MISSING is permanent.
+  const collectionOffset = timeOfDay(manifest.schedule.primarySlot, 'primary slot');
   const roundTripBps = runtime.costs.roundTripBps;
   const horizons = [
     ...new Set([
@@ -341,7 +345,9 @@ export async function collectOpportunityOutcomes(options: {
     const { opportunities } = artifact.result;
     if (opportunities.length === 0) continue;
     const referenceOpenTime = firstDailyOpenStrictlyAfter(Date.parse(entry.slot));
-    const matured = horizons.filter((days) => referenceOpenTime + days * DAY_MS <= now);
+    const matured = horizons.filter(
+      (days) => referenceOpenTime + days * DAY_MS + collectionOffset <= now,
+    );
     summary.pending += (horizons.length - matured.length) * opportunities.length;
     if (matured.length === 0) continue;
 

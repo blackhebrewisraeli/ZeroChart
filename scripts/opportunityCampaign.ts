@@ -97,7 +97,8 @@ function assertCampaignId(campaignId: string): void {
   }
 }
 
-function timeOfDay(value: string, label: string): number {
+/** Milliseconds after UTC midnight of a frozen `HH:MM:SS.mmmZ` schedule time. */
+export function timeOfDay(value: string, label: string): number {
   const match = /^(\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/.exec(value);
   if (!match) {
     throw new OpportunityCampaignError(
@@ -211,9 +212,10 @@ export async function createOrVerify(
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       await assertNotSymbolicLink(path);
       if ((await readFile(path, 'utf8')) !== content) {
+        // The code identifies the failure; the path would put private layout and tickers in logs.
         throw new OpportunityCampaignError(
           conflict,
-          `Immutable campaign evidence already exists with different content: ${path}`,
+          'Immutable campaign evidence already exists with different content.',
         );
       }
       return 'UNCHANGED';

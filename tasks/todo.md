@@ -278,12 +278,12 @@ implement the deterministic 20-day moving-block bootstrap and return `INSUFFICIE
 
 ## Checkpoint C: Research integrity
 
-- [ ] Review timestamp conventions, costs, benchmarks, concentration and bootstrap implementation.
-- [ ] Confirm no code path exposes interim performance before Task 10's gate.
-- [ ] `npm run typecheck`
-- [ ] `npm run lint`
-- [ ] `npm test`
-- [ ] `npm run build`
+- [x] Review timestamp conventions, costs, benchmarks, concentration and bootstrap implementation.
+- [x] Confirm no code path exposes interim performance before Task 10's gate.
+- [x] `npm run typecheck`
+- [x] `npm run lint`
+- [x] `npm test`
+- [x] `npm run build`
 - [ ] Owner approves the analysis refusal behavior.
 
 ## Phase 4 — Reports and unattended operation

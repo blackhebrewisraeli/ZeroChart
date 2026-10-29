@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { link, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   collectScanInputs,
+  compareTickers,
   evaluateScan,
   SCANNER_VERSION,
   type MarketScan,
@@ -32,6 +33,35 @@ export interface ScanSnapshot {
   scan: MarketScan;
 }
 
+export type ScanSnapshotDifference =
+  'INPUTS' | 'UNIVERSE' | 'ATTRIBUTION' | 'EVALUATION_TIME' | 'OUTPUTS' | 'SNAPSHOT';
+
+/** A retry targeted an immutable snapshot whose verified evidence is not equivalent. */
+export class ScanSnapshotConflictError extends Error {
+  readonly code = 'SCAN_SNAPSHOT_CONFLICT' as const;
+  readonly details: {
+    status: 'CONFLICT';
+    code: 'SCAN_SNAPSHOT_CONFLICT';
+    scanId: string;
+    path: string;
+    differences: readonly ScanSnapshotDifference[];
+  };
+
+  constructor(
+    readonly scanId: string,
+    readonly path: string,
+    readonly differences: readonly ScanSnapshotDifference[],
+  ) {
+    super(`Conflicting scan snapshot ${scanId}: ${differences.join(', ')}`);
+    this.name = 'ScanSnapshotConflictError';
+    this.details = { status: 'CONFLICT', code: this.code, scanId, path, differences };
+  }
+
+  toJSON() {
+    return this.details;
+  }
+}
+
 export const SCAN_STORE = '.zerochart-scans';
 
 function sha256(value: unknown): string {
@@ -44,6 +74,13 @@ export function universeVersion(source: string, members: readonly string[]): str
 
 function hashInputs(inputs: readonly ScanInput[]): Record<string, string> {
   return Object.fromEntries(inputs.map((input) => [input.ticker, sha256(input)]));
+}
+
+/** The JSON representation is the evidence contract; input order is not semantically relevant. */
+function normalizeInputs(inputs: readonly ScanInput[]): ScanInput[] {
+  const json = JSON.stringify(inputs);
+  if (json === undefined) throw new Error('Scan inputs are not JSON serializable');
+  return (JSON.parse(json) as ScanInput[]).sort((a, b) => compareTickers(a.ticker, b.ticker));
 }
 
 /** The assets_status tickers, read with the public key exactly as the Markets page reads them. */
@@ -117,8 +154,14 @@ export async function saveScan(options: {
   repositoryCommit: string;
   store: string;
   completedAt: number;
-}): Promise<{ path: string; snapshot: ScanSnapshot }> {
-  const { inputs, evaluationTime } = options;
+  onExisting?: 'ERROR' | 'REUSE_EQUIVALENT';
+}): Promise<{
+  path: string;
+  snapshot: ScanSnapshot;
+  snapshotStatus: 'CREATED' | 'REUSED';
+}> {
+  const evaluationTime = options.evaluationTime;
+  const inputs = normalizeInputs(options.inputs);
   const scan = evaluateScan(inputs, {
     evaluationTime,
     universeSource: options.universeSource,
@@ -139,8 +182,36 @@ export async function saveScan(options: {
   };
   const path = snapshotPath(options.store, snapshot.scanId);
   await mkdir(resolve(options.store), { recursive: true });
-  await writeFile(path, `${JSON.stringify(snapshot, null, 2)}\n`, { flag: 'wx' });
-  return { path, snapshot };
+  try {
+    await atomicCreateSnapshot(path, `${JSON.stringify(snapshot, null, 2)}\n`);
+    return { path, snapshot, snapshotStatus: 'CREATED' };
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
+      options.onExisting !== 'REUSE_EQUIVALENT'
+    ) {
+      throw error;
+    }
+    const existing = await loadVerifiedSnapshot(snapshot.scanId, options.store, path);
+    const differences = snapshotDifferences(existing, snapshot);
+    if (differences.length > 0) {
+      throw new ScanSnapshotConflictError(snapshot.scanId, path, differences);
+    }
+    return { path, snapshot: existing, snapshotStatus: 'REUSED' };
+  }
+}
+
+async function atomicCreateSnapshot(path: string, content: string): Promise<void> {
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  try {
+    await writeFile(temporary, content, { flag: 'wx' });
+    // A hard link gives us an atomic create-if-absent without exposing a partial destination.
+    await link(temporary, path);
+  } finally {
+    await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
 }
 
 export async function loadScan(scanId: string, store: string): Promise<ScanSnapshot> {
@@ -151,6 +222,164 @@ export async function loadScan(scanId: string, store: string): Promise<ScanSnaps
   return snapshot;
 }
 
+type ScanMismatchReason =
+  | 'UNSUPPORTED_VERSION'
+  | 'UNIVERSE_HASH_MISMATCH'
+  | 'INPUT_HASH_MISMATCH'
+  | 'OUTPUT_MISMATCH'
+  | 'EVALUATION_TIME_MISMATCH'
+  | 'SNAPSHOT_METADATA_MISMATCH';
+
+function snapshotMismatchReason(snapshot: ScanSnapshot): ScanMismatchReason | null {
+  if (
+    !snapshot ||
+    typeof snapshot.repositoryCommit !== 'string' ||
+    !Number.isFinite(Date.parse(snapshot.completedAt)) ||
+    !Array.isArray(snapshot.inputs) ||
+    !snapshot.inputHashes ||
+    typeof snapshot.inputHashes !== 'object' ||
+    !snapshot.scan ||
+    !Array.isArray(snapshot.scan.cohorts) ||
+    !Array.isArray(snapshot.scan.results) ||
+    !snapshot.scan.universe ||
+    typeof snapshot.scan.universe.source !== 'string' ||
+    !Array.isArray(snapshot.scan.universe.members)
+  ) {
+    return 'SNAPSHOT_METADATA_MISMATCH';
+  }
+  if (
+    snapshot.scan.scannerVersion !== SCANNER_VERSION ||
+    snapshot.scan.modelVersion !== CANONICAL_MODEL_VERSION
+  ) {
+    return 'UNSUPPORTED_VERSION';
+  }
+  const evaluationTime = snapshot.scan.evaluationTime;
+  const evaluationDate = new Date(evaluationTime);
+  if (
+    !Number.isFinite(evaluationTime) ||
+    !Number.isFinite(evaluationDate.getTime()) ||
+    snapshot.startedAt !== evaluationDate.toISOString() ||
+    snapshot.scanId !== scanIdFor(evaluationTime, snapshot.universeVersion)
+  ) {
+    return 'EVALUATION_TIME_MISMATCH';
+  }
+  const { source, members } = snapshot.scan.universe;
+  if (universeVersion(source, members) !== snapshot.universeVersion) {
+    return 'UNIVERSE_HASH_MISMATCH';
+  }
+  if (stableSerialize(hashInputs(snapshot.inputs)) !== stableSerialize(snapshot.inputHashes)) {
+    return 'INPUT_HASH_MISMATCH';
+  }
+  const recomputed = evaluateScan(snapshot.inputs, {
+    evaluationTime,
+    universeSource: source,
+    equityProvider:
+      snapshot.scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.provider ?? null,
+  });
+  return stableSerialize(recomputed) === stableSerialize(snapshot.scan) ? null : 'OUTPUT_MISMATCH';
+}
+
+function differenceForMismatch(reason: ScanMismatchReason): ScanSnapshotDifference {
+  return {
+    UNSUPPORTED_VERSION: 'ATTRIBUTION',
+    UNIVERSE_HASH_MISMATCH: 'UNIVERSE',
+    INPUT_HASH_MISMATCH: 'INPUTS',
+    OUTPUT_MISMATCH: 'OUTPUTS',
+    EVALUATION_TIME_MISMATCH: 'EVALUATION_TIME',
+    SNAPSHOT_METADATA_MISMATCH: 'SNAPSHOT',
+  }[reason] as ScanSnapshotDifference;
+}
+
+async function loadVerifiedSnapshot(
+  scanId: string,
+  store: string,
+  path: string,
+): Promise<ScanSnapshot> {
+  try {
+    const snapshot = await loadScan(scanId, store);
+    if (snapshot.scanId !== scanId) {
+      throw new ScanSnapshotConflictError(scanId, path, ['EVALUATION_TIME']);
+    }
+    const mismatch = snapshotMismatchReason(snapshot);
+    if (mismatch !== null) {
+      throw new ScanSnapshotConflictError(scanId, path, [differenceForMismatch(mismatch)]);
+    }
+    return snapshot;
+  } catch (error) {
+    if (error instanceof ScanSnapshotConflictError) throw error;
+    throw new ScanSnapshotConflictError(scanId, path, ['SNAPSHOT']);
+  }
+}
+
+function scanAttribution(scan: MarketScan): unknown {
+  return {
+    scannerVersion: scan.scannerVersion,
+    modelVersion: scan.modelVersion,
+    timeframe: scan.timeframe,
+    cohorts: scan.cohorts.map((cohort) => ({
+      assetClass: cohort.assetClass,
+      timeframe: cohort.timeframe,
+      provider: cohort.provider,
+      candlePolicyVersion: cohort.candlePolicyVersion,
+      calendar: cohort.calendar,
+      minClosedCandles: cohort.minClosedCandles,
+      freshness: cohort.freshness,
+    })),
+  };
+}
+
+function calculatedOutputs(scan: MarketScan): unknown {
+  return {
+    status: scan.status,
+    coverage: scan.coverage,
+    cohorts: scan.cohorts.map((cohort) => ({
+      assetClass: cohort.assetClass,
+      status: cohort.status,
+      coverage: cohort.coverage,
+      dataAsOf: cohort.dataAsOf,
+    })),
+    results: scan.results,
+  };
+}
+
+function snapshotDifferences(
+  existing: ScanSnapshot,
+  candidate: ScanSnapshot,
+): ScanSnapshotDifference[] {
+  const differences: ScanSnapshotDifference[] = [];
+  if (
+    stableSerialize({ inputs: normalizeInputs(existing.inputs), hashes: existing.inputHashes }) !==
+    stableSerialize({ inputs: normalizeInputs(candidate.inputs), hashes: candidate.inputHashes })
+  ) {
+    differences.push('INPUTS');
+  }
+  if (
+    stableSerialize({ version: existing.universeVersion, universe: existing.scan.universe }) !==
+    stableSerialize({ version: candidate.universeVersion, universe: candidate.scan.universe })
+  ) {
+    differences.push('UNIVERSE');
+  }
+  if (
+    stableSerialize(scanAttribution(existing.scan)) !==
+    stableSerialize(scanAttribution(candidate.scan))
+  ) {
+    differences.push('ATTRIBUTION');
+  }
+  if (
+    existing.scan.evaluationTime !== candidate.scan.evaluationTime ||
+    existing.startedAt !== candidate.startedAt
+  ) {
+    differences.push('EVALUATION_TIME');
+  }
+  if (
+    stableSerialize(calculatedOutputs(existing.scan)) !==
+    stableSerialize(calculatedOutputs(candidate.scan))
+  ) {
+    differences.push('OUTPUTS');
+  }
+  return differences;
+}
+
 /** Re-derives a stored scan from its own inputs, offline, and compares every output. */
 export async function reproduceScan(
   scanId: string,
@@ -159,7 +388,12 @@ export async function reproduceScan(
   status: 'MATCH' | 'MISMATCH';
   scanId: string;
   reason?:
-    'UNSUPPORTED_VERSION' | 'UNIVERSE_HASH_MISMATCH' | 'INPUT_HASH_MISMATCH' | 'OUTPUT_MISMATCH';
+    | 'UNSUPPORTED_VERSION'
+    | 'UNIVERSE_HASH_MISMATCH'
+    | 'INPUT_HASH_MISMATCH'
+    | 'OUTPUT_MISMATCH'
+    | 'EVALUATION_TIME_MISMATCH'
+    | 'SNAPSHOT_METADATA_MISMATCH';
 }> {
   const snapshot = await loadScan(scanId, store);
   const mismatch = (reason: NonNullable<Awaited<ReturnType<typeof reproduceScan>>['reason']>) => ({
@@ -167,28 +401,8 @@ export async function reproduceScan(
     scanId,
     reason,
   });
-  if (
-    snapshot.scan.scannerVersion !== SCANNER_VERSION ||
-    snapshot.scan.modelVersion !== CANONICAL_MODEL_VERSION
-  ) {
-    return mismatch('UNSUPPORTED_VERSION');
-  }
-  const { source, members } = snapshot.scan.universe;
-  if (universeVersion(source, members) !== snapshot.universeVersion) {
-    return mismatch('UNIVERSE_HASH_MISMATCH');
-  }
-  if (stableSerialize(hashInputs(snapshot.inputs)) !== stableSerialize(snapshot.inputHashes)) {
-    return mismatch('INPUT_HASH_MISMATCH');
-  }
-  const recomputed = evaluateScan(snapshot.inputs, {
-    evaluationTime: snapshot.scan.evaluationTime,
-    universeSource: source,
-    equityProvider:
-      snapshot.scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.provider ?? null,
-  });
-  return stableSerialize(recomputed) === stableSerialize(snapshot.scan)
-    ? { status: 'MATCH', scanId }
-    : mismatch('OUTPUT_MISMATCH');
+  const reason = snapshotMismatchReason(snapshot);
+  return reason === null ? { status: 'MATCH', scanId } : mismatch(reason);
 }
 
 /** What the CLI prints: the ranking and every unevaluated member, without the raw candles. */

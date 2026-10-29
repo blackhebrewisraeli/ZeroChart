@@ -56,6 +56,7 @@ import {
   reproduceScan,
   runScan,
   SCAN_STORE,
+  ScanSnapshotConflictError,
   scanSummary,
 } from './marketScanStore';
 import { importTradingViewScan } from './tradingViewImport';
@@ -373,13 +374,31 @@ const commandHandlers: Record<string, CommandHandler> = {
   },
   // Development only: bars the owner's agent session fetched through TradingView's MCP server.
   'tradingview-import': async (value, args) => {
-    const { path, snapshot } = await importTradingViewScan({
-      file: safeCliPath(requiredValue('tradingview-import', value), 'EXPORT'),
-      store: storePath(args, SCAN_STORE),
-      repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
-    });
-    printJson(scanSummary(path, snapshot));
-    if (snapshot.scan.status !== 'COMPLETE') process.exitCode = 1;
+    try {
+      const result = await importTradingViewScan({
+        file: safeCliPath(requiredValue('tradingview-import', value), 'EXPORT'),
+        store: storePath(args, SCAN_STORE),
+        repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
+      });
+      printJson({
+        ...scanSummary(result.path, result.snapshot),
+        importStatus: result.status,
+        snapshotStatus: result.snapshotStatus,
+        viewStatus: result.viewStatus,
+        viewPath: result.viewPath,
+      });
+      if (result.snapshot.scan.status !== 'COMPLETE') process.exitCode = 1;
+    } catch (error) {
+      if (!(error instanceof ScanSnapshotConflictError)) throw error;
+      printJson({
+        importStatus: 'CONFLICT',
+        code: error.code,
+        scanId: error.scanId,
+        path: error.path,
+        differences: error.differences,
+      });
+      process.exitCode = 1;
+    }
   },
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>

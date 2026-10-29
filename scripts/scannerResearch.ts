@@ -199,6 +199,95 @@ export const RESEARCH_SPECIFICATION_ID = createHash('sha256')
   .update(stableSerialize(RESEARCH_SPECIFICATION))
   .digest('hex');
 
+/**
+ * v2 re-asks v1's comparisons against a volatility-matched baseline. It was
+ * specified after v1's results were seen, so it tests one explanation of them
+ * on the same data rather than confirming them. Every v1 convention not
+ * restated here is copied unchanged. Frozen; not yet implemented or run.
+ */
+export const RESEARCH_SPECIFICATION_V2 = {
+  ...RESEARCH_SPECIFICATION,
+  schemaVersion: '2',
+  studyId: 'zerochart-scanner-retrospective-us-equity-v2-volatility',
+  basedOn: { studyId: RESEARCH_SPECIFICATION.studyId, specificationId: RESEARCH_SPECIFICATION_ID },
+  frozenAt: '2026-10-29T13:54:00.000Z',
+  frozenBefore:
+    "Specified after v1's results were seen; fixed before any volatility-stratified figure was computed from the export.",
+  interpretation:
+    "Retrospective historical research on the same export as v1. It tests whether v1's rank, setup and warning differences remain against members of similar volatility; a match or a mismatch explains v1 on this data and is not independent confirmation, prospective evidence, a backtest or a trading result.",
+  volatility: {
+    measure:
+      "ATR(14) / close of the scored window's last bar: the canonical model's own volatilityPercent input on the evaluation date, so no later bar is used",
+    terciles:
+      'On each evaluation date, within each population: order the EVALUATED members by the measure ascending, ties by ticker in code-unit order; tercile t = ceil(3 x position / members ordered). Tercile 1 is the quietest',
+    whyTerciles:
+      'Fixed in advance, not tuned: three groups leave about 16 of 50 members (about 12 of 38 stocks) per tercile and date; finer cells would be too thin',
+  },
+  populations: {
+    all: 'Every universe member, as in v1',
+    stocks:
+      'The 38 stocks only: terciles, ranks and baselines computed among stocks alone, because v1 showed its rank pattern among stocks',
+    excluded: 'ETFs alone: 12 members leave four per tercile, too few for a same-date tercile mean',
+  },
+  signals: {
+    ...RESEARCH_SPECIFICATION.signals,
+    rankGroups:
+      "The scanner's order restricted to the population's EVALUATED members (rank among stocks, for stocks): top5: ranks 1-5; top10: ranks 1-10; rank quintile q = ceil(5 x rank / members ranked that date)",
+  },
+  comparisons: {
+    volatilityMatchedBaseline:
+      "Per observation: the mean change of the population's EVALUATED members in the same volatility tercile with an AVAILABLE outcome for that date and horizon, the asset included",
+    volatilityTercileBaseline:
+      "Volatility-tercile rows compare against the same-date population mean, as v1's groups did, to show how volatility alone was associated with the change",
+    benchmarkDifference: "Per observation: the asset's change minus SPY's over the same sessions",
+    composition:
+      'For each v1 group: the share of its observations in volatility terciles 1, 2 and 3',
+    groupsAgainstPopulation: [
+      'volatility-tercile-1',
+      'volatility-tercile-2',
+      'volatility-tercile-3',
+    ],
+    groupsAgainstVolatilityMatched: [
+      'universe',
+      'long-setup',
+      'long-setup-transition',
+      'risk-warning',
+      'risk-warning-transition',
+      'top5',
+      'top10',
+      'rank-quintile-1',
+      'rank-quintile-2',
+      'rank-quintile-3',
+      'rank-quintile-4',
+      'rank-quintile-5',
+    ],
+    notRepeated: "v1's same-date universe rows and SPY row: unchanged inputs give v1's figures",
+    statistics: [
+      'observations',
+      'distinctAssets',
+      'distinctDates',
+      'mean',
+      'median',
+      'positiveFraction',
+      'baselineMean',
+      'meanDifferenceVsBaseline',
+      'medianDifferenceVsBaseline',
+      'fractionAboveBaseline',
+      'meanDifferenceVsBenchmark',
+    ],
+    breakdowns: ['population', 'asset', 'calendar year of the evaluation date'],
+  },
+  missingData: {
+    ...RESEARCH_SPECIFICATION.missingData,
+    baseline:
+      'An observation whose same-date tercile has no AVAILABLE outcome has no baseline; it is excluded and counted',
+  },
+} as const;
+
+export const RESEARCH_SPECIFICATION_V2_ID = createHash('sha256')
+  .update(stableSerialize(RESEARCH_SPECIFICATION_V2))
+  .digest('hex');
+
 export type InstrumentType = 'stock' | 'etf';
 
 /** One universe member as the study sees it: its final bars, or why the export has none. */

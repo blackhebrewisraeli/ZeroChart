@@ -20,6 +20,8 @@ import {
   replayDate,
   RESEARCH_SPECIFICATION,
   RESEARCH_SPECIFICATION_ID,
+  RESEARCH_SPECIFICATION_V2,
+  RESEARCH_SPECIFICATION_V2_ID,
   researchSummary,
   runScannerResearch,
   runStudy,
@@ -131,6 +133,26 @@ describe('retrospective scanner study specification', () => {
     expect(RESEARCH_SPECIFICATION_ID).toBe(
       'ab0d42aa14413cd2f05a2b29a516c85502aa0ff410652375a8390eb0860bebdf',
     );
+  });
+
+  it('freezes v2 on top of v1 without moving v1', async () => {
+    const documented = JSON.parse(
+      await readFile('docs/scanner-research.v2.json', 'utf8'),
+    ) as unknown;
+    expect(stableSerialize(documented)).toBe(stableSerialize(RESEARCH_SPECIFICATION_V2));
+    expect(RESEARCH_SPECIFICATION_V2_ID).toBe(
+      '117f36fd7b240c6238c67dcc5179b470fc175345a461ab498dd6bf2226f2ba83',
+    );
+    expect(RESEARCH_SPECIFICATION_V2.basedOn.specificationId).toBe(RESEARCH_SPECIFICATION_ID);
+    // Same data, dates, scanner, horizons and prices as v1.
+    for (const key of [
+      'data',
+      'universe',
+      'evaluationDates',
+      'scanner',
+      'horizonsSessions',
+    ] as const)
+      expect(RESEARCH_SPECIFICATION_V2[key]).toEqual(RESEARCH_SPECIFICATION[key]);
   });
 });
 

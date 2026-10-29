@@ -108,3 +108,25 @@ confirmation first.
 Whether trading on the scanner would have been profitable after costs; whether a difference is more
 than chance; whether it would recur on future data, other instruments or other periods; or whether
 point-in-time data would have given the same scores.
+
+## v2: a volatility-matched baseline (frozen, not run)
+
+v1 found that higher ranks were followed by smaller changes than the same-date universe, and risk
+warnings by larger ones. The model rewards quiet regimes and flags high-volatility ones, so that may
+be volatility rather than information. [`scanner-research.v2.json`](scanner-research.v2.json)
+(ID `117f36fd7b240c6238c67dcc5179b470fc175345a461ab498dd6bf2226f2ba83`) fixes how to test that
+before any volatility-stratified figure exists:
+
+- Same export, universe, dates, scanner replay, horizons, prices and missing-data rules as v1,
+  copied unchanged; it names v1's ID as its basis.
+- Volatility is the model's own ATR(14) / close on the evaluation date. Each date, each
+  population's evaluated members are split into terciles by it (ties by ticker).
+- v1's groups (universe, long setups and transitions, risk warnings and transitions, top 5, top 10,
+  rank quintiles) are compared with the same-date mean of their own volatility tercile; the three
+  terciles themselves are compared with the same-date population mean; each group's spread across
+  terciles is reported.
+- Two populations: all 50 members, and the 38 stocks with terciles, ranks and baselines among
+  stocks alone. ETFs alone are too few for terciles.
+
+It was specified after v1's results were seen and uses the same data, so it can explain them, not
+confirm them. It is not implemented or run yet.

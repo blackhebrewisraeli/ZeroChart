@@ -242,7 +242,8 @@ export function regimeRule(inputs: FactorInputs, regime: MarketRegime): string {
   const rsi = `RSI ${inputs.rsi.toFixed(1)}`;
   const calm = `${atr} < ${hv}; ${momentum} < ${trending}`;
   if (regime === 'MEAN_REVERTING') {
-    return `${calm}; ${rsi} ${inputs.rsi <= RSI_OVERSOLD ? `≤ ${RSI_OVERSOLD}` : `≥ ${RSI_OVERBOUGHT}`}`;
+    const extreme = inputs.rsi <= RSI_OVERSOLD ? `≤ ${RSI_OVERSOLD}` : `≥ ${RSI_OVERBOUGHT}`;
+    return `${calm}; ${rsi} ${extreme}`;
   }
   return `${calm}; ${rsi} between ${RSI_OVERSOLD} and ${RSI_OVERBOUGHT}`;
 }
@@ -250,6 +251,21 @@ export function regimeRule(inputs: FactorInputs, regime: MarketRegime): string {
 function signedPoints(points: number): string {
   const value = Number(points.toFixed(1)) || 0;
   return `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(1)} pts`;
+}
+
+/** Each factor's weighed line, sorted by sign: positive supports the focus setup, negative weakens it. */
+function weighFactors(
+  factors: readonly FactorLine[],
+  threshold: number,
+): { supports: string[]; weakens: string[] } {
+  const lines = factors.map((factor) => ({
+    points: factor.points,
+    text: `${factor.label}: ${factor.reading} scores ${Math.round(factor.score)}, ${signedPoints(factor.points)} vs ${threshold}`,
+  }));
+  return {
+    supports: lines.filter((line) => line.points > 0).map((line) => line.text),
+    weakens: lines.filter((line) => line.points < 0).map((line) => line.text),
+  };
 }
 
 /**
@@ -316,16 +332,10 @@ export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanE
   });
   const margin = factors.reduce((sum, factor) => sum + factor.points, 0);
 
-  const supports: string[] = [];
-  const weakens: string[] = [];
   const scoreDecides = focus === 'long' || score <= RISK_SETUP_MAX_SCORE;
-  if (scoreDecides) {
-    for (const factor of factors) {
-      const line = `${factor.label}: ${factor.reading} scores ${Math.round(factor.score)}, ${signedPoints(factor.points)} vs ${threshold}`;
-      if (factor.points > 0) supports.push(line);
-      else if (factor.points < 0) weakens.push(line);
-    }
-  }
+  const { supports, weakens } = scoreDecides
+    ? weighFactors(factors, threshold)
+    : { supports: [] as string[], weakens: [] as string[] };
   if (focus === 'long') {
     const gate = `MACD momentum ${percent(inputs.momentumPercent)} of price`;
     if (long.clauses[1]?.met) supports.push(`${gate} clears the ${percent(FLAT_MOMENTUM)} gate`);

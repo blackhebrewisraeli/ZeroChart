@@ -34,6 +34,7 @@ import {
   type ScanFilters,
   type ScanView,
   type SetupCheck,
+  type SetupClause,
 } from '@/lib/scanReview';
 import type { TradingViewDevSource } from '@/lib/tradingViewDevScan';
 import { closeOnBackdrop, cn } from '@/lib/utils';
@@ -204,20 +205,28 @@ function ResultRow({
             disabled={compareDisabled !== null}
             onChange={() => onCompare(result.ticker)}
           />
-          Compare
+          <span>Compare</span>
         </label>
       </div>
     </li>
   );
 }
 
+function clauseValue(clause: SetupClause): string {
+  return `${clause.label} ${clause.actual}`;
+}
+
+function clauseShortfall(clause: SetupClause): string {
+  return `${clauseValue(clause)}, needs ${clause.rule}`;
+}
+
 function setupCell(check: SetupCheck): string {
   if (check.holds) {
     const met = check.clauses.filter((clause) => clause.met);
-    return `Holds: ${met.map((clause) => `${clause.label} ${clause.actual}`).join(', ')}`;
+    return `Holds: ${met.map(clauseValue).join(', ')}`;
   }
   const unmet = check.clauses.filter((clause) => !clause.met);
-  return `Not met: ${unmet.map((clause) => `${clause.label} ${clause.actual}, needs ${clause.rule}`).join('; ')}`;
+  return `Not met: ${unmet.map(clauseShortfall).join('; ')}`;
 }
 
 function fetchedLabel(result: ScanAssetResult, scan: MarketScan): string {
@@ -294,10 +303,10 @@ function Comparison({
           Select up to {MAX_COMPARE - rows.length} more {label.toLowerCase()} to compare.
         </p>
       ) : (
-        <div // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
+        <div
           className="scan-compare-scroll"
           role="region"
-          tabIndex={0}
+          tabIndex={0} // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
           aria-label="Comparison table, scrolls sideways on narrow screens"
         >
           <table className="scan-compare-table">

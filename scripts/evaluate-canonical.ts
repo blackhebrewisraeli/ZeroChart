@@ -67,6 +67,7 @@ import {
   reproduceOpportunitySlot,
   runOpportunitySlot,
 } from './opportunityCampaign';
+import { collectOpportunityOutcomes } from './opportunityOutcomes';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
@@ -86,6 +87,7 @@ const USAGE = `Usage:
   npm run evaluate -- opportunity-campaign-run CAMPAIGN_ID [--store DIR]
   npm run evaluate -- opportunity-campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
   npm run evaluate -- opportunity-campaign-status CAMPAIGN_ID [--store DIR]
+  npm run evaluate -- opportunity-outcomes CAMPAIGN_ID [--store DIR] [--matured-only]
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
@@ -601,6 +603,16 @@ const commandHandlers: Record<string, CommandHandler> = {
         store: storePath(args, '.zerochart-campaigns'),
       }),
     );
+  },
+  // Only matured horizons are ever collected; --matured-only is the frozen command's explicit form.
+  'opportunity-outcomes': async (value, args) => {
+    assertOptions('opportunity-outcomes', args, ['--store'], ['--matured-only']);
+    const summary = await collectOpportunityOutcomes({
+      campaignId: requiredValue('opportunity-outcomes', value),
+      store: storePath(args, '.zerochart-campaigns'),
+    });
+    printJson(summary);
+    if (summary.conflicts > 0 || summary.fetchFailed > 0) process.exitCode = 1;
   },
   'decisions-demo': async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));

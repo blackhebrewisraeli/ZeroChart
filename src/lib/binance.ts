@@ -100,19 +100,22 @@ async function fetchRawKlines(ticker: string, interval: string, limit: number): 
   return requestKlines(symbol, interval, limit);
 }
 
-/** Raw klines for an exact Binance symbol; `endTime` caps the newest candle's open time. */
+/** Raw klines for an exact Binance symbol, optionally bounded by candle open times. */
 async function requestKlines(
   symbol: string,
   interval: string,
   limit: number,
-  endTime?: number,
+  range: { startTime?: number; endTime?: number } = {},
 ): Promise<unknown> {
   const url =
     'https://api.binance.com/api/v3/klines' +
     `?symbol=${encodeURIComponent(symbol)}` +
     `&interval=${encodeURIComponent(interval)}` +
     `&limit=${encodeURIComponent(String(limit))}` +
-    (endTime === undefined ? '' : `&endTime=${encodeURIComponent(String(endTime))}`);
+    (range.startTime === undefined
+      ? ''
+      : `&startTime=${encodeURIComponent(String(range.startTime))}`) +
+    (range.endTime === undefined ? '' : `&endTime=${encodeURIComponent(String(range.endTime))}`);
   const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
   if (response.status === 429 || response.status === 418) {
     const seconds = Number(response.headers.get('Retry-After'));
@@ -154,12 +157,11 @@ export async function fetchHistoricalCandles(
   return parseCandles(await fetchRawKlines(ticker, interval, limit));
 }
 
-/** OHLC candles for an exact Binance symbol, none opening after `endTime` when it is given. */
+/** OHLC candles for an exact Binance symbol, opening within [startTime, endTime] when given. */
 export async function fetchSymbolCandles(
   symbol: string,
-  options: { interval: string; limit: number; endTime?: number },
+  options: { interval: string; limit: number; startTime?: number; endTime?: number },
 ): Promise<Candle[]> {
-  return parseCandles(
-    await requestKlines(symbol, options.interval, options.limit, options.endTime),
-  );
+  const { interval, limit, ...range } = options;
+  return parseCandles(await requestKlines(symbol, interval, limit, range));
 }

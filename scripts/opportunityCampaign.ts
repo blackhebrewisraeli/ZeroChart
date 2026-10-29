@@ -196,16 +196,17 @@ async function assertNotSymbolicLink(path: string): Promise<void> {
 }
 
 /** Exclusive create; an existing file is accepted only when byte-identical. */
-async function createOrVerify(
+export async function createOrVerify(
   path: string,
   content: string,
   conflict: 'MANIFEST_CONFLICT' | 'EVIDENCE_CONFLICT',
-): Promise<void> {
+): Promise<'CREATED' | 'UNCHANGED'> {
   const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
   try {
     await writeFile(temporary, content, { flag: 'wx', mode: 0o600 });
     try {
       await link(temporary, path);
+      return 'CREATED';
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       await assertNotSymbolicLink(path);
@@ -215,6 +216,7 @@ async function createOrVerify(
           `Immutable campaign evidence already exists with different content: ${path}`,
         );
       }
+      return 'UNCHANGED';
     }
   } finally {
     await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
@@ -223,7 +225,7 @@ async function createOrVerify(
   }
 }
 
-function serialize(value: unknown): string {
+export function serialize(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
@@ -411,7 +413,7 @@ export function opportunitySlotDirectory(campaignDirectory: string, slot: string
   return resolve(campaignDirectory, 'slots', slot.replaceAll(':', '-'));
 }
 
-async function readIfPresent(path: string): Promise<string | null> {
+export async function readIfPresent(path: string): Promise<string | null> {
   try {
     await assertNotSymbolicLink(path);
     return await readFile(path, 'utf8');

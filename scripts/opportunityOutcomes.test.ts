@@ -1,7 +1,19 @@
 // @vitest-environment node
 
+import { createHash } from 'node:crypto';
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { measureOpportunityOutcome, type OpportunityOutcome } from './opportunityOutcomes';
+import type { Candle } from '@/lib/binance';
+import { initializeOpportunityCampaign, opportunitySlotDirectory } from './opportunityCampaign';
+import {
+  collectOpportunityOutcomes,
+  measureOpportunityOutcome,
+  type FetchOutcomeCandles,
+  type OpportunityOutcome,
+  type OpportunityOutcomeRecord,
+} from './opportunityOutcomes';
 import type { ResearchCandle } from './outcomeMeasurement';
 
 const DAY = 86_400_000;
@@ -209,5 +221,250 @@ describe('Opportunity outcome measurement', () => {
       [20, at(7)],
       [30, at(7)],
     ]);
+  });
+});
+
+describe('Opportunity outcome collection', () => {
+  const SPECIFICATION_ID = '0eddcc4f81ba47d74168392bb50af64050d3a9db2ab56da914c3814087d64483';
+  const TICKERS = [
+    'ADA',
+    'AVAX',
+    'BCH',
+    'BNB',
+    'BTC',
+    'DOGE',
+    'DOT',
+    'ETH',
+    'LINK',
+    'LTC',
+    'SOL',
+    'XRP',
+  ];
+  const ELIGIBLE = TICKERS.filter((base) => base !== 'DOT' && base !== 'AVAX').map(
+    (base) => `${base}-USD`,
+  );
+  /** Linear daily drift per instrument: open(day) = 100 × (1 + rate × day). */
+  const RATES: Record<string, number> = { ETHUSDT: 0.01, BTCUSDT: 0.005 };
+
+  /** Synthetic Binance honoring [startTime, endTime] and limit; `omit` drops exact days. */
+  function provider(
+    options: {
+      omit?: Record<string, number[]>;
+      revise?: (instrument: string, candle: Candle, day: number) => Candle;
+      fail?: string;
+    } = {},
+  ) {
+    const calls: Array<{ instrument: string; startTime: number; endTime: number; limit: number }> =
+      [];
+    const fetchCandles: FetchOutcomeCandles = async (instrument, range) => {
+      calls.push({ instrument, ...range });
+      if (instrument === options.fail) throw new Error('Binance klines request failed');
+      const open = (day: number) => 100 * (1 + (RATES[instrument] ?? 0) * day);
+      const candles: Candle[] = [];
+      for (let time = range.startTime; time <= range.endTime; time += DAY) {
+        const day = (time - REF) / DAY;
+        if (options.omit?.[instrument]?.includes(day)) continue;
+        const [o, c] = [open(day), open(day + 1)];
+        const candle = {
+          timestamp: time,
+          closeTime: time + DAY - 1,
+          open: o,
+          high: Math.max(o, c) + 1,
+          low: Math.min(o, c) - 1,
+          close: c,
+        };
+        candles.push(options.revise?.(instrument, candle, day) ?? candle);
+      }
+      return candles.slice(0, range.limit);
+    };
+    return { calls, fetchCandles };
+  }
+
+  /** A campaign whose first slot (observedAt = OBSERVED) emitted one ETH Opportunity. */
+  async function campaignWithOpportunity() {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-outcomes-'));
+    const campaignId = 'outcomes';
+    await initializeOpportunityCampaign({
+      campaignId,
+      store,
+      startSlot: OBSERVED,
+      endSlot: OBSERVED + 179 * DAY,
+      implementationCommit: 'a'.repeat(40),
+      now: OBSERVED - 12 * 60 * 60_000,
+    });
+    const directory = join(store, 'campaigns', campaignId);
+    const slotDirectory = opportunitySlotDirectory(directory, new Date(OBSERVED).toISOString());
+    const assets = TICKERS.map((base) => ({
+      ticker: `${base}-USD`,
+      reasons:
+        base === 'ETH'
+          ? []
+          : base === 'DOT'
+            ? ['SCANNER_NOT_EVALUATED']
+            : base === 'AVAX'
+              ? ['INSUFFICIENT_HISTORY']
+              : ['SCORE_BELOW_MINIMUM'],
+    }));
+    await mkdir(slotDirectory, { recursive: true });
+    const slotBytes = JSON.stringify({ result: { assets, opportunities: [OPPORTUNITY] } });
+    await writeFile(join(slotDirectory, 'slot.json'), slotBytes);
+    const recordPath = (days: number) =>
+      join(
+        directory,
+        'outcomes',
+        SPECIFICATION_ID,
+        new Date(OBSERVED).toISOString().replaceAll(':', '-'),
+        `ETH-USD-${days}d.json`,
+      );
+    const record = async (days: number) =>
+      JSON.parse(await readFile(recordPath(days), 'utf8')) as OpportunityOutcomeRecord;
+    return { store, campaignId, directory, slotBytes, recordPath, record };
+  }
+
+  const collect = (
+    campaign: { store: string; campaignId: string },
+    now: number,
+    fetchCandles: FetchOutcomeCandles,
+  ) =>
+    collectOpportunityOutcomes({
+      campaignId: campaign.campaignId,
+      store: campaign.store,
+      fetchCandles,
+      now: () => now,
+    });
+
+  const counts = (changes: Partial<Record<string, number>> = {}) => ({
+    created: 0,
+    unchanged: 0,
+    recorded: 0,
+    conflicts: 0,
+    pending: 0,
+    fetchFailed: 0,
+    ...changes,
+  });
+
+  it('skips an immature Opportunity without fetching or writing a placeholder', async () => {
+    const campaign = await campaignWithOpportunity();
+    const { calls, fetchCandles } = provider();
+
+    await expect(collect(campaign, REF + 5 * DAY - 1, fetchCandles)).resolves.toEqual(
+      counts({ pending: 4 }),
+    );
+    expect(calls).toEqual([]);
+    await expect(access(join(campaign.directory, 'outcomes'))).rejects.toThrow();
+  });
+
+  it('measures BTC and the frozen eligible universe over identical timestamps', async () => {
+    const campaign = await campaignWithOpportunity();
+    const { calls, fetchCandles } = provider();
+
+    await expect(collect(campaign, REF + 10 * DAY, fetchCandles)).resolves.toEqual(
+      counts({ created: 2, pending: 2 }),
+    );
+    // Exactly the eligible members (BTC among them), each over the exact matured range.
+    expect(calls).toEqual(
+      ['ADA', 'BCH', 'BNB', 'BTC', 'DOGE', 'ETH', 'LINK', 'LTC', 'SOL', 'XRP'].map((base) => ({
+        instrument: `${base}USDT`,
+        startTime: REF,
+        endTime: REF + 10 * DAY,
+        limit: 11,
+      })),
+    );
+
+    const record = await campaign.record(10);
+    expect(record).toMatchObject({
+      opportunityId: OPPORTUNITY.id,
+      horizonDays: 10,
+      primary: false,
+      referenceOpenTime: at(0),
+      roundTripBps: 30,
+      slotSha256: createHash('sha256').update(campaign.slotBytes).digest('hex'),
+      outcome: { status: 'AVAILABLE', endpointOpenTime: at(10) },
+      btc: { status: 'AVAILABLE', endpointOpenTime: at(10), referencePrice: 100 },
+      equalWeight: { members: ELIGIBLE, available: 10 },
+    });
+    expect(record.outcome.netChangePct).toBeCloseTo(9.7, 10);
+    expect(record.btc.grossChangePct).toBeCloseTo(5, 10);
+    expect(record.equalWeight.meanGrossChangePct).toBeCloseTo(1.5, 10);
+    expect(record.equalWeight.meanNetChangePct).toBeCloseTo(1.2, 10);
+    expect(record.candles['ETH-USD']!.map((candle) => candle.openTime)).toEqual(
+      Array.from({ length: 11 }, (_, day) => REF + day * DAY),
+    );
+    expect((await campaign.record(5)).equalWeight.meanGrossChangePct).toBeCloseTo(0.75, 10);
+  });
+
+  it('does not refetch until a horizon matures, then re-verifies earlier records unchanged', async () => {
+    const campaign = await campaignWithOpportunity();
+    await collect(campaign, REF + 10 * DAY, provider().fetchCandles);
+    const before = await Promise.all([5, 10].map((days) => readFile(campaign.recordPath(days))));
+
+    const idle = provider();
+    await expect(collect(campaign, REF + 12 * DAY, idle.fetchCandles)).resolves.toEqual(
+      counts({ recorded: 2, pending: 2 }),
+    );
+    expect(idle.calls).toEqual([]);
+
+    const later = provider();
+    await expect(collect(campaign, REF + 20 * DAY, later.fetchCandles)).resolves.toEqual(
+      counts({ created: 1, unchanged: 2, pending: 1 }),
+    );
+    expect(later.calls[0]).toMatchObject({ endTime: REF + 20 * DAY, limit: 21 });
+    expect(await Promise.all([5, 10].map((days) => readFile(campaign.recordPath(days))))).toEqual(
+      before,
+    );
+  });
+
+  it('reports revised provider bytes as CONFLICT and writes nothing new for that slot', async () => {
+    const campaign = await campaignWithOpportunity();
+    await collect(campaign, REF + 10 * DAY, provider().fetchCandles);
+    const before = await readFile(campaign.recordPath(10), 'utf8');
+    const revised = provider({
+      revise: (instrument, candle, day) =>
+        instrument === 'ETHUSDT' && day === 3 ? { ...candle, high: candle.high + 5 } : candle,
+    });
+
+    await expect(collect(campaign, REF + 20 * DAY, revised.fetchCandles)).resolves.toEqual(
+      counts({ conflicts: 2, pending: 1 }),
+    );
+    expect(await readFile(campaign.recordPath(10), 'utf8')).toBe(before);
+    await expect(access(campaign.recordPath(20))).rejects.toThrow();
+  });
+
+  it('records matured missing data explicitly and averages only available members', async () => {
+    const campaign = await campaignWithOpportunity();
+    const { fetchCandles } = provider({ omit: { ETHUSDT: [5], SOLUSDT: [10] } });
+
+    await expect(collect(campaign, REF + 10 * DAY, fetchCandles)).resolves.toEqual(
+      counts({ created: 2, pending: 2 }),
+    );
+    const five = await campaign.record(5);
+    expect(five.outcome).toMatchObject({
+      status: 'MISSING',
+      detail: `${at(5)}: no candle; none substituted`,
+      netChangePct: null,
+    });
+    expect(five.equalWeight.available).toBe(9);
+    expect(five.equalWeight.outcomes['ETH-USD']).toEqual({
+      status: 'MISSING',
+      grossChangePct: null,
+      netChangePct: null,
+    });
+    const ten = await campaign.record(10);
+    expect(ten.btc.status).toBe('AVAILABLE');
+    expect(ten.equalWeight.available).toBe(8);
+    expect(ten.equalWeight.meanGrossChangePct).toBeCloseTo(5 / 8, 10);
+  });
+
+  it('records nothing when a fetch fails, so the next run can still collect', async () => {
+    const campaign = await campaignWithOpportunity();
+
+    await expect(
+      collect(campaign, REF + 10 * DAY, provider({ fail: 'LINKUSDT' }).fetchCandles),
+    ).resolves.toEqual(counts({ fetchFailed: 2, pending: 2 }));
+    await expect(access(join(campaign.directory, 'outcomes'))).rejects.toThrow();
+
+    await expect(collect(campaign, REF + 10 * DAY, provider().fetchCandles)).resolves.toEqual(
+      counts({ created: 2, pending: 2 }),
+    );
   });
 });

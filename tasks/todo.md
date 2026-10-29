@@ -228,15 +228,16 @@ Opportunity specification ID.
 
 **Acceptance criteria:**
 
-- [ ] Immature Opportunities are skipped without placeholder conclusions; matured missing data is
+- [x] Immature Opportunities are skipped without placeholder conclusions; matured missing data is
       recorded explicitly.
-- [ ] BTC and equal-weight baselines use identical timestamps and frozen eligibility membership.
-- [ ] Identical reruns are unchanged; revised/conflicting provider bytes produce `CONFLICT`.
+- [x] BTC and equal-weight baselines use identical timestamps and frozen eligibility membership.
+- [x] Identical reruns are unchanged; revised/conflicting provider bytes produce `CONFLICT`.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityOutcomes.test.ts`
-- [ ] Network-injected fixtures cover pagination/range bounds, partial benchmarks and conflicts.
+- [x] `npm test -- scripts/opportunityOutcomes.test.ts`
+- [x] Network-injected fixtures cover pagination/range bounds, partial benchmarks and conflicts.
+      (One bounded request per instrument: the longest window is 31 candles, so no pagination.)
 
 **Dependencies:** Tasks 4 and 7
 

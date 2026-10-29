@@ -530,8 +530,24 @@ describe('Opportunity Radar CLI', () => {
     });
     expect(process.exitCode).toBeUndefined();
 
+    await expect(cli('opportunity-outcomes', 'c-1', '--all')).rejects.toThrow(
+      'unknown or incomplete option --all',
+    );
+    // The synthetic slot emitted no Opportunity, so nothing matures or is fetched.
+    mocks.symbolCandles.mockClear();
+    expect(await run('opportunity-outcomes', 'c-1', '--matured-only')).toEqual({
+      created: 0,
+      unchanged: 0,
+      recorded: 0,
+      conflicts: 0,
+      pending: 0,
+      fetchFailed: 0,
+    });
+    expect(mocks.symbolCandles).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+
     // Every command prints statuses, hashes and counts: no paths, tickers or prices.
-    expect(outputs).toHaveLength(7);
+    expect(outputs).toHaveLength(8);
     for (const output of outputs) {
       expect(output).not.toMatch(/USD|close|candles|zerochart-campaigns|\//);
     }

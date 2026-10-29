@@ -221,7 +221,7 @@ describe('no future-bar leakage', () => {
         exportOf((_, k) => pathBars(SESSIONS.slice(0, cut), pathOf(k)), SESSIONS[cut - 1]),
         'fixture',
       );
-      expect(early.replay.length).toBe(full.replay.length - 5);
+      expect(early.replay).toHaveLength(full.replay.length - 5);
       expect(early.replay).toEqual(full.replay.slice(0, early.replay.length));
     },
     STUDY_TIMEOUT,

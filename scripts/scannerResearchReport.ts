@@ -43,7 +43,10 @@ const CANNOT_ESTABLISH = [
   'Whether point-in-time provider data would have produced the same scores.',
 ];
 
-function esc(value: unknown): string {
+/** What a report cell holds; null renders as a dash. */
+type Cell = string | number | null;
+
+function esc(value: Cell): string {
   return String(value ?? '—')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -64,10 +67,14 @@ const pp = (value: number | null) => signed(value, 2, ' pp');
 const share = (value: number | null) =>
   value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(1)}%`;
 
-function table(headers: readonly string[], rows: readonly (readonly unknown[])[]): string {
-  const head = headers.map((header) => `<th>${esc(header)}</th>`).join('');
+function wrap(tag: string, content: string): string {
+  return `<${tag}>${content}</${tag}>`;
+}
+
+function table(headers: readonly string[], rows: readonly (readonly Cell[])[]): string {
+  const head = headers.map((header) => wrap('th', esc(header))).join('');
   const body = rows
-    .map((row) => `<tr>${row.map((cell) => `<td>${esc(cell)}</td>`).join('')}</tr>`)
+    .map((row) => wrap('tr', row.map((cell) => wrap('td', esc(cell))).join('')))
     .join('');
   return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
@@ -86,7 +93,7 @@ const STAT_HEADERS = [
   'Mean Δ vs SPY',
 ];
 
-function statCells(stats: GroupStats): unknown[] {
+function statCells(stats: GroupStats): Cell[] {
   return [
     stats.observations,
     stats.distinctAssets,
@@ -102,7 +109,7 @@ function statCells(stats: GroupStats): unknown[] {
   ];
 }
 
-function definitionList(entries: readonly (readonly [string, unknown])[]): string {
+function definitionList(entries: readonly (readonly [string, Cell])[]): string {
   return `<dl class="meta">${entries
     .map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`)
     .join('')}</dl>`;
@@ -203,7 +210,7 @@ function horizonSection(horizon: HorizonResults): string {
   );
   const years = [
     ...new Set(Object.values(horizon.byYear).flatMap((rows) => Object.keys(rows))),
-  ].sort();
+  ].sort((a, b) => a.localeCompare(b));
   const byYear = table(
     ['Group', ...years.map((year) => `${year}: n · mean · Δ vs universe`)],
     ids.map((id) => [
@@ -240,7 +247,7 @@ export function renderScannerResearchReport(
   meta: { generatedAt: string; repositoryCommit: string; resultHash: string },
 ): string {
   const list = (items: readonly string[]) =>
-    `<ul>${items.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>`;
+    wrap('ul', items.map((item) => wrap('li', esc(item))).join(''));
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">

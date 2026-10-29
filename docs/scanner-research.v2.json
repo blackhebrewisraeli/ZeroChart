@@ -1,0 +1,186 @@
+{
+  "schemaVersion": "2",
+  "studyId": "zerochart-scanner-retrospective-us-equity-v2-volatility",
+  "evidenceType": "retrospective-historical-research",
+  "frozenAt": "2026-10-29T13:54:00.000Z",
+  "frozenBefore": "Specified after v1's results were seen; fixed before any volatility-stratified figure was computed from the export.",
+  "interpretation": "Retrospective historical research on the same export as v1. It tests whether v1's rank, setup and warning differences remain against members of similar volatility; a match or a mismatch explains v1 on this data and is not independent confirmation, prospective evidence, a backtest or a trading result.",
+  "data": {
+    "source": "tradingview-mcp get_ohlcv, interval 1D, 1000 bars per symbol",
+    "export": "20261029T103004Z.json",
+    "exportSha256": "66d5a8a74e034247b97c5ed713e6e73fdcd81f023b08e5a758b277a4cfdcd5b4",
+    "retrieval": {
+      "startedAt": "2026-10-29T10:30:04.843Z",
+      "completedAt": "2026-10-29T10:32:28.685Z"
+    },
+    "cutoff": "retrieval.startedAt: a bar is used, as input or outcome, only if its session was final (9h after the scheduled close, FINAL_BAR_DELAY_MS) by then",
+    "adjustment": "SPLIT: TradingView states regular session only and split-adjusted only; prices carry no dividend adjustment and no split events are reported",
+    "mapping": "tradingViewSeries (scripts/tradingViewImport.ts): a bar's t must be the 09:30 America/New_York open of its session, or the whole series is rejected"
+  },
+  "universe": {
+    "selectionRule": "The 50 configured US equities and ETFs (US_EQUITY_INSTRUMENTS, the 90 equity rows of assets_status) with the lowest sha256(ticker) hex digests, fixed before any data was fetched or scored.",
+    "members": [
+      "AAL",
+      "AAPL",
+      "ABBV",
+      "ABNB",
+      "ACN",
+      "AMD",
+      "AMZN",
+      "ARKK",
+      "AXP",
+      "BA",
+      "BAC",
+      "C",
+      "CAT",
+      "CRM",
+      "CSCO",
+      "GLD",
+      "GS",
+      "HD",
+      "HOOD",
+      "IBM",
+      "INTC",
+      "IWM",
+      "KO",
+      "META",
+      "MRK",
+      "MS",
+      "MSFT",
+      "NKE",
+      "NVDA",
+      "ORCL",
+      "PFE",
+      "PG",
+      "PINS",
+      "PLTR",
+      "RIVN",
+      "RTX",
+      "SHOP",
+      "SLV",
+      "SNAP",
+      "SPY",
+      "TSLA",
+      "UNH",
+      "VOO",
+      "VTI",
+      "VZ",
+      "XLB",
+      "XLE",
+      "XLP",
+      "XLU",
+      "XLY"
+    ],
+    "instrumentTypes": "US_EQUITY_INSTRUMENTS: 38 stocks, 12 ETFs",
+    "symbols": "TRADINGVIEW_SYMBOLS (scripts/tradingViewImport.ts)"
+  },
+  "calendar": {
+    "sessions": "Observed: every session date present in at least one member's bars. Observed 2026 sessions must equal the published US_EQUITY_CALENDAR sessions exactly, or the study refuses to run.",
+    "observedSessions": 1001,
+    "firstSession": "2022-11-01",
+    "lastSession": "2026-10-28"
+  },
+  "evaluationDates": {
+    "rule": "Every observed session from the 200th (the first on which every member's data allows a full window) to the latest session final at the cutoff; the same dates for every member",
+    "first": "2023-08-18",
+    "last": "2026-10-28",
+    "count": 802
+  },
+  "decision": {
+    "time": "Evaluation date D's bar becomes final 9h after D's scheduled close; the scanner is given only bars of sessions on or before D",
+    "earlyCloses": "Known only from 2026 (published calendar); an earlier early close shifts the decision timestamp, never which bars are supplied"
+  },
+  "scanner": {
+    "scannerVersion": "market-scan-v2",
+    "modelVersion": "1.0.0",
+    "candlePolicyVersion": "us-equity-daily-v1",
+    "historyWindowSessions": 199,
+    "historyWindow": "The latest 199 bars of sessions on or before D (SCAN_MIN_CLOSED_CANDLES), scored by evaluateCandles over that whole window, as the equity scan does",
+    "eligibility": "us-equity-daily-v1 rules against the observed calendar: a missing, duplicate or non-session bar or invalid OHLC inside the window is DATA_INVALID; a latest bar older than the session before D is STALE_DATA; fewer than 199 bars or no finite reading is INSUFFICIENT_HISTORY",
+    "ranking": "Within the equity cohort, stocks and ETFs together: score descending, then ticker in code-unit order, as evaluateScan ranks",
+    "parity": "On every evaluation date whose 200-session request range the published calendar covers, the replay must equal importInputs + evaluateScan on the same export, or the study refuses to run"
+  },
+  "signals": {
+    "longSetup": "modelSetups long (Pine ZC LONG): score >= 78 and MACD histogram / close >= +0.05%",
+    "riskWarning": "modelSetups risk (Pine ZC RISK): score <= 28 or HIGH_VOLATILITY regime",
+    "rankGroups": "The scanner's order restricted to the population's EVALUATED members (rank among stocks, for stocks): top5: ranks 1-5; top10: ranks 1-10; rank quintile q = ceil(5 x rank / members ranked that date)",
+    "observation": "One asset on one evaluation date on which the condition holds; a standing setup repeats on every date it holds",
+    "transition": "An observation whose asset was EVALUATED on the previous evaluation date without the same condition. When the asset was not evaluated on the previous date the onset is unknown, so it is not a transition"
+  },
+  "horizonsSessions": [1, 5, 20],
+  "referencePrice": "OPEN of the first session after D, which opens after the decision time; D's close is never used as an entry",
+  "endpointPrice": "OPEN of the session h observed sessions after the reference session",
+  "change": "endpoint / reference - 1, in percent; price only, dividends excluded",
+  "maturity": "A horizon is measured only when its endpoint session is final at the cutoff; otherwise it is PENDING and excluded",
+  "benchmark": "SPY (AMEX:SPY, also a universe member) over the identical reference and endpoint sessions",
+  "comparisons": {
+    "volatilityMatchedBaseline": "Per observation: the mean change of the population's EVALUATED members in the same volatility tercile with an AVAILABLE outcome for that date and horizon, the asset included",
+    "volatilityTercileBaseline": "Volatility-tercile rows compare against the same-date population mean, as v1's groups did, to show how volatility alone was associated with the change",
+    "benchmarkDifference": "Per observation: the asset's change minus SPY's over the same sessions",
+    "composition": "For each v1 group: the share of its observations in volatility terciles 1, 2 and 3",
+    "groupsAgainstPopulation": [
+      "volatility-tercile-1",
+      "volatility-tercile-2",
+      "volatility-tercile-3"
+    ],
+    "groupsAgainstVolatilityMatched": [
+      "universe",
+      "long-setup",
+      "long-setup-transition",
+      "risk-warning",
+      "risk-warning-transition",
+      "top5",
+      "top10",
+      "rank-quintile-1",
+      "rank-quintile-2",
+      "rank-quintile-3",
+      "rank-quintile-4",
+      "rank-quintile-5"
+    ],
+    "notRepeated": "v1's same-date universe rows and SPY row: unchanged inputs give v1's figures",
+    "statistics": [
+      "observations",
+      "distinctAssets",
+      "distinctDates",
+      "mean",
+      "median",
+      "positiveFraction",
+      "baselineMean",
+      "meanDifferenceVsBaseline",
+      "medianDifferenceVsBaseline",
+      "fractionAboveBaseline",
+      "meanDifferenceVsBenchmark"
+    ],
+    "breakdowns": ["population", "asset", "calendar year of the evaluation date"]
+  },
+  "missingData": {
+    "substitution": "none: no forward-fill, interpolation or nearby-session substitution",
+    "pending": "the endpoint session is not final at the cutoff",
+    "missing": "the asset has no bar at the reference or endpoint session",
+    "invalid": "the reference or endpoint bar fails OHLC validation",
+    "excluded": "A member not EVALUATED on D contributes no observation on D and stays in the coverage counts",
+    "baseline": "An observation whose same-date tercile has no AVAILABLE outcome has no baseline; it is excluded and counted"
+  },
+  "dependence": "Consecutive evaluation dates share all but one session of each horizon, standing setups repeat daily, and same-date observations share market moves. Observations are not independent trials; no significance test, p-value or confidence interval is reported.",
+  "notReported": [
+    "portfolio or strategy returns",
+    "trade win rates",
+    "drawdown",
+    "risk-adjusted alpha",
+    "profit from risk warnings: a decline after a warning is not profit and no short position is assumed"
+  ],
+  "basedOn": {
+    "studyId": "zerochart-scanner-retrospective-us-equity-v1",
+    "specificationId": "ab0d42aa14413cd2f05a2b29a516c85502aa0ff410652375a8390eb0860bebdf"
+  },
+  "volatility": {
+    "measure": "ATR(14) / close of the scored window's last bar: the canonical model's own volatilityPercent input on the evaluation date, so no later bar is used",
+    "terciles": "On each evaluation date, within each population: order the EVALUATED members by the measure ascending, ties by ticker in code-unit order; tercile t = ceil(3 x position / members ordered). Tercile 1 is the quietest",
+    "whyTerciles": "Fixed in advance, not tuned: three groups leave about 16 of 50 members (about 12 of 38 stocks) per tercile and date; finer cells would be too thin"
+  },
+  "populations": {
+    "all": "Every universe member, as in v1",
+    "stocks": "The 38 stocks only: terciles, ranks and baselines computed among stocks alone, because v1 showed its rank pattern among stocks",
+    "excluded": "ETFs alone: 12 members leave four per tercile, too few for a same-date tercile mean"
+  }
+}

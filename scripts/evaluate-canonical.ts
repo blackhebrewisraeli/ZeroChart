@@ -60,6 +60,8 @@ import {
   scanSummary,
 } from './marketScanStore';
 import { importTradingViewScan } from './tradingViewImport';
+import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
+import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -76,7 +78,9 @@ const USAGE = `Usage:
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
-  npm run evaluate -- tradingview-import EXPORT.json [--store DIR]`;
+  npm run evaluate -- tradingview-import EXPORT.json [--store DIR]
+  npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]
+  npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -347,6 +351,35 @@ function requiredValue(command: string, value?: string): string {
 
 type CommandHandler = (value: string | undefined, args: string[]) => Promise<void>;
 
+/** Runs one frozen study version and prints its status and aggregate summary only. */
+async function research<R>(
+  command: string,
+  value: string | undefined,
+  args: string[],
+  run: (options: { file: string; outputDir: string; repositoryCommit: string }) => Promise<{
+    status: 'CREATED' | 'UNCHANGED' | 'CONFLICT';
+    resultHash: string;
+    resultsPath: string;
+    reportPath: string;
+    results: R;
+  }>,
+  summarize: (results: R) => object,
+): Promise<void> {
+  const result = await run({
+    file: safeCliPath(requiredValue(command, value), 'EXPORT'),
+    outputDir: safeCliPath(option(args, '--output-dir') ?? RESEARCH_OUTPUT_DIR, '--output-dir'),
+    repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
+  });
+  printJson({
+    status: result.status,
+    resultHash: result.resultHash,
+    resultsPath: result.resultsPath,
+    reportPath: result.status === 'CONFLICT' ? null : result.reportPath,
+    ...summarize(result.results),
+  });
+  if (result.status === 'CONFLICT') process.exitCode = 1;
+}
+
 const commandHandlers: Record<string, CommandHandler> = {
   scan: async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));
@@ -400,6 +433,11 @@ const commandHandlers: Record<string, CommandHandler> = {
       process.exitCode = 1;
     }
   },
+  // Retrospective studies frozen in docs/scanner-research.v*.json; they write only git-ignored files.
+  'scanner-research': (value, args) =>
+    research('scanner-research', value, args, runScannerResearch, researchSummary),
+  'scanner-research-v2': (value, args) =>
+    research('scanner-research-v2', value, args, runScannerResearchV2, researchSummaryV2),
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>
     observe(requiredValue('observe', value).split(',').filter(Boolean), args),

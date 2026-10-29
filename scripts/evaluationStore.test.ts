@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -95,6 +95,23 @@ describe('evaluation store', () => {
     expect(loaded.run.input.assets).toHaveLength(1);
     expect(loaded.run.decisions).toEqual(saved.decisions);
     expect(loaded.contract).toEqual(saved.configuration);
+  });
+
+  it('refuses to read a run through a symlink that leads out of the store', async () => {
+    const elsewhere = await mkdtemp(join(tmpdir(), 'zerochart-store-'));
+    const saved = run();
+    await saveEvaluationRun(saved, elsewhere);
+    const [file] = await readdir(join(elsewhere, 'runs'));
+    if (!file) throw new Error('Expected a saved run file');
+
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-store-'));
+    await mkdir(join(store, 'runs'));
+    await symlink(join(elsewhere, 'runs', file), join(store, 'runs', file));
+
+    await expect(loadEvaluationRun(saved.runKey, store)).rejects.toThrow('Invalid storage path');
+    await expect(reproduceEvaluationRun(saved.runKey, store)).rejects.toThrow(
+      'Invalid storage path',
+    );
   });
 
   it('reproduces unversioned schema-1 evidence under its original contract', async () => {

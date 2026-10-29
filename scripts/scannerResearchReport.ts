@@ -54,7 +54,9 @@ function esc(value: unknown): string {
 
 function signed(value: number | null, digits: number, unit: string): string {
   if (value === null || !Number.isFinite(value)) return '—';
-  return `${value >= 0 ? '+' : ''}${value.toFixed(digits)}${unit}`;
+  // `|| 0` folds a rounded -0 (a universe row's float residue) into +0.
+  const rounded = Number(value.toFixed(digits)) || 0;
+  return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(digits)}${unit}`;
 }
 
 const pct = (value: number | null) => signed(value, 2, '%');

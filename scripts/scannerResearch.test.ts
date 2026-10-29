@@ -562,6 +562,7 @@ describe('summary and report', () => {
       for (const label of ['1 session:', '5 sessions:', '20 sessions:'])
         expect(html).toContain(label);
       expect(html).not.toMatch(/<script/i);
+      expect(html).not.toContain('-0.00'); // the universe's own difference is zero, never negative zero
     },
     STUDY_TIMEOUT,
   );

@@ -55,6 +55,8 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   ├── marketScanStore.ts            Market-scan snapshots: run, store, reproduce offline
 │   ├── tradingViewImport.ts          Local TradingView development scan: import agent-fetched bars
 │   ├── tradingViewDevRoute.ts        `vite dev`-only route that shows that scan on this machine
+│   ├── scannerResearch.ts            Retrospective scanner study (frozen in docs/scanner-research.v1.json)
+│   ├── scannerResearchReport.ts      Its private HTML report
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)
@@ -99,6 +101,7 @@ Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
 | Auth and plans             | `src/lib/authStore.tsx`, `components/AuthModal.tsx`, `PricingModal.tsx`, `lib/adManager.ts`                                                                                 |
 | Supabase client            | `src/lib/supabaseClient.ts` (the only browser client), `supabaseConfig.ts` (env resolution)                                                                                 |
 | Release gate               | `src/lib/dbContract.ts` + `scripts/check-db-contract.ts`                                                                                                                    |
+| Scanner signal research    | `scripts/scannerResearch.ts` + `scannerResearchReport.ts`: historical replay of the scan with same-date baselines (`docs/SCANNER_RESEARCH.md`)                              |
 | Strategy evaluation        | `src/lib/evaluationLab.ts` (pure) + `scripts/` CLIs (`docs/STRATEGY_VALIDATION.md`)                                                                                         |
 | SSR error handling         | `src/server.ts`, `src/lib/error-capture.ts`, `error-page.ts`                                                                                                                |
 

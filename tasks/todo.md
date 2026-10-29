@@ -13,16 +13,16 @@ validates the fixed schema and exports the normalized runtime config used by cam
 
 **Acceptance criteria:**
 
-- [ ] The committed identifier recomputes to
+- [x] The committed identifier recomputes to
       `0eddcc4f81ba47d74168392bb50af64050d3a9db2ab56da914c3814087d64483`.
-- [ ] Missing, reordered or changed semantic fields fail with a specific contract error; ordinary
+- [x] Missing, reordered or changed semantic fields fail with a specific contract error; ordinary
       JSON key order does not change the identifier.
-- [ ] Runtime config includes the exact universe, thresholds, schedule, horizons, costs and gate.
+- [x] Runtime config includes the exact universe, thresholds, schedule, horizons, costs and gate.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunitySpecification.test.ts`
-- [ ] Mutation fixtures for ID mismatch, unsupported schema and malformed members fail closed.
+- [x] `npm test -- scripts/opportunitySpecification.test.ts`
+- [x] Mutation fixtures for ID mismatch, unsupported schema and malformed members fail closed.
 
 **Dependencies:** None
 

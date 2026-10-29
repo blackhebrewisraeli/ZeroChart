@@ -359,6 +359,39 @@ describe('Opportunity Radar automation', () => {
   });
 });
 
+describe('owner restore', () => {
+  it('downloads the private evidence for local reports without uploading anything', async () => {
+    const fake = await importedCampaign();
+    await automate(fake, START + 60_000);
+    const before = new Map(fake.objects);
+    const local = await mkdtemp(join(tmpdir(), 'zerochart-owner-'));
+    vi.stubEnv('CAMPAIGN_ID', CAMPAIGN);
+    vi.stubEnv('CAMPAIGN_STORE', local);
+    vi.stubEnv('SUPABASE_URL', fake.session.baseUrl);
+    vi.stubEnv('SUPABASE_PUBLISHABLE_KEY', 'publishable-test-key');
+    vi.stubEnv('SUPABASE_CAMPAIGN_EMAIL', 'campaign@example.invalid');
+    vi.stubEnv('SUPABASE_CAMPAIGN_PASSWORD', 'test-password');
+    vi.stubEnv('SUPABASE_CAMPAIGN_BUCKET', 'private-campaign-evidence');
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    let printed: unknown;
+    try {
+      await main(['node', 'opportunityAutomation.ts', 'restore']);
+      printed = stdout.mock.calls[0]?.[0];
+    } finally {
+      stdout.mockRestore();
+    }
+
+    expect(JSON.parse(String(printed))).toEqual({
+      restored: remoteKeys(fake.objects, '').length,
+      verified: 0,
+    });
+    expect(fake.objects).toEqual(before);
+    await expect(
+      readFile(join(local, 'campaigns', CAMPAIGN, 'manifest.json'), 'utf8'),
+    ).resolves.toContain(CAMPAIGN);
+  });
+});
+
 describe('durable notification claims', () => {
   it('persists the claim before sending, and sends nothing if it cannot', async () => {
     const order: string[] = [];
@@ -383,11 +416,20 @@ describe('durable notification claims', () => {
 });
 
 describe('automation entry point', () => {
-  it('rejects an unknown mode and names missing configuration without values', async () => {
+  it('rejects an unknown mode, refuses collection unless enabled, and names missing configuration', async () => {
     await expect(main(['node', 'opportunityAutomation.ts', 'deploy'])).rejects.toMatchObject({
       stage: 'CONFIGURATION',
-      message: 'Usage: opportunityAutomation.ts <import|run>',
+      message: 'Usage: opportunityAutomation.ts <import|restore|run>',
     });
+    await expect(main(['node', 'opportunityAutomation.ts', 'run'])).rejects.toMatchObject({
+      stage: 'CONFIGURATION',
+      message: 'Collection is disabled until OPPORTUNITY_RADAR_AUTOMATION_ENABLED=true',
+    });
+    vi.stubEnv('OPPORTUNITY_RADAR_AUTOMATION_ENABLED', 'TRUE');
+    await expect(main(['node', 'opportunityAutomation.ts', 'run'])).rejects.toMatchObject({
+      message: 'Collection is disabled until OPPORTUNITY_RADAR_AUTOMATION_ENABLED=true',
+    });
+    vi.stubEnv('OPPORTUNITY_RADAR_AUTOMATION_ENABLED', 'true');
     vi.stubEnv('CAMPAIGN_ID', '');
     await expect(main(['node', 'opportunityAutomation.ts', 'run'])).rejects.toMatchObject({
       stage: 'CONFIGURATION',

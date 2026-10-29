@@ -30,6 +30,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+/** The owner's activation switch; the workflow passes the repository variable through. */
+export const ACTIVATION_ENV = 'OPPORTUNITY_RADAR_AUTOMATION_ENABLED';
+
 export type OpportunityStage =
   | 'CONFIGURATION'
   | 'RESTORE'
@@ -386,10 +389,30 @@ export async function main(argv = process.argv): Promise<void> {
     ]);
     return;
   }
+  if (mode === 'restore') {
+    // Read-only: the owner's local copy for opportunity-report; nothing is uploaded.
+    const campaignId = configuredCampaignId();
+    const result = await stage('RESTORE', async () =>
+      restoreCampaign(
+        await storageSession(),
+        opportunityStorageId(campaignId),
+        join(resolve(required('CAMPAIGN_STORE')), 'campaigns', campaignId),
+      ),
+    );
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
   if (mode !== 'run') {
     throw new OpportunityAutomationError(
       'CONFIGURATION',
-      'Usage: opportunityAutomation.ts <import|run>',
+      'Usage: opportunityAutomation.ts <import|restore|run>',
+    );
+  }
+  // Collection writes permanent evidence: it needs the owner's explicit switch, not just a schedule.
+  if (process.env[ACTIVATION_ENV] !== 'true') {
+    throw new OpportunityAutomationError(
+      'CONFIGURATION',
+      `Collection is disabled until ${ACTIVATION_ENV}=true`,
     );
   }
   const notify = Boolean(process.env[TELEGRAM_TOKEN_ENV] || process.env[TELEGRAM_CHAT_ENV]);

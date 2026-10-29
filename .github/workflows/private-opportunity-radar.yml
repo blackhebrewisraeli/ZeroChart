@@ -1,0 +1,163 @@
+name: Private Opportunity Radar
+
+on:
+  schedule:
+    # The frozen slot is 00:30 UTC. A primary run and two bounded retries all start
+    # well inside the 06:00 UTC deadline; a run GitHub delays past it reports MISSED.
+    - cron: '42 0 * * *'
+    - cron: '17 2 * * *'
+    - cron: '47 4 * * *'
+  workflow_dispatch:
+    inputs:
+      check:
+        description: While disabled, the check to run on this runner
+        type: choice
+        options:
+          - synthetic-acceptance
+          - binance-preflight
+        default: synthetic-acceptance
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-opportunity-radar
+  cancel-in-progress: false
+
+env:
+  # Pinned only by a reviewed change after the owner initializes the campaign
+  # (docs/private-opportunity-radar-automation.md). Until then every collection
+  # run stops before checking anything out.
+  CAMPAIGN_ID: UNSET-REVIEW-REQUIRED
+  FROZEN_IMPLEMENTATION_COMMIT: UNSET-REVIEW-REQUIRED
+
+jobs:
+  activation:
+    name: Activation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report activation state
+        env:
+          ENABLED: ${{ vars.OPPORTUNITY_RADAR_AUTOMATION_ENABLED }}
+        run: |
+          if [ "$ENABLED" = "true" ]; then
+            echo "Opportunity Radar automation is enabled."
+          else
+            echo "Opportunity Radar automation is disabled. Enable it only after synthetic acceptance, the private import and owner review."
+          fi
+
+  synthetic-acceptance:
+    name: Synthetic acceptance (no Binance, no storage, no Telegram)
+    needs: activation
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      vars.OPPORTUNITY_RADAR_AUTOMATION_ENABLED != 'true' &&
+      inputs.check == 'synthetic-acceptance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout orchestration revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run the synthetic end-to-end campaign suites
+        # In-process storage, synthetic candles and a fake transport only.
+        run: >-
+          npm test --
+          scripts/opportunityAutomation.test.ts
+          scripts/privateCampaignStorage.test.ts
+          scripts/opportunityCampaign.test.ts
+          scripts/opportunityOutcomes.test.ts
+          scripts/opportunityAnalysis.test.ts
+          scripts/opportunityReport.test.ts
+          scripts/opportunityNotification.test.ts
+          scripts/telegramTransport.test.ts
+
+  binance-preflight:
+    name: Binance reachability from this runner (read-only)
+    needs: activation
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      vars.OPPORTUNITY_RADAR_AUTOMATION_ENABLED != 'true' &&
+      inputs.check == 'binance-preflight'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Request one public BTCUSDT daily candle
+        # HTTP 451 means this runner's region is blocked: keep automation disabled.
+        run: |
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 \
+            'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1')
+          echo "Binance Spot klines answered HTTP $status"
+          [ "$status" = "200" ]
+
+  collect:
+    name: Restore, collect, persist, reproduce, notify and mature outcomes
+    needs: activation
+    if: vars.OPPORTUNITY_RADAR_AUTOMATION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPPORTUNITY_RADAR_AUTOMATION_ENABLED: ${{ vars.OPPORTUNITY_RADAR_AUTOMATION_ENABLED }}
+      CAMPAIGN_STORE: ${{ github.workspace }}/frozen/.zerochart-campaigns
+      FROZEN_IMPLEMENTATION_DIR: ${{ github.workspace }}/frozen
+      ORCHESTRATION_REVISION: ${{ github.sha }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_CAMPAIGN_BUCKET: private-campaign-evidence
+      SUPABASE_CAMPAIGN_EMAIL: ${{ secrets.SUPABASE_CAMPAIGN_EMAIL }}
+      SUPABASE_CAMPAIGN_PASSWORD: ${{ secrets.SUPABASE_CAMPAIGN_PASSWORD }}
+      # Optional: without both, nothing is sent and the summary says so.
+      ZEROCHART_TELEGRAM_BOT_TOKEN: ${{ secrets.ZEROCHART_TELEGRAM_BOT_TOKEN }}
+      ZEROCHART_TELEGRAM_CHAT_ID: ${{ secrets.ZEROCHART_TELEGRAM_CHAT_ID }}
+    steps:
+      - name: Validate the pinned campaign and required configuration
+        run: |
+          [[ "$CAMPAIGN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ && "$CAMPAIGN_ID" != UNSET-REVIEW-REQUIRED ]] \
+            || { echo "::error title=CONFIGURATION failure::Pin the reviewed CAMPAIGN_ID in this workflow"; exit 1; }
+          [[ "$FROZEN_IMPLEMENTATION_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "::error title=CONFIGURATION failure::Pin the reviewed FROZEN_IMPLEMENTATION_COMMIT in this workflow"; exit 1; }
+          : "${SUPABASE_URL:?Set the SUPABASE_URL repository variable}"
+          : "${SUPABASE_PUBLISHABLE_KEY:?Set the SUPABASE_PUBLISHABLE_KEY repository variable}"
+          : "${SUPABASE_CAMPAIGN_EMAIL:?Set the SUPABASE_CAMPAIGN_EMAIL Actions secret}"
+          : "${SUPABASE_CAMPAIGN_PASSWORD:?Set the SUPABASE_CAMPAIGN_PASSWORD Actions secret}"
+
+      - name: Checkout orchestration revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: orchestration
+          persist-credentials: false
+
+      - name: Checkout frozen campaign implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.FROZEN_IMPLEMENTATION_COMMIT }}
+          path: frozen
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install orchestration dependencies
+        working-directory: orchestration
+        run: npm ci --ignore-scripts
+
+      - name: Install frozen implementation dependencies
+        working-directory: frozen
+        run: npm ci --ignore-scripts
+
+      - name: Run private Opportunity Radar orchestration
+        working-directory: orchestration
+        run: ./node_modules/.bin/tsx scripts/opportunityAutomation.ts run

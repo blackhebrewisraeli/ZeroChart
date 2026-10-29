@@ -385,17 +385,19 @@ disablement, backup and regional Binance failure.
 
 **Acceptance criteria:**
 
-- [ ] Workflow cannot collect unless an explicit activation variable is `true` and the manifest
+- [x] Workflow cannot collect unless an explicit activation variable is `true` and the manifest
       already exists privately.
-- [ ] Primary/retry runs respect the 00:30–06:00 UTC window, never upload public artifacts and never
+- [x] Primary/retry runs respect the 00:30–06:00 UTC window, never upload public artifacts and never
       cancel an in-progress writer.
-- [ ] Runbook requires synthetic acceptance and owner review before live initialization or enablement.
+- [x] Runbook requires synthetic acceptance and owner review before live initialization or enablement.
 
 **Verification:**
 
-- [ ] Workflow syntax and pinned actions are reviewed.
-- [ ] Synthetic orchestration succeeds while activation is false; no Binance or production write.
-- [ ] Full repository gates pass.
+- [x] Workflow syntax and pinned actions are reviewed. (Parsed with js-yaml and checked; actionlint
+      is not installed here.)
+- [x] Synthetic orchestration succeeds while activation is false; no Binance or production write.
+      (Locally; the same suites run on GitHub via `check: synthetic-acceptance`, runbook step 1.)
+- [x] Full repository gates pass.
 
 **Dependencies:** Tasks 11–12; owner runner/storage approval
 

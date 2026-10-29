@@ -52,6 +52,23 @@ jobs:
       - name: Test
         run: npm test -- --coverage
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The Python generators are the independent references behind the committed
+      # Pine-parity and quant fixtures. Rerunning them proves the fixtures are still
+      # theirs, and their coverage feeds SonarQube Cloud. After Test, which clears coverage/.
+      - name: Reproduce Python fixtures
+        run: |
+          python -m pip install --disable-pip-version-check coverage==7.6.1
+          python -m coverage run --branch -p scripts/generate-quant-reference-fixtures.py
+          python -m coverage run --branch -p scripts/generate-pine-parity-fixtures.py
+          python -m coverage combine
+          python -m coverage xml -o coverage/python.xml
+          git diff --exit-code -- docs/pine-parity-fixtures.json docs/quant-reference-fixtures.json
+
       # Skipped where SONAR_TOKEN is unavailable (pull requests from forks).
       # Automatic Analysis in SonarQube Cloud must stay off (sonar-project.properties).
       - name: SonarQube Cloud scan

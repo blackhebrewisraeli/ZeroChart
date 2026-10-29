@@ -479,7 +479,7 @@ async function readJson<T>(path: string): Promise<T> {
   return JSON.parse(await readFile(resolve(path), 'utf8')) as T;
 }
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const fixtures = await readJson<ParityFixtures>(FIXTURES);
   const snapshot = snapshotCandles((await readJson<{ rows: string[][] }>(SNAPSHOT)).rows);
   const option = (name: string) => {

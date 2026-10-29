@@ -3,7 +3,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fixturesJson from '../docs/pine-parity-fixtures.json';
 import snapshotJson from '../docs/pine-parity-btcusdt-1d.json';
 import runtimeJson from '../docs/pine-parity-runtime-2026-10-27.json';
@@ -16,6 +16,7 @@ import {
   REGIME_CODES,
   comparePineExport,
   decisions,
+  main,
   parsePineExport,
   readWindow,
   selfCheckPine,
@@ -352,5 +353,36 @@ describe('production Pine, the tested candidate and diagnostics (source checks, 
         fixture.perBar.app.map((value) => value ?? '-'),
       );
     }
+  });
+});
+
+describe('pine-parity CLI', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function capture() {
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    return () => write.mock.calls.map(([chunk]) => String(chunk)).join('');
+  }
+
+  it('verifies production against the Decimal reference by default', async () => {
+    const output = capture();
+    expect(await main([])).toBe(0);
+    expect(output()).toContain('## Production TypeScript vs independent Decimal app reference');
+    expect(output()).toContain('## Discrepancy matrix (Decimal models)');
+    expect(output()).not.toContain('OUT OF TOLERANCE');
+  });
+
+  it('emits exactly the committed self-check script', async () => {
+    const output = capture();
+    expect(await main(['--emit-selfcheck'])).toBe(0);
+    expect(output()).toBe(readFileSync('pine/diagnostics/zerochart_parity_selfcheck.pine', 'utf8'));
+  });
+
+  it('rejects a Pine export compared against an unknown case', async () => {
+    await expect(main(['--pine-export', 'export.csv', '--case', 'nonexistent'])).rejects.toThrow(
+      'No synthetic fixture case "nonexistent"',
+    );
   });
 });

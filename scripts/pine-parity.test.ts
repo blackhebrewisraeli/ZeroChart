@@ -83,7 +83,9 @@ describe('discrepancy matrix claims (Decimal models, not Pine runtime evidence)'
     const threshold = fixtures.cases.find((item) => item.name === 'threshold')!;
     const app = threshold.perBar.app.at(-1);
     const custom = threshold.perBar.customInit.at(-1);
-    expect([app, custom].map((compact) => Number(compact?.slice(0, -2))).sort()).toEqual([59, 60]);
+    expect(
+      [app, custom].map((compact) => Number(compact?.slice(0, -2))).sort((a, b) => a - b),
+    ).toEqual([59, 60]);
     expect(decisions(app ?? null)[1]).not.toBe(decisions(custom ?? null)[1]);
   });
 });

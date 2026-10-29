@@ -13,9 +13,10 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'lcov'],
-      include: ['src/**/*.{ts,tsx}', 'supabase/functions/**/*.ts'],
+      include: ['src/**/*.{ts,tsx}', 'scripts/**/*.ts', 'supabase/functions/**/*.ts'],
       exclude: [
         'src/test/**',
+        'scripts/**/*.test.ts',
         'src/**/*.d.ts',
         'src/routeTree.gen.ts',
         // Deno-only `npm:` imports: Vite can't load these to measure them.

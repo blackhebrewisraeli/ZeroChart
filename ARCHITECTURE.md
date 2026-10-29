@@ -67,8 +67,7 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 ```
 
 Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
-`eslint.config.js`, `sonar-project.properties`, `.sonarcloud.properties`,
-`components.json`) stays at the root, where each tool looks for it. `src/routes`,
+`eslint.config.js`, `sonar-project.properties`, `components.json`) stays at the root, where each tool looks for it. `src/routes`,
 `supabase/` and `public/` are fixed by TanStack Start, the Supabase CLI and Vite.
 
 `.zerochart-evaluations/`, `.zerochart-campaigns/`, `.zerochart-reports/` and

@@ -60,9 +60,10 @@ jobs:
       # The Python generators are the independent references behind the committed
       # Pine-parity and quant fixtures. Rerunning them proves the fixtures are still
       # theirs, and their coverage feeds SonarQube Cloud. After Test, which clears coverage/.
+      # Wheels only, like npm's --ignore-scripts above: no package build script runs.
       - name: Reproduce Python fixtures
         run: |
-          python -m pip install --disable-pip-version-check coverage==7.6.1
+          python -m pip install --disable-pip-version-check --only-binary :all: coverage==7.6.1
           python -m coverage run --branch -p scripts/generate-quant-reference-fixtures.py
           python -m coverage run --branch -p scripts/generate-pine-parity-fixtures.py
           python -m coverage combine

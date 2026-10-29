@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { CandleProviderDataError } from '@/lib/binance';
 import {
@@ -14,6 +14,7 @@ import {
   TRADINGVIEW_DEV_SCAN_FILE,
   TRADINGVIEW_DEV_SCAN_KIND,
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+  parseTradingViewDevScan,
   type TradingViewDevScan,
 } from '@/lib/tradingViewDevScan';
 import {
@@ -80,6 +81,18 @@ export interface TradingViewOhlcvExport {
     error?: string;
   }>;
 }
+
+export interface DevViewPublicationOperations {
+  writeFile(path: string, data: string, options: { flag: 'wx' }): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  unlink(path: string): Promise<void>;
+}
+
+const DEV_VIEW_FILE_OPERATIONS: DevViewPublicationOperations = {
+  writeFile: (path, data, options) => writeFile(path, data, options),
+  rename,
+  unlink,
+};
 
 interface OhlcvResponse {
   success?: unknown;
@@ -176,10 +189,27 @@ export function parseExport(raw: unknown): TradingViewOhlcvExport {
   const file = raw as Partial<TradingViewOhlcvExport> | null;
   if (file?.schemaVersion !== '1' || file.source !== 'tradingview-mcp')
     invalid('schemaVersion 1, source tradingview-mcp expected');
-  const from = Date.parse(file.retrieval?.startedAt ?? '');
-  const to = Date.parse(file.retrieval?.completedAt ?? '');
+  if (
+    typeof file.retrieval?.startedAt !== 'string' ||
+    typeof file.retrieval.completedAt !== 'string'
+  ) {
+    invalid('retrieval.startedAt/completedAt are not ordered ISO times');
+  }
+  const from = Date.parse(file.retrieval.startedAt);
+  const to = Date.parse(file.retrieval.completedAt);
   if (!within(from, from, to)) invalid('retrieval.startedAt/completedAt are not ordered ISO times');
   if (!Array.isArray(file.instruments)) invalid('instruments must be an array');
+  if (file.pineAlerts !== undefined && file.pineAlerts !== null) {
+    if (
+      typeof file.pineAlerts !== 'object' ||
+      typeof file.pineAlerts.checkedAt !== 'string' ||
+      !Number.isFinite(Date.parse(file.pineAlerts.checkedAt)) ||
+      !Array.isArray(file.pineAlerts.symbols) ||
+      file.pineAlerts.symbols.some((symbol) => typeof symbol !== 'string')
+    ) {
+      invalid('pineAlerts needs a parseable checkedAt and string symbols');
+    }
+  }
   const seen = new Set<string>();
   for (const entry of file.instruments) checkEntry(entry, seen, { from, to });
   return file as TradingViewOhlcvExport;
@@ -240,7 +270,15 @@ export async function importTradingViewScan(options: {
   store: string;
   repositoryCommit: string;
   now?: () => number;
-}): Promise<{ path: string; snapshot: ScanSnapshot; view: TradingViewDevScan }> {
+}): Promise<{
+  status: 'IMPORTED' | 'ALREADY_IMPORTED';
+  snapshotStatus: 'CREATED' | 'REUSED';
+  viewStatus: 'UPDATED';
+  path: string;
+  viewPath: string;
+  snapshot: ScanSnapshot;
+  view: TradingViewDevScan;
+}> {
   const file = parseExport(JSON.parse(await readFile(options.file, 'utf8')));
   const startedAt = Date.parse(file.retrieval.startedAt);
   const evaluationTime = Date.parse(file.retrieval.completedAt);
@@ -250,7 +288,7 @@ export async function importTradingViewScan(options: {
     );
   }
   const inputs = importInputs(file, evaluationTime);
-  const { path, snapshot } = await saveScan({
+  const { path, snapshot, snapshotStatus } = await saveScan({
     inputs,
     evaluationTime,
     universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
@@ -258,12 +296,13 @@ export async function importTradingViewScan(options: {
     repositoryCommit: options.repositoryCommit,
     store: options.store,
     completedAt: (options.now ?? Date.now)(),
+    onExisting: 'REUSE_EQUIVALENT',
   });
   const notices = file.instruments.flatMap((entry) => {
     const notice = (entry.response as OhlcvResponse | undefined)?.notice;
     return typeof notice === 'string' ? [notice] : [];
   });
-  const view: TradingViewDevScan = {
+  const view = parseTradingViewDevScan({
     kind: TRADINGVIEW_DEV_SCAN_KIND,
     scanId: snapshot.scanId,
     importedAt: snapshot.completedAt,
@@ -277,10 +316,37 @@ export async function importTradingViewScan(options: {
       pineAlerts: file.pineAlerts ?? null,
     },
     scan: snapshot.scan,
+  });
+  const viewPath = await publishTradingViewDevScan(view, options.store);
+  return {
+    status: snapshotStatus === 'CREATED' ? 'IMPORTED' : 'ALREADY_IMPORTED',
+    snapshotStatus,
+    viewStatus: 'UPDATED',
+    path,
+    viewPath,
+    snapshot,
+    view,
   };
-  await writeFile(
-    join(resolve(options.store), TRADINGVIEW_DEV_SCAN_FILE),
-    `${JSON.stringify(view, null, 2)}\n`,
-  );
-  return { path, snapshot, view };
+}
+
+/** Writes a complete same-directory temporary file, then atomically replaces the local view. */
+export async function publishTradingViewDevScan(
+  view: TradingViewDevScan,
+  store: string,
+  operations: DevViewPublicationOperations = DEV_VIEW_FILE_OPERATIONS,
+): Promise<string> {
+  const root = resolve(store);
+  const path = join(root, TRADINGVIEW_DEV_SCAN_FILE);
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const content = `${JSON.stringify(parseTradingViewDevScan(view), null, 2)}\n`;
+  await mkdir(root, { recursive: true });
+  try {
+    await operations.writeFile(temporary, content, { flag: 'wx' });
+    await operations.rename(temporary, path);
+    return path;
+  } finally {
+    await operations.unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
 }

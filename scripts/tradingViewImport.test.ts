@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,11 +6,12 @@ import { CandleProviderDataError } from '@/lib/binance';
 import { parseTradingViewDevScan, TRADINGVIEW_DEV_SCAN_FILE } from '@/lib/tradingViewDevScan';
 import { sessionOpen, US_EQUITY_INSTRUMENTS } from '@/lib/usEquityDaily';
 import { bars, EQUITY_NOW, falling, rising, wave } from '@/test/usEquityFixtures';
-import { reproduceScan } from './marketScanStore';
+import { reproduceScan, ScanSnapshotConflictError } from './marketScanStore';
 import {
   importInputs,
   importTradingViewScan,
   parseExport,
+  publishTradingViewDevScan,
   selectDevScanUniverse,
   TRADINGVIEW_SYMBOLS,
   tradingViewSeries,
@@ -66,17 +67,24 @@ function exportOf(
   };
 }
 
-async function importInto(file: TradingViewOhlcvExport) {
-  const store = await mkdtemp(join(tmpdir(), 'zerochart-tv-'));
-  const path = join(store, 'export.json');
+async function importInto(
+  file: TradingViewOhlcvExport,
+  options: { store?: string; now?: number; name?: string } = {},
+) {
+  const store = options.store ?? (await mkdtemp(join(tmpdir(), 'zerochart-tv-')));
+  const path = join(store, options.name ?? 'export.json');
   await writeFile(path, JSON.stringify(file));
   const result = await importTradingViewScan({
     file: path,
     store,
     repositoryCommit: COMMIT,
-    now: () => EQUITY_NOW + 5 * 60_000,
+    now: () => options.now ?? EQUITY_NOW + 5 * 60_000,
   });
   return { store, ...result };
+}
+
+async function temporaryArtifacts(store: string): Promise<string[]> {
+  return (await readdir(store)).filter((name) => name.includes('.tmp-'));
 }
 
 describe('TradingView development universe', () => {
@@ -136,7 +144,13 @@ describe('tradingViewSeries', () => {
 
 describe('importTradingViewScan', () => {
   it('scores every selected ticker with the canonical engine and reproduces offline', async () => {
-    const { store, snapshot, view } = await importInto(exportOf());
+    const { store, snapshot, view, status, snapshotStatus, viewStatus } =
+      await importInto(exportOf());
+    expect({ status, snapshotStatus, viewStatus }).toEqual({
+      status: 'IMPORTED',
+      snapshotStatus: 'CREATED',
+      viewStatus: 'UPDATED',
+    });
     expect(snapshot.scan.status).toBe('COMPLETE');
     expect(snapshot.scan.coverage).toMatchObject({ configured: 50, evaluated: 50 });
     expect(snapshot.scan.cohorts[0]).toMatchObject({
@@ -158,6 +172,222 @@ describe('importTradingViewScan', () => {
     );
     expect(written).toEqual(view);
     expect(view.source).toMatchObject({ notice: NOTICE, symbols: TRADINGVIEW_SYMBOLS });
+  });
+
+  it('reuses an equivalent snapshot despite a later import completion and republishes the view', async () => {
+    const file = exportOf();
+    const first = await importInto(file);
+    const snapshotPath = join(first.store, `${first.snapshot.scanId}.json`);
+    const snapshotBytes = await readFile(snapshotPath, 'utf8');
+
+    const repeated = await importInto(file, {
+      store: first.store,
+      now: EQUITY_NOW + 30 * 60_000,
+    });
+
+    expect(repeated).toMatchObject({
+      status: 'ALREADY_IMPORTED',
+      snapshotStatus: 'REUSED',
+      viewStatus: 'UPDATED',
+    });
+    expect(repeated.snapshot).toEqual(first.snapshot);
+    expect(repeated.snapshot.completedAt).toBe(first.snapshot.completedAt);
+    expect(await readFile(snapshotPath, 'utf8')).toBe(snapshotBytes);
+    expect(
+      parseTradingViewDevScan(
+        JSON.parse(await readFile(join(first.store, TRADINGVIEW_DEV_SCAN_FILE), 'utf8')),
+      ),
+    ).toEqual(repeated.view);
+    expect(await reproduceScan(first.snapshot.scanId, first.store)).toEqual({
+      status: 'MATCH',
+      scanId: first.snapshot.scanId,
+    });
+  });
+
+  it('rejects changed inputs for the same target without changing the snapshot or view', async () => {
+    const original = exportOf();
+    const first = await importInto(original);
+    const snapshotPath = join(first.store, `${first.snapshot.scanId}.json`);
+    const viewPath = join(first.store, TRADINGVIEW_DEV_SCAN_FILE);
+    const snapshotBytes = await readFile(snapshotPath, 'utf8');
+    const viewBytes = await readFile(viewPath, 'utf8');
+    const changed = exportOf((entries) => {
+      const body = entries[0]!.response as ReturnType<typeof response>;
+      body.bars[150]!.c *= 1.001;
+    });
+
+    const error = await importInto(changed, {
+      store: first.store,
+      name: 'changed-export.json',
+    }).then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+
+    expect(error).toBeInstanceOf(ScanSnapshotConflictError);
+    expect(error).toMatchObject({
+      code: 'SCAN_SNAPSHOT_CONFLICT',
+      scanId: first.snapshot.scanId,
+      differences: expect.arrayContaining(['INPUTS']),
+    });
+    expect(await readFile(snapshotPath, 'utf8')).toBe(snapshotBytes);
+    expect(await readFile(viewPath, 'utf8')).toBe(viewBytes);
+  });
+
+  it.each([
+    {
+      label: 'calculated outputs',
+      difference: 'OUTPUTS',
+      edit: (stored: unknown) => {
+        const snapshot = stored as { scan: { results: Array<{ rank: number | null }> } };
+        snapshot.scan.results[0]!.rank = 999;
+      },
+    },
+    {
+      label: 'model attribution',
+      difference: 'ATTRIBUTION',
+      edit: (stored: unknown) => {
+        const snapshot = stored as { scan: { modelVersion: string } };
+        snapshot.scan.modelVersion = 'unexpected-model-version';
+      },
+    },
+  ])(
+    'validates existing $label before reuse and overwrites nothing',
+    async ({ difference, edit }) => {
+      const file = exportOf();
+      const first = await importInto(file);
+      const snapshotPath = join(first.store, `${first.snapshot.scanId}.json`);
+      const viewPath = join(first.store, TRADINGVIEW_DEV_SCAN_FILE);
+      const stored: unknown = JSON.parse(await readFile(snapshotPath, 'utf8'));
+      edit(stored);
+      await writeFile(snapshotPath, `${JSON.stringify(stored, null, 2)}\n`);
+      const invalidSnapshotBytes = await readFile(snapshotPath, 'utf8');
+      const viewBytes = await readFile(viewPath, 'utf8');
+
+      const error = await importInto(file, { store: first.store }).then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+
+      expect(error).toBeInstanceOf(ScanSnapshotConflictError);
+      expect(error).toMatchObject({
+        code: 'SCAN_SNAPSHOT_CONFLICT',
+        scanId: first.snapshot.scanId,
+        differences: expect.arrayContaining([difference]),
+      });
+      expect(await readFile(snapshotPath, 'utf8')).toBe(invalidSnapshotBytes);
+      expect(await readFile(viewPath, 'utf8')).toBe(viewBytes);
+    },
+  );
+
+  it('recreates a missing development view from a verified saved snapshot', async () => {
+    const file = exportOf();
+    const first = await importInto(file);
+    const viewPath = join(first.store, TRADINGVIEW_DEV_SCAN_FILE);
+    await unlink(viewPath);
+
+    const repeated = await importInto(file, { store: first.store });
+
+    expect(repeated).toMatchObject({
+      status: 'ALREADY_IMPORTED',
+      snapshotStatus: 'REUSED',
+      viewStatus: 'UPDATED',
+    });
+    expect(parseTradingViewDevScan(JSON.parse(await readFile(viewPath, 'utf8')))).toEqual(
+      repeated.view,
+    );
+  });
+
+  it('keeps the previous complete view when atomic publication is interrupted and recovers on retry', async () => {
+    const file = exportOf();
+    const first = await importInto(file);
+    const viewPath = join(first.store, TRADINGVIEW_DEV_SCAN_FILE);
+    const staleView = { ...first.view, importedAt: '2000-01-01T00:00:00.000Z' };
+    await writeFile(viewPath, `${JSON.stringify(staleView, null, 2)}\n`);
+    const staleBytes = await readFile(viewPath, 'utf8');
+
+    await expect(
+      publishTradingViewDevScan(first.view, first.store, {
+        writeFile,
+        rename: async () => {
+          throw new Error('simulated interruption before atomic rename');
+        },
+        unlink,
+      }),
+    ).rejects.toThrow(/simulated interruption/);
+    expect(await readFile(viewPath, 'utf8')).toBe(staleBytes);
+    expect(await temporaryArtifacts(first.store)).toEqual([]);
+
+    const recovered = await importInto(file, { store: first.store });
+    expect(recovered).toMatchObject({
+      status: 'ALREADY_IMPORTED',
+      snapshotStatus: 'REUSED',
+      viewStatus: 'UPDATED',
+    });
+    expect(await readFile(viewPath, 'utf8')).not.toBe(staleBytes);
+    expect(parseTradingViewDevScan(JSON.parse(await readFile(viewPath, 'utf8')))).toEqual(
+      recovered.view,
+    );
+  });
+
+  it('keeps concurrent identical imports idempotent and leaves no partial files', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-tv-'));
+    const file = exportOf();
+
+    const results = await Promise.all([
+      importInto(file, { store, name: 'first-export.json' }),
+      importInto(file, { store, name: 'second-export.json', now: EQUITY_NOW + 10 * 60_000 }),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(['ALREADY_IMPORTED', 'IMPORTED']);
+    expect(results.map((result) => result.snapshotStatus).sort()).toEqual(['CREATED', 'REUSED']);
+    expect(results.every((result) => result.viewStatus === 'UPDATED')).toBe(true);
+    expect(results[0]!.snapshot).toEqual(results[1]!.snapshot);
+    expect(await reproduceScan(results[0]!.snapshot.scanId, store)).toEqual({
+      status: 'MATCH',
+      scanId: results[0]!.snapshot.scanId,
+    });
+    expect(await temporaryArtifacts(store)).toEqual([]);
+  });
+
+  it('keeps one immutable winner when conflicting imports race', async () => {
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-tv-'));
+    const original = exportOf();
+    const changed = exportOf((entries) => {
+      const body = entries[0]!.response as ReturnType<typeof response>;
+      body.bars[150]!.c *= 1.001;
+    });
+
+    const results = await Promise.allSettled([
+      importInto(original, { store, name: 'original-export.json' }),
+      importInto(changed, { store, name: 'changed-export.json' }),
+    ]);
+    const successes = results.filter(
+      (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof importInto>>> =>
+        result.status === 'fulfilled',
+    );
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+    expect(successes[0]!.value).toMatchObject({ status: 'IMPORTED', snapshotStatus: 'CREATED' });
+    expect(failures[0]!.reason).toBeInstanceOf(ScanSnapshotConflictError);
+    expect(failures[0]!.reason).toMatchObject({
+      code: 'SCAN_SNAPSHOT_CONFLICT',
+      differences: expect.arrayContaining(['INPUTS']),
+    });
+    const winner = successes[0]!.value;
+    expect(await reproduceScan(winner.snapshot.scanId, store)).toEqual({
+      status: 'MATCH',
+      scanId: winner.snapshot.scanId,
+    });
+    const view = parseTradingViewDevScan(
+      JSON.parse(await readFile(join(store, TRADINGVIEW_DEV_SCAN_FILE), 'utf8')),
+    );
+    expect(view.scan).toEqual(winner.snapshot.scan);
+    expect(await temporaryArtifacts(store)).toEqual([]);
   });
 
   it('keeps every failure, with its reason, instead of dropping the ticker', async () => {
@@ -211,6 +441,12 @@ describe('importTradingViewScan', () => {
     expect(() => parseExport(exportOf((entries) => entries.push({ ...entries[0]! })))).toThrow(
       /appears twice/,
     );
+    expect(() =>
+      parseExport({
+        ...file,
+        pineAlerts: { checkedAt: 'not-a-time', symbols: ['BINANCE:BTCUSDT', 7] },
+      }),
+    ).toThrow(/pineAlerts/);
     const noBars = { ...response('NYSE:BAC'), bars: undefined };
     expect(() => tradingViewSeries(noBars, { symbol: 'NYSE:BAC', from: '2026-01-13' })).toThrow(
       /no bars array/,

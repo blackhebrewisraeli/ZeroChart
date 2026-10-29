@@ -357,15 +357,15 @@ summary.
 
 **Acceptance criteria:**
 
-- [ ] Collection is accepted only after durable round-trip persistence and reproduction `MATCH`.
-- [ ] Stage-specific failures are visible without candles, tickers, prices, Opportunities or
+- [x] Collection is accepted only after durable round-trip persistence and reproduction `MATCH`.
+- [x] Stage-specific failures are visible without candles, tickers, prices, Opportunities or
       credentials.
-- [ ] Interrupted upload, identical retry and conflicting remote object behaviors preserve evidence.
+- [x] Interrupted upload, identical retry and conflicting remote object behaviors preserve evidence.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityAutomation.test.ts scripts/privateCampaignStorage.test.ts`
-- [ ] In-process storage fixtures exercise fresh-runner restore and each failure stage.
+- [x] `npm test -- scripts/opportunityAutomation.test.ts scripts/privateCampaignStorage.test.ts`
+- [x] In-process storage fixtures exercise fresh-runner restore and each failure stage.
 
 **Dependencies:** Tasks 5, 8 and 10
 

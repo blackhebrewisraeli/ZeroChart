@@ -107,15 +107,15 @@ Use injected fetch functions in tests.
 
 **Acceptance criteria:**
 
-- [ ] Collection requests only the twelve frozen instruments and uses only candles closed by the
+- [x] Collection requests only the twelve frozen instruments and uses only candles closed by the
       logical slot.
-- [ ] Completed slots never refetch; retries retain failed attempts and stop after 06:00 UTC.
-- [ ] Partial/provider-invalid data remains in coverage; no member or candle is substituted.
+- [x] Completed slots never refetch; retries retain failed attempts and stop after 06:00 UTC.
+- [x] Partial/provider-invalid data remains in coverage; no member or candle is substituted.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityCampaign.test.ts src/test/opportunityRadar.test.ts`
-- [ ] Synthetic provider fixtures cover complete, partial, malformed, rate-limited and late runs.
+- [x] `npm test -- scripts/opportunityCampaign.test.ts src/test/opportunityRadar.test.ts`
+- [x] Synthetic provider fixtures cover complete, partial, malformed, rate-limited and late runs.
 
 **Dependencies:** Tasks 2–3
 

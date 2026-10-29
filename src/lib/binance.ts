@@ -97,11 +97,22 @@ export function parseCandles(raw: unknown): Candle[] {
 async function fetchRawKlines(ticker: string, interval: string, limit: number): Promise<unknown> {
   const symbol = toBinanceSymbol(ticker);
   if (!symbol) return [];
+  return requestKlines(symbol, interval, limit);
+}
+
+/** Raw klines for an exact Binance symbol; `endTime` caps the newest candle's open time. */
+async function requestKlines(
+  symbol: string,
+  interval: string,
+  limit: number,
+  endTime?: number,
+): Promise<unknown> {
   const url =
     'https://api.binance.com/api/v3/klines' +
     `?symbol=${encodeURIComponent(symbol)}` +
     `&interval=${encodeURIComponent(interval)}` +
-    `&limit=${encodeURIComponent(String(limit))}`;
+    `&limit=${encodeURIComponent(String(limit))}` +
+    (endTime === undefined ? '' : `&endTime=${encodeURIComponent(String(endTime))}`);
   const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
   if (response.status === 429 || response.status === 418) {
     const seconds = Number(response.headers.get('Retry-After'));
@@ -141,4 +152,14 @@ export async function fetchHistoricalCandles(
 ): Promise<Candle[]> {
   if (!isBinanceCrypto(ticker)) return [];
   return parseCandles(await fetchRawKlines(ticker, interval, limit));
+}
+
+/** OHLC candles for an exact Binance symbol, none opening after `endTime` when it is given. */
+export async function fetchSymbolCandles(
+  symbol: string,
+  options: { interval: string; limit: number; endTime?: number },
+): Promise<Candle[]> {
+  return parseCandles(
+    await requestKlines(symbol, options.interval, options.limit, options.endTime),
+  );
 }

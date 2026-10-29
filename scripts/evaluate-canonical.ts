@@ -447,8 +447,8 @@ const commandHandlers: Record<string, CommandHandler> = {
   },
 };
 
-async function main(): Promise<void> {
-  const [, , command, value, ...args] = process.argv;
+export async function main(argv = process.argv): Promise<void> {
+  const [, , command, value, ...args] = argv;
   const handler = command ? commandHandlers[command] : undefined;
   if (!handler) {
     console.error(USAGE);

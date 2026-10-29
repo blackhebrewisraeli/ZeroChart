@@ -293,7 +293,7 @@ export async function main(): Promise<void> {
     throw new CampaignAutomationError('CONFIGURATION', 'Usage: campaignAutomation.ts <import|run>');
 }
 
-async function reportFailure(error: unknown): Promise<void> {
+export async function reportFailure(error: unknown): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
   const failure =
     error instanceof CampaignAutomationError

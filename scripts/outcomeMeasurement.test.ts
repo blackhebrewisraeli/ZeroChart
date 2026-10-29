@@ -3,12 +3,13 @@
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DecisionSnapshot } from '@/lib/evaluationLab';
 import {
   OutcomeConflictError,
   LEGACY_OUTCOME_SPECIFICATION_ID,
   OUTCOME_SPECIFICATION,
+  fetchResearchCandles,
   firstDailyOpenStrictlyAfter,
   loadCampaignOutcomes,
   measureOutcome,
@@ -244,5 +245,73 @@ describe('prospective signal outcomes', () => {
       now: new Date('2026-11-26T00:00:00.000Z'),
     });
     expect(measured.horizons.every((item) => item.differencePercentagePoints === 0)).toBe(true);
+  });
+});
+
+describe('research candle fetch', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function respond(status: number, body: unknown) {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () => new Response(JSON.stringify(body), { status }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    return fetch;
+  }
+
+  const row = [1_793_145_600_000, '100.5', '110', '95', '105', '12', 1_793_231_999_999];
+
+  it('requests daily klines for the window and parses each row', async () => {
+    const fetch = respond(200, [row]);
+    const candles = await fetchResearchCandles('BTC-USD', 1, 2);
+
+    const url = new URL(String(fetch.mock.calls[0]?.[0]));
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      symbol: 'BTCUSDT',
+      interval: '1d',
+      startTime: '1',
+      endTime: '2',
+      limit: '1000',
+    });
+    expect(candles).toEqual([
+      {
+        openTime: 1_793_145_600_000,
+        closeTime: 1_793_231_999_999,
+        open: 100.5,
+        high: 110,
+        low: 95,
+        close: 105,
+      },
+    ]);
+  });
+
+  it('asks nothing for a ticker Binance does not list', async () => {
+    const fetch = respond(200, []);
+    expect(await fetchResearchCandles('AAPL', 1, 2)).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('skips non-array rows but rejects a malformed field', async () => {
+    respond(200, [null, row]);
+    expect(await fetchResearchCandles('BTC-USD', 1, 2)).toHaveLength(1);
+
+    respond(200, [[...row.slice(0, 4), 'n/a', ...row.slice(5)]]);
+    await expect(fetchResearchCandles('BTC-USD', 1, 2)).rejects.toThrow(
+      'Binance research kline contains a malformed OHLC or timestamp field',
+    );
+  });
+
+  it('rejects an error status and a non-array body', async () => {
+    respond(429, { code: -1003 });
+    await expect(fetchResearchCandles('BTC-USD', 1, 2)).rejects.toThrow(
+      'Binance research klines failed with 429',
+    );
+
+    respond(200, { rows: [] });
+    await expect(fetchResearchCandles('BTC-USD', 1, 2)).rejects.toThrow(
+      'Binance research klines response is not an array',
+    );
   });
 });

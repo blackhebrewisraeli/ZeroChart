@@ -190,7 +190,7 @@ mismatches.
 - [x] `npm run lint`
 - [x] `npm test`
 - [x] `npm run build`
-- [ ] Owner approves the evidence tree before outcome work.
+- [x] Owner approves the evidence tree before outcome work.
 
 ## Phase 3 — Outcomes and frozen evidence gate
 
@@ -202,14 +202,14 @@ candles.
 
 **Acceptance criteria:**
 
-- [ ] Exact timestamp, maturity, missing, invalid and no-substitution states match the spec.
-- [ ] Primary intent-to-treat output remains present when all three entry opens miss the zone.
-- [ ] Cost and excursion calculations have hand-verifiable fixtures, including gaps.
+- [x] Exact timestamp, maturity, missing, invalid and no-substitution states match the spec.
+- [x] Primary intent-to-treat output remains present when all three entry opens miss the zone.
+- [x] Cost and excursion calculations have hand-verifiable fixtures, including gaps.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityOutcomes.test.ts`
-- [ ] Table fixtures cover each horizon and every outcome state.
+- [x] `npm test -- scripts/opportunityOutcomes.test.ts`
+- [x] Table fixtures cover each horizon and every outcome state.
 
 **Dependencies:** Task 1
 

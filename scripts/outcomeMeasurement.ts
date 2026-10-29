@@ -112,7 +112,7 @@ export function firstDailyOpenStrictlyAfter(observedAt: string | number | Date):
   return Math.floor(value / DAY_MS) * DAY_MS + DAY_MS;
 }
 
-function exactCandle(candles: readonly ResearchCandle[], openTime: number) {
+export function exactCandle(candles: readonly ResearchCandle[], openTime: number) {
   const matches = candles.filter((candle) => candle.openTime === openTime);
   if (matches.length > 1)
     return { kind: 'invalid' as const, candle: null, detail: 'DUPLICATE_TIMESTAMP' };

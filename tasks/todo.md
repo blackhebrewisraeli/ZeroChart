@@ -41,15 +41,15 @@ coverage/reason codes and complete Opportunity fields without I/O.
 
 **Acceptance criteria:**
 
-- [ ] Every market-gate and candidate boundary is tested on both sides, including exact equality.
-- [ ] Fewer than 200 finite closed candles cannot qualify, while scanner status remains visible.
-- [ ] First/missing/failed previous slots emit no transition; false→true emits exactly one;
+- [x] Every market-gate and candidate boundary is tested on both sides, including exact equality.
+- [x] Fewer than 200 finite closed candles cannot qualify, while scanner status remains visible.
+- [x] First/missing/failed previous slots emit no transition; false→true emits exactly one;
       true→true emits none; false→false emits none.
 
 **Verification:**
 
-- [ ] `npm test -- src/test/opportunityRadar.test.ts src/test/canonicalModel.test.ts`
-- [ ] Truncating synthetic input after the slot leaves the slot output byte-identical.
+- [x] `npm test -- src/test/opportunityRadar.test.ts src/test/canonicalModel.test.ts`
+- [x] Truncating synthetic input after the slot leaves the slot output byte-identical.
 
 **Dependencies:** Task 1
 
@@ -65,10 +65,10 @@ coverage/reason codes and complete Opportunity fields without I/O.
 ## Checkpoint A: Semantic contract
 
 - [ ] Owner reviews synthetic market-gate, candidate and transition tables.
-- [ ] `npm run typecheck`
-- [ ] `npm run lint`
-- [ ] `npm test`
-- [ ] `npm run build`
+- [x] `npm run typecheck`
+- [x] `npm run lint`
+- [x] `npm test`
+- [x] `npm run build`
 
 ## Phase 2 — Immutable daily capture slice
 

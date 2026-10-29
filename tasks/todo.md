@@ -257,15 +257,15 @@ implement the deterministic 20-day moving-block bootstrap and return `INSUFFICIE
 
 **Acceptance criteria:**
 
-- [ ] Every minimum count, concentration, integrity and signal condition has an exact boundary test.
-- [ ] Bootstrap output is deterministic for seed 20261029 and date blocks; ordering inputs does not
+- [x] Every minimum count, concentration, integrity and signal condition has an exact boundary test.
+- [x] Bootstrap output is deterministic for seed 20261029 and date blocks; ordering inputs does not
       change results.
-- [ ] No secondary subgroup can affect the primary decision result.
+- [x] No secondary subgroup can affect the primary decision result.
 
 **Verification:**
 
-- [ ] `npm test -- scripts/opportunityAnalysis.test.ts`
-- [ ] Hand-built pass, fail, insufficient and concentration fixtures return expected reasons.
+- [x] `npm test -- scripts/opportunityAnalysis.test.ts`
+- [x] Hand-built pass, fail, insufficient and concentration fixtures return expected reasons.
 
 **Dependencies:** Task 8
 

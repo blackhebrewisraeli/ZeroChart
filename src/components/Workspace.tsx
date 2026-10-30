@@ -31,7 +31,7 @@ import { TradeTicket } from '@/components/TradeTicket';
 import { TacticalSignals } from '@/components/TacticalSignals';
 import { TradingViewWidget } from '@/components/TradingViewWidget';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
-import { TradingViewDevScan } from '@/components/TradingViewDevScan';
+import { MarketsSources, type MarketsSource } from '@/components/TradingViewDevScan';
 import {
   fetchAssets,
   formatChange,
@@ -429,7 +429,7 @@ function NoSignals({ onPreview }: Readonly<{ onPreview: () => void }>) {
   );
 }
 
-function MarketsSection({
+export function MarketsSection({
   rows,
   scores,
   scan,
@@ -440,6 +440,8 @@ function MarketsSection({
   onAssetClass,
   onSelect,
   onInvest,
+  source,
+  onSource,
 }: Readonly<{
   rows: Asset[];
   scores: ScanResults;
@@ -451,26 +453,11 @@ function MarketsSection({
   onAssetClass: (filter: AssetClassFilter) => void;
   onSelect: (asset: Asset) => void;
   onInvest: () => void;
+  source: MarketsSource;
+  onSource: (source: MarketsSource) => void;
 }>) {
-  return (
-    <section className="markets" data-tour="markets" aria-label="Markets">
-      <div className="markets-head">
-        <div>
-          <h2 className="markets-title">Markets</h2>
-          <p className="markets-score-help">
-            Signal Score is a 0–100 model score from RSI, MACD and ATR — not a probability or a
-            performance forecast.
-          </p>
-        </div>
-        <div className="markets-head-actions">
-          <span className="markets-count font-mono">
-            {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
-          </span>
-          <Suspense fallback={null}>
-            <RoboAdvisor assets={assets} onInvest={onInvest} />
-          </Suspense>
-        </div>
-      </div>
+  const marketData = (
+    <>
       {scan}
       <div className="markets-controls">
         <fieldset className="markets-pills" aria-label="Market view">
@@ -525,6 +512,37 @@ function MarketsSection({
           ))}
         </div>
       )}
+    </>
+  );
+  // The TradingView review is a local, dev-only source: its count and the allocation
+  // advisor below belong to the market-data view and would mix the two.
+  const tradingView = import.meta.env.DEV && source === 'tradingview';
+  return (
+    <section className="markets" data-tour="markets" aria-label="Markets">
+      <div className="markets-head">
+        <div>
+          <h2 className="markets-title">Markets</h2>
+          <p className="markets-score-help">
+            Signal Score is a 0–100 model score from RSI, MACD and ATR — not a probability or a
+            performance forecast.
+          </p>
+        </div>
+        {!tradingView && (
+          <div className="markets-head-actions">
+            <span className="markets-count font-mono">
+              {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
+            </span>
+            <Suspense fallback={null}>
+              <RoboAdvisor assets={assets} onInvest={onInvest} />
+            </Suspense>
+          </div>
+        )}
+      </div>
+      {import.meta.env.DEV ? (
+        <MarketsSources source={source} onSource={onSource} marketData={marketData} />
+      ) : (
+        marketData
+      )}
     </section>
   );
 }
@@ -567,6 +585,7 @@ function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('Crypto');
+  const [marketsSource, setMarketsSource] = useState<MarketsSource>('market-data');
   // The URL is the source of truth: / (Research), /paper-trading, /account.
   const navigate = useNavigate();
   const onPaper = useMatch({ from: '/_workspace/paper-trading', shouldThrow: false }) !== undefined;
@@ -763,15 +782,12 @@ function Terminal() {
                 rows={rows}
                 scores={scores}
                 scan={
-                  <>
-                    <MarketScanSummary
-                      scan={scan}
-                      completedAt={scanQuery.dataUpdatedAt}
-                      scanning={scanQuery.isFetching}
-                      failed={scanQuery.isError}
-                    />
-                    {import.meta.env.DEV && <TradingViewDevScan />}
-                  </>
+                  <MarketScanSummary
+                    scan={scan}
+                    completedAt={scanQuery.dataUpdatedAt}
+                    scanning={scanQuery.isFetching}
+                    failed={scanQuery.isError}
+                  />
                 }
                 assets={baseAssets}
                 marketView={marketView}
@@ -780,6 +796,8 @@ function Terminal() {
                 onAssetClass={setAssetClass}
                 onSelect={setSelectedAsset}
                 onInvest={() => setView('paper')}
+                source={marketsSource}
+                onSource={setMarketsSource}
               />
             }
           />

@@ -179,9 +179,11 @@ to count incomplete scans. The snapshots keep that whole population.
 ## TradingView development scan (local, owner-initiated)
 
 A one-off local demonstration: 50 US equities and ETFs scored by this scanner on daily bars that the
-owner's agent session retrieved through TradingView's MCP server. The Markets section shows it as
-**TradingView development scan**, under `vite dev` only. It does not change live coverage: every
-live scan still reports equities as `UNSUPPORTED`.
+owner's agent session retrieved through TradingView's MCP server. Under `vite dev` only, the Markets
+section has a source selector: **Market data** (the Market scan above the price table, as before) or
+**TradingView import**, which replaces both with the **TradingView development scan**. The selector
+names the import's state (evaluated count, `Loading`, `None` or `Unreadable`). It does not change
+live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
 | Step                    | Who                      | How                                                                                                                                                                                                       |
 | ----------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -216,7 +218,7 @@ started by the owner:
    prints the scan ID, coverage, setups and every failure, and writes the snapshot and the view.
 4. **Reproduce offline.** `npm run evaluate -- scan-reproduce <SCAN_ID>` must print `MATCH`.
 5. **Inspect.** `npm run dev`, open <http://localhost:8080/?devAuth=1>, Research → Markets,
-   **TradingView development scan**.
+   **TradingView import**.
 
 Importing the same export again prints `ALREADY_IMPORTED` / `REUSED` and leaves the view
 byte-identical. An earlier export is a historical scan, not a refresh.
@@ -224,8 +226,13 @@ byte-identical. An earlier export is a historical scan, not a refresh.
 The section heads with its source (`TradingView MCP get_ohlcv`), retrieval window, latest evaluated
 session, requested, evaluated and failed counts, and says that reloading does not fetch bars. It is
 marked **Stale** once two newer sessions are final. Before an import exists it says so; while the
-file loads, and when it cannot be read, it says that too. The Market scan above it names its own
-source (`Binance spot klines`); the two are never merged, and neither is the Markets table.
+file loads, and when it cannot be read, it says that too. It opens on **All ranked**, every evaluated
+asset by its recorded rank, so zero long setups still leaves all of them to review; the top rank is
+not relabeled a recommendation. The Market scan names its own source (`Binance spot klines`). Only
+one source shows at a time: the import view has no price table, asset count, Build Portfolio or
+asset details sheet, and Explain and Compare read the import alone, so reviewing it requests nothing
+from Binance or any other provider (the page's own feeds above Markets keep running). Switching
+sources discards the other's view, filters, comparison and open explanation.
 
 The export file (`scripts/tradingViewImport.ts`, `TradingViewOhlcvExport`) holds `retrieval.startedAt`
 and `completedAt`, the alert check, and one entry per ticker: `symbol`, `receivedAt` and the response,

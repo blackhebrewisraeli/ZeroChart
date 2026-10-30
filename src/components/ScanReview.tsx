@@ -130,13 +130,16 @@ function ReadingGuide({
         <dd>
           Order by score within one asset class in this scan. Relative only: #1 is not a buy, and
           ranks never cross classes.
+          {source &&
+            ' A retrospective study of this universe found higher ranks followed by smaller price changes than the same-date average, not larger ones (docs/SCANNER_RESEARCH.md).'}
         </dd>
       </div>
       <div>
         <dt>Score</dt>
         <dd>
-          0–100 blend of RSI, MACD and ATR factors under model {scan.modelVersion}. Not a
-          probability, forecast or valuation.
+          How closely the asset meets the technical conditions of model {scan.modelVersion}: a 0–100
+          blend of RSI, MACD and ATR factors. Not a probability, a valuation or a demonstrated
+          expected return.
         </dd>
       </div>
       <div>
@@ -809,7 +812,9 @@ export function ScanReview({
   source,
   detailed,
 }: Readonly<{ scan: MarketScan; source: TradingViewDevSource | undefined; detailed: boolean }>) {
-  const [view, setView] = useState<ScanView>('long');
+  // An import is reviewed asset by asset, so it opens on every ranked asset; zero long
+  // setups is still a full answer under its own tab.
+  const [view, setView] = useState<ScanView>(source ? 'all' : 'long');
   const [filters, setFilters] = useState<ScanFilters>(NO_FILTERS);
   const [compare, setCompare] = useState<readonly string[]>([]);
   const [explaining, setExplaining] = useState<string | null>(null);

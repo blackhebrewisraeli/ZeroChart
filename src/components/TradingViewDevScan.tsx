@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Radar } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
+import { Segmented } from '@/components/Segmented';
 import { parseTradingViewDevScan, TRADINGVIEW_DEV_SCAN_ROUTE } from '@/lib/tradingViewDevScan';
 
 /** The section's frame while there is no scan to show, so it is never mistaken for the Market scan. */
@@ -29,12 +30,12 @@ function DevScanState({
 }
 
 /**
- * The local TradingView development scan, under `vite dev` only. Loading,
- * nothing imported and an unreadable file each say so; a partial scan is
- * never shown from a malformed file.
+ * The local import, shared by the picker and the review: entering the review never
+ * re-reads it, so both always show the same state. Reloading the page re-reads the
+ * file; nothing here fetches bars.
  */
-export function TradingViewDevScan() {
-  const query = useQuery({
+function useTradingViewDevScan() {
+  return useQuery({
     queryKey: ['tradingview-dev-scan'],
     queryFn: async () => {
       const response = await fetch(TRADINGVIEW_DEV_SCAN_ROUTE, { cache: 'no-store' });
@@ -44,8 +45,18 @@ export function TradingViewDevScan() {
     },
     enabled: import.meta.env.DEV,
     staleTime: Infinity,
+    retryOnMount: false,
     retry: false,
   });
+}
+
+/**
+ * The local TradingView development scan, under `vite dev` only. Loading,
+ * nothing imported and an unreadable file each say so; a partial scan is
+ * never shown from a malformed file.
+ */
+export function TradingViewDevScan() {
+  const query = useTradingViewDevScan();
   if (query.isPending) {
     return <DevScanState busy>Reading the local TradingView import…</DevScanState>;
   }
@@ -76,5 +87,50 @@ export function TradingViewDevScan() {
       failed={false}
       source={source}
     />
+  );
+}
+
+export type MarketsSource = 'market-data' | 'tradingview';
+
+/**
+ * Which source the Markets section reviews, under `vite dev` only. Each source
+ * renders its own list, scores, ranks and coverage; switching unmounts the
+ * other, so no selection, explanation or comparison carries across.
+ */
+export function MarketsSources({
+  source,
+  onSource,
+  marketData,
+}: Readonly<{
+  source: MarketsSource;
+  onSource: (source: MarketsSource) => void;
+  marketData: ReactNode;
+}>) {
+  const query = useTradingViewDevScan();
+  let state = 'None';
+  if (query.isPending) state = 'Loading';
+  else if (query.isError) state = 'Unreadable';
+  else if (query.data) state = String(query.data.scan.coverage.evaluated);
+  return (
+    <>
+      <Segmented
+        value={source}
+        ariaLabel="Markets source"
+        className="scan-views markets-source"
+        onChange={onSource}
+        options={[
+          { value: 'market-data', label: 'Market data' },
+          {
+            value: 'tradingview',
+            label: (
+              <>
+                TradingView import <span className="segment-tag">{state}</span>
+              </>
+            ),
+          },
+        ]}
+      />
+      {source === 'tradingview' ? <TradingViewDevScan /> : marketData}
+    </>
   );
 }

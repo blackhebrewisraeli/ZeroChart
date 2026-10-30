@@ -289,10 +289,13 @@ export async function runOpportunityAutomation(
       `Outcome collection found ${outcomes.conflicts} conflicting and ${outcomes.fetchFailed} unfetched records`,
     );
   }
-  if (notifications && (notifications.rejected > 0 || notifications.unknown > 0)) {
+  if (
+    notifications &&
+    (notifications.rejected > 0 || notifications.unknown > 0 || notifications.incompatible > 0)
+  ) {
     throw new OpportunityAutomationError(
       'NOTIFICATION',
-      `${notifications.rejected} notifications rejected and ${notifications.unknown} with unknown delivery`,
+      `${notifications.rejected} notifications rejected, ${notifications.unknown} with unknown delivery and ${notifications.incompatible} from an incompatible slot schema`,
     );
   }
   return summary;
@@ -324,7 +327,7 @@ export function automationSummaryLines(summary: OpportunityAutomationSummary): s
     '- Durable persistence: verified',
     `- Offline reproduction: ${summary.reproduction === 'MATCH' ? 'matched' : 'not applicable'}`,
     notifications
-      ? `- Notifications: ${notifications.delivered} delivered, ${notifications.alreadyDelivered} already delivered, ${notifications.unresolved} unresolved`
+      ? `- Notifications: ${notifications.delivered} delivered, ${notifications.alreadyDelivered} already delivered, ${notifications.unresolved} unresolved; not sent: ${notifications.expired} expired, ${notifications.invalidated} invalidated, ${notifications.marketGateFailed} after a failed market gate, ${notifications.evidenceUnavailable} held for missing evidence, ${notifications.incompatible} incompatible`
       : '- Notifications: not configured',
     `- Outcome records: ${outcomes.created} created, ${outcomes.unchanged + outcomes.recorded} on file, ${outcomes.pending} horizons pending`,
     '- Evidence, assets, prices and Opportunities: omitted because this repository is public',

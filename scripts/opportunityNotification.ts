@@ -1,15 +1,18 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { Opportunity } from '@/lib/opportunityRadar';
+import type { Opportunity, OpportunityMarketGateReason } from '@/lib/opportunityRadar';
 import {
   loadOpportunityCampaign,
+  OPPORTUNITY_SLOT_SCHEMA_VERSION,
   opportunitySlotDirectory,
   readIfPresent,
   serialize,
   type OpportunitySlotArtifact,
 } from './opportunityCampaign';
 import type { NotificationTransport, TransportResult } from './telegramTransport';
+
+const DAY_MS = 86_400_000;
 
 /** Definite rejections (Telegram answered "not sent") retried at most this many times. */
 export const MAX_NOTIFICATION_ATTEMPTS = 3;
@@ -42,7 +45,65 @@ export interface NotificationSummary {
   /** An earlier send may have arrived; never resent automatically. Check the chat. */
   unresolved: number;
   expired: number;
+  /** A later recorded daily low reached the invalidation level. */
+  invalidated: number;
+  /** A later completed slot's BTC market gate failed. */
+  marketGateFailed: number;
+  /** A later due slot, or its BTC or member data, is not on record: held, not cancelled. */
+  evidenceUnavailable: number;
+  /** From a slot of another schema version; never sent. */
+  incompatible: number;
   exhausted: number;
+}
+
+/** Why an undelivered Opportunity is not sent now; each is a NotificationSummary count. */
+export type DeliveryHold = 'expired' | 'invalidated' | 'marketGateFailed' | 'evidenceUnavailable';
+
+/** The gate could not be judged on that slot, which is no evidence either way. */
+const GATE_NOT_JUDGED: ReadonlySet<OpportunityMarketGateReason> = new Set([
+  'MARKET_NOT_EVALUATED',
+  'MARKET_INSUFFICIENT_HISTORY',
+]);
+
+/**
+ * The contract's `opportunity.expires`, judged only from evidence on record at
+ * `now`: one entry per campaign slot after observedAt that is due by `now`, null
+ * when that slot had not completed by then. A slot holds only candles that
+ * closed before it, so no later candle is read. A daily low at or below the
+ * invalidation level proves a touch by that candle's close, never when within
+ * the day. Cancelling needs positive evidence; a gap only holds delivery.
+ */
+export function deliveryHold(
+  opportunity: Opportunity,
+  laterSlots: ReadonlyArray<OpportunitySlotArtifact | null>,
+  now: number,
+): DeliveryHold | null {
+  if (now >= opportunity.expiresAt) return 'expired';
+  // The anchor is the last candle that closed before the observation's UTC day.
+  const afterAnchor = Math.floor(opportunity.evaluationTime / DAY_MS) * DAY_MS;
+  let unavailable = false;
+  for (const slot of laterSlots) {
+    if (slot === null) {
+      unavailable = true;
+      continue;
+    }
+    const { marketGate, assets } = slot.result;
+    if (marketGate.reasons.some((reason) => GATE_NOT_JUDGED.has(reason))) unavailable = true;
+    else if (!marketGate.passed) return 'marketGateFailed';
+    const evaluated = assets.some(
+      (asset) => asset.ticker === opportunity.ticker && asset.scannerStatus === 'EVALUATED',
+    );
+    const candles = slot.inputs.find((input) => input.ticker === opportunity.ticker)?.candles;
+    if (!evaluated || candles === undefined) unavailable = true;
+    else if (
+      candles.some(
+        (candle) => candle.timestamp >= afterAnchor && candle.low <= opportunity.invalidation,
+      )
+    ) {
+      return 'invalidated';
+    }
+  }
+  return unavailable ? 'evidenceUnavailable' : null;
 }
 
 const iso = (time: number) => new Date(time).toISOString();
@@ -87,10 +148,11 @@ async function readRecords<T>(directory: string, pattern: RegExp): Promise<T[]> 
 }
 
 /**
- * Sends each persisted, unexpired Opportunity at most once. The completed
- * slot files are the immutable outbox; delivery state lives only under
- * notifications/, so no transport outcome can change study evidence. A send
- * whose outcome is unknown is never repeated automatically.
+ * Sends each persisted Opportunity at most once, while `deliveryHold` finds it
+ * still valid. The completed slot files are the immutable outbox; delivery
+ * state lives only under notifications/, so no transport outcome or hold can
+ * change study evidence or which Opportunities the study counts. A send whose
+ * outcome is unknown is never repeated automatically.
  */
 export async function deliverOpportunityNotifications(options: {
   campaignId: string;
@@ -113,15 +175,28 @@ export async function deliverOpportunityNotifications(options: {
     alreadyDelivered: 0,
     unresolved: 0,
     expired: 0,
+    invalidated: 0,
+    marketGateFailed: 0,
+    evidenceUnavailable: 0,
+    incompatible: 0,
     exhausted: 0,
   };
+  const recorded: Array<{ time: number; artifact: OpportunitySlotArtifact | null }> = [];
   for (const entry of manifest.slots) {
-    if (Date.parse(entry.slot) > now) break;
+    const time = Date.parse(entry.slot);
+    if (time > now) break;
     const bytes = await readIfPresent(
       resolve(opportunitySlotDirectory(directory, entry.slot), 'slot.json'),
     );
-    if (bytes === null) continue;
-    const artifact = JSON.parse(bytes) as OpportunitySlotArtifact;
+    const artifact = bytes === null ? null : (JSON.parse(bytes) as OpportunitySlotArtifact);
+    // A slot whose collection finished after `now` was not yet evidence at `now`.
+    const finishedAt = artifact?.attempts.at(-1)?.finishedAt;
+    const onRecord = finishedAt !== undefined && Date.parse(finishedAt) <= now;
+    recorded.push({ time, artifact: onRecord ? artifact : null });
+  }
+  for (const { time, artifact } of recorded) {
+    if (artifact === null) continue;
+    const laterSlots = recorded.filter((item) => item.time > time).map((item) => item.artifact);
     for (const opportunity of artifact.result.opportunities) {
       const folder = resolve(
         directory,
@@ -141,8 +216,13 @@ export async function deliverOpportunityNotifications(options: {
         summary.unresolved += 1;
         continue;
       }
-      if (now >= opportunity.expiresAt) {
-        summary.expired += 1;
+      if (artifact.schemaVersion !== OPPORTUNITY_SLOT_SCHEMA_VERSION) {
+        summary.incompatible += 1;
+        continue;
+      }
+      const hold = deliveryHold(opportunity, laterSlots, now);
+      if (hold !== null) {
+        summary[hold] += 1;
         continue;
       }
       if (results.length >= MAX_NOTIFICATION_ATTEMPTS) {

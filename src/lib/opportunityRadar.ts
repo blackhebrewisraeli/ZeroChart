@@ -210,7 +210,9 @@ function opportunityOf(
     },
     invalidation: close - config.opportunity.invalidationAtrBelowClose * atr,
     validDailyOpens: config.opportunity.validDailyOpens,
-    expiresAt: evaluationTime + config.opportunity.validDailyOpens * DAY_MS,
+    // The contract's `opportunity.expires`: the third UTC daily open after observedAt.
+    // At a 00:30 slot that is 30 minutes before observedAt + 72 hours.
+    expiresAt: (Math.floor(evaluationTime / DAY_MS) + config.opportunity.validDailyOpens) * DAY_MS,
     primaryHorizonDays: config.opportunity.primaryHorizonDays,
     secondaryHorizonDays: [...config.opportunity.secondaryHorizonDays],
   };

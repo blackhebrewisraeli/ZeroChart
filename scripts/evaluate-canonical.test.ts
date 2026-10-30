@@ -593,6 +593,10 @@ describe('Opportunity Radar CLI', () => {
         alreadyDelivered: 0,
         unresolved: 0,
         expired: 0,
+        invalidated: 0,
+        marketGateFailed: 0,
+        evidenceUnavailable: 0,
+        incompatible: 0,
         exhausted: 0,
       });
       expect(telegram).not.toHaveBeenCalled();

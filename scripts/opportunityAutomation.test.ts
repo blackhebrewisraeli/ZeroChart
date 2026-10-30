@@ -29,6 +29,7 @@ import {
   reproduceOpportunitySlot,
   runOpportunitySlot,
   type FetchOpportunityCandles,
+  type OpportunitySlotArtifact,
 } from './opportunityCampaign';
 import {
   collectOpportunityOutcomes,
@@ -196,6 +197,10 @@ const NO_NOTIFICATIONS = {
   alreadyDelivered: 0,
   unresolved: 0,
   expired: 0,
+  invalidated: 0,
+  marketGateFailed: 0,
+  evidenceUnavailable: 0,
+  incompatible: 0,
   exhausted: 0,
 };
 
@@ -232,6 +237,70 @@ describe('Opportunity Radar automation', () => {
     for (const line of automationSummaryLines(summaries[1]!)) {
       expect(line).not.toMatch(/USD|\d+\.\d+/);
     }
+  });
+
+  it('sends a day-late first notification once while the member keeps qualifying', async () => {
+    const fake = await importedCampaign();
+    const { sent, transport: telegram } = transport();
+    // Telegram is configured only from day 2, a day after the Opportunity was observed.
+    const summaries = [];
+    for (const day of [0, 1, 2, 3]) {
+      summaries.push(
+        await automate(fake, START + day * DAY + 60_000, day >= 2 ? { transport: telegram } : {}),
+      );
+    }
+
+    expect(summaries.map((item) => item.notifications)).toEqual([
+      null,
+      null,
+      { ...NO_NOTIFICATIONS, delivered: 1 },
+      { ...NO_NOTIFICATIONS, alreadyDelivered: 1 },
+    ]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('expires 2026-11-03 00:00 UTC');
+    // ETH qualifies on every slot after the first; only its onset is an Opportunity.
+    const slots = remoteKeys(fake.objects, '/slot.json')
+      .sort()
+      .map((item) => JSON.parse(fake.objects.get(item)!.toString()) as OpportunitySlotArtifact);
+    expect(
+      slots.map((slot) => [
+        slot.schemaVersion,
+        slot.result.assets.find((asset) => asset.ticker === 'ETH-USD')?.qualified,
+        slot.result.opportunities.length,
+      ]),
+    ).toEqual([
+      ['2', false, 0],
+      ['2', true, 1],
+      ['2', true, 0],
+      ['2', true, 0],
+    ]);
+  });
+
+  it('fails visibly, sending nothing, for an Opportunity in a version-1 slot', async () => {
+    const fake = await importedCampaign();
+    await automate(fake, START + 60_000);
+    await automate(fake, START + DAY + 60_000);
+    // The pinned 99ec462 implementation stamps the same slot schema 1 and matches it offline.
+    const slotKey = remoteKeys(fake.objects, `/${key(START + DAY)}/slot.json`)[0]!;
+    const bytes = fake.objects.get(slotKey)!.toString();
+    expect((JSON.parse(bytes) as OpportunitySlotArtifact).result.opportunities).toHaveLength(1);
+    fake.objects.set(
+      slotKey,
+      Buffer.from(bytes.replace('"schemaVersion": "2"', '"schemaVersion": "1"')),
+    );
+    const legacy = frozenAt(START + DAY + 2 * 60_000, {
+      overrides: { 'opportunity-campaign-reproduce': () => answer({ status: 'MATCH' }) },
+    });
+    const { sent, transport: telegram } = transport();
+
+    const failed = await failure(
+      automate(fake, START + DAY + 2 * 60_000, { frozen: legacy.frozen, transport: telegram }),
+    );
+    expect(failed.stage).toBe('NOTIFICATION');
+    expect(failed.message).toContain('1 from an incompatible slot schema');
+    expect(sent).toEqual([]);
+    expect(remoteKeys(fake.objects, '/notifications/')).toEqual([]);
+    expect(fake.objects.get(slotKey)!.toString()).toContain('"schemaVersion": "1"');
   });
 
   it('changes no evidence on an identical same-day retry from another fresh runner', async () => {

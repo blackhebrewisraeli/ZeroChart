@@ -28,8 +28,8 @@ env:
   # Pinned only by a reviewed change after the owner initializes the campaign
   # (docs/private-opportunity-radar-automation.md). Until then every collection
   # run stops before checking anything out.
-  CAMPAIGN_ID: UNSET-REVIEW-REQUIRED
-  FROZEN_IMPLEMENTATION_COMMIT: UNSET-REVIEW-REQUIRED
+  CAMPAIGN_ID: opportunity-radar-v1-2026-12-01
+  FROZEN_IMPLEMENTATION_COMMIT: 99ec46261aee9d945c594ba6b01d8e0d21b9336d
 
 jobs:
   activation:

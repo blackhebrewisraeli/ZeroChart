@@ -1,8 +1,9 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { initializeOpportunityCampaign, opportunitySlotDirectory } from './opportunityCampaign';
 import {
@@ -18,7 +19,9 @@ const START = Date.UTC(2026, 9, 30, 0, 30);
 const EXPIRES = Date.UTC(2026, 10, 2);
 const SLOT = new Date(START).toISOString();
 const SPECIFICATION_ID = '0eddcc4f81ba47d74168392bb50af64050d3a9db2ab56da914c3814087d64483';
+const COMMIT = 'a'.repeat(40);
 const iso = (time: number) => new Date(time).toISOString();
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 const OPPORTUNITY = {
   id: `${SLOT}|ETH-USD`,
   specificationId: SPECIFICATION_ID,
@@ -56,6 +59,8 @@ interface SlotOptions {
   ethStatus?: string;
   finishedAt?: number;
   schemaVersion?: string;
+  /** false: no reproduction receipt is written for the slot. */
+  reproduced?: boolean;
 }
 
 /**
@@ -63,13 +68,19 @@ interface SlotOptions {
  * day before the slot. The anchor's own low is below invalidation, so only a
  * later candle may count.
  */
-function slotJson(slot: number, options: SlotOptions = {}, opportunities: object[] = []) {
+function slotJson(
+  slot: number,
+  options: SlotOptions,
+  opportunities: object[],
+  previous: { slot: string; sha256: string } | null,
+) {
   const candles = Array.from({ length: (slot - (slot % DAY) - ANCHOR_OPEN) / DAY }, (_, day) => ({
     timestamp: ANCHOR_OPEN + day * DAY,
     low: day === 0 ? 2400 : (options.lows?.[day - 1] ?? 2450),
   }));
   return JSON.stringify({
     schemaVersion: options.schemaVersion ?? '2',
+    previous,
     attempts: [{ status: 'COMPLETED', finishedAt: iso(options.finishedAt ?? slot + 5 * MINUTE) }],
     inputs: [{ ticker: 'ETH-USD', candles }],
     result: {
@@ -96,32 +107,78 @@ function slotJson(slot: number, options: SlotOptions = {}, opportunities: object
   });
 }
 
-/** A campaign whose first slot persisted one ETH Opportunity. */
+/**
+ * A campaign whose second slot persisted one ETH Opportunity, judged against the
+ * first. Every slot is reproduced MATCH, as the frozen implementation would,
+ * unless `reproduced` is false.
+ */
 async function campaign(options: SlotOptions = {}) {
   const store = await mkdtemp(join(tmpdir(), 'zerochart-notify-'));
   const campaignId = 'notify';
   await initializeOpportunityCampaign({
     campaignId,
     store,
-    startSlot: START,
+    startSlot: START - DAY,
     endSlot: START + 179 * DAY,
-    implementationCommit: 'a'.repeat(40),
-    now: START - DAY,
+    implementationCommit: COMMIT,
+    now: START - 2 * DAY,
   });
   const directory = join(store, 'campaigns', campaignId);
-  const slotDirectory = opportunitySlotDirectory(directory, SLOT);
-  const slotBytes = slotJson(START, options, [OPPORTUNITY]);
-  await mkdir(slotDirectory, { recursive: true });
-  await writeFile(join(slotDirectory, 'slot.json'), slotBytes);
+  /** The slot `days` after the observation; -1 is the slot its transition was judged against. */
+  const slotPath = (days: number) =>
+    join(opportunitySlotDirectory(directory, iso(START + days * DAY)), 'slot.json');
+  /** The receipt `opportunity-campaign-reproduce --block-network` writes at the frozen commit. */
+  const reproduce = async (days: number, receipt: Record<string, unknown> = {}) => {
+    const bytes = await readFile(slotPath(days), 'utf8');
+    const reproductions = join(dirname(slotPath(days)), 'reproductions');
+    await mkdir(reproductions, { recursive: true });
+    await writeFile(
+      join(reproductions, `${randomUUID()}.json`),
+      JSON.stringify({
+        schemaVersion: '1',
+        campaignId,
+        slot: iso(START + days * DAY),
+        slotSha256: sha256(bytes),
+        reproducedAt: (JSON.parse(bytes) as { attempts: Array<{ finishedAt: string }> })
+          .attempts[0]!.finishedAt,
+        networkBlocked: true,
+        reproducerCommit: COMMIT,
+        status: 'MATCH',
+        reason: null,
+        ...receipt,
+      }),
+    );
+  };
+  const record = async (days: number, slotOptions: SlotOptions, opportunities: object[] = []) => {
+    const previous = await readFile(slotPath(days - 1), 'utf8').catch(() => null);
+    const bytes = slotJson(
+      START + days * DAY,
+      slotOptions,
+      opportunities,
+      previous === null ? null : { slot: iso(START + (days - 1) * DAY), sha256: sha256(previous) },
+    );
+    await mkdir(dirname(slotPath(days)), { recursive: true });
+    await writeFile(slotPath(days), bytes);
+    if (slotOptions.reproduced !== false) await reproduce(days);
+    return bytes;
+  };
+  await record(-1, {});
+  const slotBytes = await record(0, options, [OPPORTUNITY]);
+  const slotDirectory = dirname(slotPath(0));
   const folder = join(directory, 'notifications', `${SLOT.replaceAll(':', '-')}_ETH-USD`);
   /** Records the later slot `days` after the observation; it carries no new Opportunity. */
-  const later = async (days: number, slotOptions: SlotOptions = {}) => {
-    const slotTime = START + days * DAY;
-    const laterDirectory = opportunitySlotDirectory(directory, iso(slotTime));
-    await mkdir(laterDirectory, { recursive: true });
-    await writeFile(join(laterDirectory, 'slot.json'), slotJson(slotTime, slotOptions));
+  const later = (days: number, slotOptions: SlotOptions = {}) => record(days, slotOptions);
+  return {
+    store,
+    campaignId,
+    directory,
+    slotDirectory,
+    slotBytes,
+    folder,
+    later,
+    reproduce,
+    slotPath,
   };
-  return { store, campaignId, directory, slotDirectory, slotBytes, folder, later };
 }
 
 /** Answers in order, then DELIVERED; `throws` makes the send itself reject. */
@@ -139,7 +196,7 @@ function fake(answers: Array<TransportResult | 'throws'> = []) {
   return { sent, transport };
 }
 
-const counts = (changes: Record<string, number>) => ({
+const counts = (changes: Record<string, number>, unverifiedSlots: Record<string, number> = {}) => ({
   delivered: 0,
   rejected: 0,
   unknown: 0,
@@ -150,8 +207,18 @@ const counts = (changes: Record<string, number>) => ({
   marketGateFailed: 0,
   evidenceUnavailable: 0,
   incompatible: 0,
+  originUnverified: 0,
+  evidenceUnverified: 0,
   exhausted: 0,
   ...changes,
+  unverifiedSlots: {
+    UNSUPPORTED_SCHEMA: 0,
+    NOT_REPRODUCED: 0,
+    REPRODUCTION_MISMATCH: 0,
+    PREDECESSOR_CHANGED: 0,
+    PREDECESSOR_UNVERIFIED: 0,
+    ...unverifiedSlots,
+  },
 });
 
 describe('Opportunity notifications', () => {
@@ -270,7 +337,7 @@ describe('Opportunity notifications', () => {
     await deliver(setup, fake([REJECTED]).transport);
 
     expect(await readFile(join(setup.slotDirectory, 'slot.json'), 'utf8')).toBe(setup.slotBytes);
-    expect(await readdir(setup.slotDirectory)).toEqual(['slot.json']);
+    expect((await readdir(setup.slotDirectory)).sort()).toEqual(['reproductions', 'slot.json']);
     expect((await readdir(setup.directory)).sort()).toEqual([
       'manifest.json',
       'notifications',
@@ -439,6 +506,243 @@ describe('Opportunity delivery lifecycle', () => {
         ),
       ).resolves.toBe(bytes);
     }
+    await expect(readFile(join(setup.directory, 'manifest.json'), 'utf8')).resolves.toBe(manifest);
+    expect((await readdir(setup.directory)).sort()).toEqual(['manifest.json', 'slots']);
+  });
+});
+
+describe('Delivery verification', () => {
+  type Setup = Awaited<ReturnType<typeof campaign>>;
+  const deliver = (setup: Setup, now: number, answers: TransportResult[] = []) => {
+    const { sent, transport } = fake(answers);
+    return deliverOpportunityNotifications({
+      campaignId: setup.campaignId,
+      store: setup.store,
+      transport,
+      now: () => now,
+    }).then((summary) => ({ summary, sent }));
+  };
+  /** A refusal: nothing claimed, nothing sent. */
+  const refused = async (
+    setup: Setup,
+    now: number,
+    changes: Record<string, number>,
+    reasons: Record<string, number>,
+  ) => {
+    const { summary, sent } = await deliver(setup, now);
+    expect(summary).toEqual(counts(changes, reasons));
+    expect(sent).toEqual([]);
+    await expect(readdir(setup.directory)).resolves.not.toContain('notifications');
+  };
+
+  it('sends exactly once when the slot, its predecessor and every later slot reproduced MATCH', async () => {
+    const setup = await campaign();
+    await setup.later(1);
+    await setup.later(2);
+
+    const first = await deliver(setup, START + 2 * DAY + 30 * MINUTE);
+    expect(first.summary).toEqual(counts({ delivered: 1 }));
+    expect(first.sent).toHaveLength(1);
+    expect((await deliver(setup, START + 2 * DAY + 40 * MINUTE)).summary).toEqual(
+      counts({ alreadyDelivered: 1 }),
+    );
+  });
+
+  it.each([
+    ['no reproduction', null, 'NOT_REPRODUCED'],
+    ['a MISMATCH', { status: 'MISMATCH', reason: 'OUTPUT_MISMATCH' }, 'REPRODUCTION_MISMATCH'],
+    ['a MATCH with the network open', { networkBlocked: false }, 'NOT_REPRODUCED'],
+    ['a MATCH from a modified checkout', { reproducerCommit: null }, 'NOT_REPRODUCED'],
+    ['a MATCH from another commit', { reproducerCommit: 'c'.repeat(40) }, 'NOT_REPRODUCED'],
+    ['a MATCH that names no reproducer', { reproducerCommit: undefined }, 'NOT_REPRODUCED'],
+    ['a MATCH from another campaign', { campaignId: 'other' }, 'NOT_REPRODUCED'],
+    ['a MATCH of another slot', { slot: iso(START + DAY) }, 'NOT_REPRODUCED'],
+    ['a MATCH of older bytes', { slotSha256: sha256('older slot bytes') }, 'NOT_REPRODUCED'],
+    [
+      'a MATCH recorded after the decision',
+      { reproducedAt: iso(START + 2 * 60 * MINUTE) },
+      'NOT_REPRODUCED',
+    ],
+  ])('sends nothing from a slot with %s', async (_label, receipt, reason) => {
+    const setup = await campaign({ reproduced: false });
+    if (receipt) await setup.reproduce(0, receipt);
+
+    await refused(setup, START + 60 * MINUTE, { originUnverified: 1 }, { [reason]: 1 });
+  });
+
+  it('lets the latest receipt for the same bytes decide, and a MISMATCH win a tie', async () => {
+    const setup = await campaign();
+    await setup.reproduce(0, {
+      reproducedAt: iso(START + 20 * MINUTE),
+      status: 'MISMATCH',
+      reason: 'OUTPUT_MISMATCH',
+    });
+    await refused(
+      setup,
+      START + 60 * MINUTE,
+      { originUnverified: 1 },
+      { REPRODUCTION_MISMATCH: 1 },
+    );
+
+    await setup.reproduce(0, { reproducedAt: iso(START + 70 * MINUTE) });
+    expect((await deliver(setup, START + 80 * MINUTE)).summary).toEqual(counts({ delivered: 1 }));
+
+    // Recorded at the same instant as the default MATCH.
+    const tie = await campaign();
+    await tie.reproduce(0, { status: 'MISMATCH', reason: 'OUTPUT_MISMATCH' });
+    await refused(tie, START + 60 * MINUTE, { originUnverified: 1 }, { REPRODUCTION_MISMATCH: 1 });
+  });
+
+  it('does not let an earlier MATCH authorize slot bytes modified after it', async () => {
+    const setup = await campaign();
+    await writeFile(setup.slotPath(0), setup.slotBytes.replace('"score":85', '"score":99'));
+
+    await refused(setup, START + 60 * MINUTE, { originUnverified: 1 }, { NOT_REPRODUCED: 1 });
+  });
+
+  it.each([
+    [
+      'modified after its MATCH',
+      async (setup: Setup) =>
+        writeFile(setup.slotPath(-1), `${await readFile(setup.slotPath(-1), 'utf8')} `),
+      'PREDECESSOR_CHANGED',
+    ],
+    ['removed', (setup: Setup) => rm(setup.slotPath(-1)), 'PREDECESSOR_CHANGED'],
+    [
+      'unchanged but last reproduced MISMATCH',
+      (setup: Setup) =>
+        setup.reproduce(-1, {
+          reproducedAt: iso(START + 10 * MINUTE),
+          status: 'MISMATCH',
+          reason: 'OUTPUT_MISMATCH',
+        }),
+      'PREDECESSOR_UNVERIFIED',
+    ],
+  ])(
+    'sends nothing when the slot the transition was judged against is %s',
+    async (_label, change, reason) => {
+      const setup = await campaign();
+      await change(setup);
+
+      await refused(setup, START + 60 * MINUTE, { originUnverified: 1 }, { [reason]: 1 });
+    },
+  );
+
+  it.each([
+    ['not reproduced', { reproduced: false }, null, 'NOT_REPRODUCED'],
+    ['an unverified touch', { reproduced: false, lows: [2000] }, null, 'NOT_REPRODUCED'],
+    [
+      'a mismatched failed gate',
+      { reproduced: false, gate: { passed: false, reasons: ['MARKET_HIGH_VOLATILITY'] } },
+      { status: 'MISMATCH', reason: 'OUTPUT_MISMATCH' },
+      'REPRODUCTION_MISMATCH',
+    ],
+    ['schema 1, matched by its own code', { schemaVersion: '1' }, null, 'UNSUPPORTED_SCHEMA'],
+  ])(
+    'holds, neither sending nor cancelling, on a later slot that is %s',
+    async (_label, slotOptions, receipt, reason) => {
+      const setup = await campaign();
+      await setup.later(1, slotOptions);
+      if (receipt) await setup.reproduce(1, receipt);
+
+      await refused(setup, START + DAY + 30 * MINUTE, { evidenceUnverified: 1 }, { [reason]: 1 });
+    },
+  );
+
+  it('keeps a slot that failed on day one blocked on day two, then sends after a legitimate MATCH', async () => {
+    const setup = await campaign({ reproduced: false });
+    await setup.reproduce(0, { status: 'MISMATCH', reason: 'PREVIOUS_SLOT_MISMATCH' });
+    await refused(
+      setup,
+      START + 60 * MINUTE,
+      { originUnverified: 1 },
+      { REPRODUCTION_MISMATCH: 1 },
+    );
+
+    // Day two's own slot reproduces; the day-one Opportunity stays held.
+    await setup.later(1);
+    await refused(
+      setup,
+      START + DAY + 30 * MINUTE,
+      { originUnverified: 1 },
+      { REPRODUCTION_MISMATCH: 1 },
+    );
+
+    await setup.reproduce(0, { reproducedAt: iso(START + DAY + 40 * MINUTE) });
+    const recovered = await deliver(setup, START + DAY + 50 * MINUTE);
+    expect(recovered.summary).toEqual(counts({ delivered: 1 }));
+    expect(recovered.sent).toHaveLength(1);
+  });
+
+  it('stops reporting an unverified slot once its Opportunity has expired', async () => {
+    const setup = await campaign({ reproduced: false });
+
+    const { summary, sent } = await deliver(setup, EXPIRES);
+    expect(summary).toEqual(counts({ expired: 1 }));
+    expect(sent).toEqual([]);
+  });
+
+  it('sends after the later slot it held on is reproduced', async () => {
+    const setup = await campaign();
+    await setup.later(1, { reproduced: false });
+    await refused(
+      setup,
+      START + DAY + 30 * MINUTE,
+      { evidenceUnverified: 1 },
+      { NOT_REPRODUCED: 1 },
+    );
+
+    await setup.reproduce(1, { reproducedAt: iso(START + DAY + 40 * MINUTE) });
+    expect((await deliver(setup, START + DAY + 50 * MINUTE)).summary).toEqual(
+      counts({ delivered: 1 }),
+    );
+  });
+
+  it('never resends a delivered or unresolved Opportunity, whatever verification finds later', async () => {
+    const delivered = await campaign();
+    expect((await deliver(delivered, START + 60 * MINUTE)).summary).toEqual(
+      counts({ delivered: 1 }),
+    );
+    await delivered.reproduce(0, {
+      reproducedAt: iso(START + 70 * MINUTE),
+      status: 'MISMATCH',
+      reason: 'OUTPUT_MISMATCH',
+    });
+    const again = await deliver(delivered, START + 80 * MINUTE);
+    expect(again.summary).toEqual(counts({ alreadyDelivered: 1 }));
+    expect(again.sent).toEqual([]);
+
+    const unresolved = await campaign({ reproduced: false });
+    await mkdir(unresolved.folder, { recursive: true });
+    await writeFile(join(unresolved.folder, 'attempt-1.json'), '{}');
+    const held = await deliver(unresolved, START + 60 * MINUTE);
+    expect(held.summary).toEqual(counts({ unresolved: 1 }));
+    expect(held.sent).toEqual([]);
+  });
+
+  it('reads evidence and receipts without writing or repairing any', async () => {
+    const setup = await campaign({ reproduced: false });
+    await setup.later(1, { reproduced: false });
+    await setup.reproduce(1, { status: 'MISMATCH', reason: 'OUTPUT_MISMATCH' });
+    const snapshot = async () =>
+      Promise.all(
+        [-1, 0, 1].map(async (day) => {
+          const reproductions = join(dirname(setup.slotPath(day)), 'reproductions');
+          const receipts = (await readdir(reproductions).catch(() => [])).sort();
+          return {
+            slot: await readFile(setup.slotPath(day), 'utf8'),
+            receipts: await Promise.all(
+              receipts.map((name) => readFile(join(reproductions, name), 'utf8')),
+            ),
+          };
+        }),
+      );
+    const before = await snapshot();
+    const manifest = await readFile(join(setup.directory, 'manifest.json'), 'utf8');
+
+    await refused(setup, START + DAY + 30 * MINUTE, { originUnverified: 1 }, { NOT_REPRODUCED: 1 });
+    expect(await snapshot()).toEqual(before);
+    expect(before[1]!.slot).toBe(setup.slotBytes);
     await expect(readFile(join(setup.directory, 'manifest.json'), 'utf8')).resolves.toBe(manifest);
     expect((await readdir(setup.directory)).sort()).toEqual(['manifest.json', 'slots']);
   });

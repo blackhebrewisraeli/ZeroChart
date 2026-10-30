@@ -33,7 +33,7 @@ type Manifest = {
   repositoryCommit: string;
 };
 
-type CommandResult = { exitCode: number; stdout: string; stderr: string };
+export type CommandResult = { exitCode: number; stdout: string; stderr: string };
 
 function required(name: string): string {
   const value = process.env[name];
@@ -59,11 +59,15 @@ async function session(): Promise<SupabaseStorageSession> {
   });
 }
 
-async function command(cwd: string, args: string[]): Promise<CommandResult> {
+export async function command(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<CommandResult> {
   try {
     const result = await execFileAsync('npm', ['run', 'evaluate', '--', ...args], {
       cwd,
-      env: { ...process.env, NO_COLOR: '1' },
+      env: { ...env, NO_COLOR: '1' },
       maxBuffer: 20 * 1024 * 1024,
       timeout: 20 * 60_000,
     });
@@ -138,7 +142,7 @@ async function persistOrFail(
   }
 }
 
-async function writeSummary(lines: string[]): Promise<void> {
+export async function writeSummary(lines: string[]): Promise<void> {
   const path = process.env['GITHUB_STEP_SUMMARY'];
   if (path) await writeFile(path, `${lines.join('\n')}\n`, { flag: 'a' });
 }

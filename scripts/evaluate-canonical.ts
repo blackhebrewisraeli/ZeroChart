@@ -60,6 +60,22 @@ import {
   scanSummary,
 } from './marketScanStore';
 import { importTradingViewScan } from './tradingViewImport';
+import {
+  initializeOpportunityCampaign,
+  opportunityCampaignStatus,
+  opportunityRunSummary,
+  reproduceOpportunitySlot,
+  runOpportunitySlot,
+} from './opportunityCampaign';
+import { collectOpportunityOutcomes } from './opportunityOutcomes';
+import {
+  buildOpportunityReport,
+  OpportunityReportRefusal,
+  opportunityReportSummary,
+  writeOpportunityReport,
+} from './opportunityReport';
+import { deliverOpportunityNotifications, SYNTHETIC_NOTIFICATION } from './opportunityNotification';
+import { telegramTransportFromEnv } from './telegramTransport';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
@@ -75,6 +91,14 @@ const USAGE = `Usage:
   npm run evaluate -- campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
   npm run evaluate -- outcome-collect CAMPAIGN_ID [--store DIR]
   npm run evaluate -- decisions-report CAMPAIGN_ID [--store DIR] [--output FILE]
+  npm run evaluate -- opportunity-campaign-init CAMPAIGN_ID --start ISO --end ISO [--store DIR]
+  npm run evaluate -- opportunity-campaign-run CAMPAIGN_ID [--store DIR]
+  npm run evaluate -- opportunity-campaign-reproduce CAMPAIGN_ID [--slot ISO] [--store DIR] [--block-network]
+  npm run evaluate -- opportunity-campaign-status CAMPAIGN_ID [--store DIR]
+  npm run evaluate -- opportunity-outcomes CAMPAIGN_ID [--store DIR] [--matured-only]
+  npm run evaluate -- opportunity-report CAMPAIGN_ID [--store DIR] [--operational-only | --final] [--output FILE]
+  npm run evaluate -- opportunity-notify CAMPAIGN_ID [--store DIR]   (needs ZEROCHART_TELEGRAM_BOT_TOKEN, ZEROCHART_TELEGRAM_CHAT_ID)
+  npm run evaluate -- opportunity-notify-test                        (sends one synthetic message)
   npm run evaluate -- decisions-demo [--output FILE]
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
@@ -349,6 +373,29 @@ function requiredValue(command: string, value?: string): string {
   return value;
 }
 
+/** Rejects any argument that is not a known option with its value, or a known flag. */
+function assertOptions(
+  command: string,
+  args: string[],
+  valueOptions: readonly string[],
+  flags: readonly string[] = [],
+): void {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (valueOptions.includes(arg) && index + 1 < args.length) index += 1;
+    else if (!flags.includes(arg))
+      throw new Error(`${command}: unknown or incomplete option ${arg}`);
+  }
+}
+
+function isoOption(args: string[], name: string): number | undefined {
+  const value = option(args, name);
+  if (value === undefined) return undefined;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) throw new Error(`${name} must be an ISO timestamp`);
+  return time;
+}
+
 type CommandHandler = (value: string | undefined, args: string[]) => Promise<void>;
 
 /** Runs one frozen study version and prints its status and aggregate summary only. */
@@ -505,6 +552,130 @@ const commandHandlers: Record<string, CommandHandler> = {
     );
     printJson({ output: await writeDecisionsReport(model, output), errors: model.errors });
     if (model.errors.length) process.exitCode = 1;
+  },
+  // Opportunity Radar v1 (docs/opportunity-radar.v1.json): evidence under STORE/campaigns/ID.
+  'opportunity-campaign-init': async (value, args) => {
+    const command = 'opportunity-campaign-init';
+    assertOptions(command, args, ['--start', '--end', '--store']);
+    const startSlot = isoOption(args, '--start');
+    const endSlot = isoOption(args, '--end');
+    if (startSlot === undefined || endSlot === undefined) {
+      throw new Error(`${command} requires --start and --end`);
+    }
+    // The manifest binds the exact implementation commit, so uncommitted code cannot start one.
+    if (await worktreeDirty()) throw new Error(`${command} requires a clean worktree`);
+    const manifest = await initializeOpportunityCampaign({
+      campaignId: requiredValue(command, value),
+      store: storePath(args, '.zerochart-campaigns'),
+      startSlot,
+      endSlot,
+      implementationCommit: await repositoryCommit(),
+    });
+    printJson({
+      campaignId: manifest.campaignId,
+      specificationId: manifest.specificationId,
+      implementationCommit: manifest.implementationCommit,
+      startSlot: manifest.startSlot,
+      endSlot: manifest.endSlot,
+      slotCount: manifest.slotCount,
+    });
+  },
+  'opportunity-campaign-run': async (value, args) => {
+    assertOptions('opportunity-campaign-run', args, ['--store']);
+    const run = await runOpportunitySlot({
+      campaignId: requiredValue('opportunity-campaign-run', value),
+      store: storePath(args, '.zerochart-campaigns'),
+    });
+    printJson(opportunityRunSummary(run));
+    if (run.status === 'FAILED' || run.status === 'MISSED') process.exitCode = 1;
+  },
+  'opportunity-campaign-reproduce': async (value, args) => {
+    assertOptions(
+      'opportunity-campaign-reproduce',
+      args,
+      ['--slot', '--store'],
+      ['--block-network'],
+    );
+    const slot = isoOption(args, '--slot');
+    const receipt = await reproduceOpportunitySlot({
+      campaignId: requiredValue('opportunity-campaign-reproduce', value),
+      store: storePath(args, '.zerochart-campaigns'),
+      ...(slot === undefined ? {} : { slot: new Date(slot).toISOString() }),
+      blockNetwork: args.includes('--block-network'),
+    });
+    printJson(receipt);
+    if (receipt.status === 'MISMATCH') process.exitCode = 1;
+  },
+  'opportunity-campaign-status': async (value, args) => {
+    assertOptions('opportunity-campaign-status', args, ['--store']);
+    printJson(
+      await opportunityCampaignStatus({
+        campaignId: requiredValue('opportunity-campaign-status', value),
+        store: storePath(args, '.zerochart-campaigns'),
+      }),
+    );
+  },
+  // Only matured horizons are ever collected; --matured-only is the frozen command's explicit form.
+  'opportunity-outcomes': async (value, args) => {
+    assertOptions('opportunity-outcomes', args, ['--store'], ['--matured-only']);
+    const summary = await collectOpportunityOutcomes({
+      campaignId: requiredValue('opportunity-outcomes', value),
+      store: storePath(args, '.zerochart-campaigns'),
+    });
+    printJson(summary);
+    if (summary.conflicts > 0 || summary.fetchFailed > 0) process.exitCode = 1;
+  },
+  // Operational health by default; --final refuses until the frozen decision gate is met.
+  'opportunity-report': async (value, args) => {
+    const command = 'opportunity-report';
+    assertOptions(command, args, ['--store', '--output'], ['--operational-only', '--final']);
+    const final = args.includes('--final');
+    if (final && args.includes('--operational-only')) {
+      throw new Error(`${command}: --final and --operational-only are mutually exclusive`);
+    }
+    const campaignId = requiredValue(command, value);
+    const output = safeCliPath(
+      option(args, '--output') ??
+        `.zerochart-reports/opportunity-${campaignId}${final ? '-final' : ''}.html`,
+      '--output',
+    );
+    try {
+      const report = await buildOpportunityReport({
+        campaignId,
+        store: storePath(args, '.zerochart-campaigns'),
+        final,
+      });
+      const written = await writeOpportunityReport(report, output);
+      printJson({
+        ...opportunityReportSummary(report),
+        output: relative(process.cwd(), written),
+      });
+    } catch (error) {
+      if (!(error instanceof OpportunityReportRefusal)) throw error;
+      printJson({ status: 'REFUSED', mode: 'FINAL', phase: error.phase, reasons: error.reasons });
+      process.exitCode = 1;
+    }
+  },
+  // Telegram delivery: at most one message per Opportunity; unknown outcomes are never resent.
+  'opportunity-notify': async (value, args) => {
+    assertOptions('opportunity-notify', args, ['--store']);
+    const summary = await deliverOpportunityNotifications({
+      campaignId: requiredValue('opportunity-notify', value),
+      store: storePath(args, '.zerochart-campaigns'),
+      transport: telegramTransportFromEnv(),
+    });
+    printJson(summary);
+    if (summary.rejected > 0 || summary.unknown > 0) process.exitCode = 1;
+  },
+  'opportunity-notify-test': async (value, args) => {
+    assertOptions(
+      'opportunity-notify-test',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await telegramTransportFromEnv().send(SYNTHETIC_NOTIFICATION);
+    printJson({ channel: 'telegram', synthetic: true, ...result });
+    if (result.status !== 'DELIVERED') process.exitCode = 1;
   },
   'decisions-demo': async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));

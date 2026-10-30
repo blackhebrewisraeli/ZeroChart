@@ -1,0 +1,188 @@
+{
+  "schemaVersion": "1",
+  "studyId": "zerochart-opportunity-radar-binance-spot-v1",
+  "specificationId": "0eddcc4f81ba47d74168392bb50af64050d3a9db2ab56da914c3814087d64483",
+  "evidenceType": "prospective-live-signal-research",
+  "frozenAt": "2026-10-29T14:46:11.000Z",
+  "frozenRepositoryCommit": "c43a0429102b03fc01d6b43ecbf7c1663c10d7c1",
+  "priorKnowledge": "Frozen after the US-equity scanner v1/v2 retrospective results and the earlier five-asset crypto campaign were known, but before any Opportunity Radar v1 crypto signal or outcome was computed. Thresholds reuse existing committed model constants rather than fitting those prior results.",
+  "interpretation": "Prospective reference-price signal research for a personal decision-support tool. Not fills, an executable strategy, a backtest, financial advice, or evidence of guaranteed or linear profit.",
+  "market": {
+    "venue": "Binance Spot",
+    "quoteAsset": "USDT",
+    "positionDirection": "LONG_ONLY",
+    "leverage": "NONE",
+    "execution": "MANUAL_AND_OUTSIDE_THE_STUDY"
+  },
+  "data": {
+    "provider": "binance-spot-rest",
+    "timeframe": "1d-utc",
+    "candleValidationPolicyVersion": "binance-daily-v1",
+    "dailyOpen": "00:00:00.000Z",
+    "dailyClose": "23:59:59.999Z",
+    "historyRequestCandles": 200,
+    "modelWindowClosedCandles": 199,
+    "substitution": "none",
+    "missingOrInvalid": "The member is not eligible on that slot; no forward-fill, interpolation, alternate venue, nearby timestamp, or later repair is allowed."
+  },
+  "universe": {
+    "selectionRule": "Fixed before Opportunity Radar outcomes: twelve established USDT spot pairs supported by the existing ZeroChart crypto mapping, verified TRADING on Binance at freeze time, with MATICUSDT excluded because it was not TRADING. No member is added, removed, or replaced in v1.",
+    "members": [
+      { "ticker": "BTC-USD", "instrument": "BTCUSDT" },
+      { "ticker": "ETH-USD", "instrument": "ETHUSDT" },
+      { "ticker": "BNB-USD", "instrument": "BNBUSDT" },
+      { "ticker": "SOL-USD", "instrument": "SOLUSDT" },
+      { "ticker": "XRP-USD", "instrument": "XRPUSDT" },
+      { "ticker": "ADA-USD", "instrument": "ADAUSDT" },
+      { "ticker": "DOGE-USD", "instrument": "DOGEUSDT" },
+      { "ticker": "AVAX-USD", "instrument": "AVAXUSDT" },
+      { "ticker": "LINK-USD", "instrument": "LINKUSDT" },
+      { "ticker": "DOT-USD", "instrument": "DOTUSDT" },
+      { "ticker": "LTC-USD", "instrument": "LTCUSDT" },
+      { "ticker": "BCH-USD", "instrument": "BCHUSDT" }
+    ]
+  },
+  "schedule": {
+    "timezone": "UTC",
+    "cadence": "daily",
+    "primarySlot": "00:30:00.000Z",
+    "retryDeadline": "06:00:00.000Z",
+    "rule": "One logical slot per UTC day. Retries may complete only the same slot before the deadline and must retain every failed attempt. A completed slot is never fetched or rewritten again; a slot still incomplete at the deadline is MISSED and is never backdated."
+  },
+  "versions": {
+    "scannerVersion": "market-scan-v2",
+    "modelVersion": "1.0.0",
+    "opportunityContractVersion": "opportunity-radar-v1"
+  },
+  "indicators": {
+    "smaFast": 50,
+    "smaSlow": 200,
+    "rsi": 14,
+    "macd": { "fast": 12, "slow": 26, "signal": 9 },
+    "atr": 14
+  },
+  "marketGate": {
+    "benchmark": "BTC-USD",
+    "allMustHold": [
+      "BTC-USD is EVALUATED from the slot's closed-candle window",
+      "BTC-USD close is strictly above SMA(200)",
+      "BTC-USD SMA(50) is strictly above SMA(200)",
+      "BTC-USD regime is not HIGH_VOLATILITY"
+    ]
+  },
+  "candidateRule": {
+    "allMustHold": [
+      "member status is EVALUATED",
+      "latest close is strictly above SMA(50)",
+      "SMA(50) is strictly above SMA(200)",
+      "canonical signal_score is at least 78 (existing LONG_SETUP_MIN_SCORE)",
+      "MACD histogram divided by close is at least 0.0005 (existing FLAT_MOMENTUM)",
+      "canonical regime is not HIGH_VOLATILITY",
+      "the market gate passes"
+    ],
+    "ranking": "Eligible candidates ordered by signal_score descending, then ticker in code-unit order.",
+    "opportunityTransition": "Create an Opportunity only when the member qualifies and did not qualify in the immediately previous successfully completed slot. If that prior slot is absent or the member was not evaluated, onset is unknown and no Opportunity is created.",
+    "standingCondition": "A continuing qualification is recorded in coverage but emits no duplicate Opportunity. Requalification after at least one successfully observed non-qualifying slot is a new Opportunity."
+  },
+  "opportunity": {
+    "anchor": "The latest validated closed daily candle used by the slot.",
+    "entryZone": {
+      "lower": "anchor close minus 0.50 times frozen ATR(14)",
+      "upper": "anchor close plus 0.25 times frozen ATR(14)",
+      "validDailyOpens": 3
+    },
+    "invalidation": "anchor close minus 2.00 times frozen ATR(14); report the first later daily candle whose low is at or below it, but do not claim a stop fill.",
+    "horizonCalendarDays": { "primary": 20, "secondary": [5, 10, 30] },
+    "expires": "After the third UTC daily open following observedAt, or earlier if the recorded invalidation level is touched or the BTC market gate fails on a completed slot.",
+    "requiredAlertFields": [
+      "opportunityId",
+      "observedAt",
+      "ticker",
+      "instrument",
+      "modelVersion",
+      "dataAsOf",
+      "signalScore",
+      "regime",
+      "rationale",
+      "entryZoneLower",
+      "entryZoneUpper",
+      "invalidationPrice",
+      "primaryHorizonDays",
+      "expiresAt",
+      "marketGateEvidence"
+    ]
+  },
+  "outcomes": {
+    "primaryPopulation": "Every emitted Opportunity, including one whose later open never enters the displayed entry zone.",
+    "referencePrice": "OPEN of the first validated UTC daily candle whose open time is strictly after observedAt.",
+    "endpointPrice": "OPEN of the validated UTC daily candle exactly h calendar days after the reference open time.",
+    "primaryMeasure": "20-day endpoint/reference minus 1, net of the frozen round-trip cost model, and its percentage-point differences versus BTC-USD and the same-date equal-weight eligible universe.",
+    "secondaryMeasures": [
+      "5, 10 and 30-day net changes and benchmark differences",
+      "fraction positive and fraction above each benchmark",
+      "maximum favorable and adverse excursion from the reference through each endpoint",
+      "whether and when the frozen invalidation level was touched",
+      "whether any of the first three daily opens entered the displayed entry zone"
+    ],
+    "benchmarks": {
+      "btc": "BTC-USD over the identical reference and endpoint timestamps.",
+      "equalWeightUniverse": "Mean change of every v1 universe member eligible on the Opportunity's slot with an AVAILABLE outcome at identical timestamps, including the Opportunity member."
+    },
+    "costModel": {
+      "entryFeeBps": 10,
+      "exitFeeBps": 10,
+      "entrySlippageBps": 5,
+      "exitSlippageBps": 5,
+      "roundTripBps": 30,
+      "note": "A conservative fixed research deduction, not the user's actual Binance fee tier or a fill simulation."
+    },
+    "missingData": {
+      "pending": "The endpoint open time has not occurred.",
+      "available": "One validated candle exists at every exact required timestamp.",
+      "missing": "A required exact candle is absent after its timestamp occurred.",
+      "invalid": "A required candle is duplicate, malformed, stale, or conflicts with immutable evidence.",
+      "substitution": "none"
+    }
+  },
+  "analysis": {
+    "interimPolicy": "Before the decision gate, expose operational health, slot counts, data failures and reproduction status only. Do not expose group returns, benchmark differences, hit rates, excursions, per-asset outcomes or partial performance conclusions.",
+    "primaryHypothesis": "Opportunity Radar v1 Opportunities have a positive mean 20-day net change and positive mean 20-day excess change versus both BTC-USD and the equal-weight eligible universe.",
+    "secondaryResults": "All frozen secondary horizons and risk diagnostics are reported regardless of direction.",
+    "dependence": "Opportunities may share dates, assets and overlapping horizons. Counts are not independent trials.",
+    "uncertainty": "Report a deterministic 90% moving-block bootstrap interval by opportunity date, 20-calendar-day blocks, 10000 resamples, PRNG seed 20261029. It is a sensitivity measure under dependence, not proof of statistical significance.",
+    "prohibited": [
+      "changing the universe, thresholds, horizons, costs or benchmarks in v1",
+      "deleting failed, missed, expired, invalidated or losing Opportunities",
+      "using later data in a slot or Opportunity",
+      "selecting a subgroup after seeing its outcomes and calling it confirmatory",
+      "claiming fills, portfolio profit, guaranteed returns or linear returns"
+    ]
+  },
+  "checkpoints": {
+    "operational": "After 90 consecutive calendar slots, review collection and reproduction health only; no performance decision.",
+    "decisionGate": {
+      "minimumCalendarSlots": 180,
+      "minimumMaturedPrimaryOutcomes": 40,
+      "minimumDistinctAssets": 6,
+      "minimumDistinctOpportunityMonths": 4,
+      "maximumSingleAssetShare": 0.3,
+      "integrity": [
+        "at least 95% of expected slots completed",
+        "100% of completed slots reproduce byte-equivalently offline",
+        "zero immutable-evidence conflicts"
+      ],
+      "signal": [
+        "mean and median primary 20-day net change are above zero",
+        "mean primary 20-day excess versus BTC-USD is above zero",
+        "mean primary 20-day excess versus the equal-weight eligible universe is above zero",
+        "the 90% moving-block bootstrap lower bound for mean excess versus BTC-USD is above zero"
+      ],
+      "result": "Passing authorizes an owner review of a separately specified tiny-capital pilot; it never activates trading automatically. Failing or insufficient evidence keeps the system in shadow mode. Any revised rule is a new frozen study version."
+    }
+  },
+  "storage": {
+    "rawEvidence": "private, git-ignored and append-only, with immutable off-device backup",
+    "publicRepository": "specification, implementation, tests and aggregate sanitized status only",
+    "delivery": "Notification transport is not the source of truth and may be chosen later; delivery retries must not create or omit study Opportunities."
+  }
+}

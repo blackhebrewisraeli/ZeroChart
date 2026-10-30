@@ -1,4 +1,4 @@
-import { REPORT_STYLES } from './reportStyles';
+import { esc, pct, pp, REPORT_STYLES, share, table, wrap, type Cell } from './reportStyles';
 import type { GroupId, GroupStats, HorizonResults, StudyResults } from './scannerResearch';
 import type {
   BaselineStats,
@@ -50,41 +50,6 @@ const CANNOT_ESTABLISH = [
 ];
 
 /** What a report cell holds; null renders as a dash. */
-type Cell = string | number | null;
-
-function esc(value: Cell): string {
-  return String(value ?? '—')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function signed(value: number | null, digits: number, unit: string): string {
-  if (value === null || !Number.isFinite(value)) return '—';
-  // `|| 0` folds a rounded -0 (a universe row's float residue) into +0.
-  const rounded = Number(value.toFixed(digits)) || 0;
-  return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(digits)}${unit}`;
-}
-
-const pct = (value: number | null) => signed(value, 2, '%');
-const pp = (value: number | null) => signed(value, 2, ' pp');
-const share = (value: number | null) =>
-  value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(1)}%`;
-
-function wrap(tag: string, content: string): string {
-  return `<${tag}>${content}</${tag}>`;
-}
-
-function table(headers: readonly string[], rows: readonly (readonly Cell[])[]): string {
-  const head = headers.map((header) => wrap('th', esc(header))).join('');
-  const body = rows
-    .map((row) => wrap('tr', row.map((cell) => wrap('td', esc(cell))).join('')))
-    .join('');
-  return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
-}
-
 const STAT_HEADERS = [
   'Observations',
   'Assets',

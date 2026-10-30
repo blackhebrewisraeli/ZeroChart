@@ -72,12 +72,12 @@ export function universeVersion(source: string, members: readonly string[]): str
   return sha256({ source, members });
 }
 
-function hashInputs(inputs: readonly ScanInput[]): Record<string, string> {
+export function hashInputs(inputs: readonly ScanInput[]): Record<string, string> {
   return Object.fromEntries(inputs.map((input) => [input.ticker, sha256(input)]));
 }
 
 /** The JSON representation is the evidence contract; input order is not semantically relevant. */
-function normalizeInputs(inputs: readonly ScanInput[]): ScanInput[] {
+export function normalizeInputs(inputs: readonly ScanInput[]): ScanInput[] {
   const json = JSON.stringify(inputs);
   if (json === undefined) throw new Error('Scan inputs are not JSON serializable');
   return (JSON.parse(json) as ScanInput[]).sort((a, b) => compareTickers(a.ticker, b.ticker));

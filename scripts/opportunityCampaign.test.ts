@@ -523,6 +523,13 @@ describe('Opportunity Radar offline reproduction', () => {
 
   it.each([
     [
+      'a version-1 slot (observedAt + 72 hours expiry)',
+      (artifact: OpportunitySlotArtifact) => {
+        (artifact as { schemaVersion: string }).schemaVersion = '1';
+      },
+      'SLOT_METADATA_MISMATCH',
+    ],
+    [
       'a changed input candle',
       (artifact: OpportunitySlotArtifact) => {
         artifact.inputs[0]!.candles![199]!.close += 1;

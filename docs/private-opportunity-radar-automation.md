@@ -3,9 +3,36 @@
 This runbook operates the frozen Opportunity Radar v1 study
 ([`OPPORTUNITY_RADAR_RESEARCH.md`](OPPORTUNITY_RADAR_RESEARCH.md),
 [`opportunity-radar.v1.json`](opportunity-radar.v1.json)) unattended. The workflow
-[`private-opportunity-radar.yml`](../.github/workflows/private-opportunity-radar.yml) lands
-**disabled**, with its campaign ID and frozen implementation commit unpinned. No live campaign
-exists until the owner performs every step below in order.
+[`private-opportunity-radar.yml`](../.github/workflows/private-opportunity-radar.yml) collects
+nothing until the owner sets the activation variable. Its campaign ID and frozen implementation
+commit are already pinned to a campaign the owner initialized and imported, whose implementation
+predates the corrected notification lifecycle (see [Current state](#current-state)). The study's
+Binance data source is separate from the TradingView product flow
+([data source attribution](OPPORTUNITY_RADAR_RESEARCH.md#data-source-attribution)).
+
+## Current state
+
+Checked read-only on 2026-10-30. Nothing was enabled, initialized, dispatched or uploaded.
+
+| Check                         | Result   | Evidence                                                                                                                                                                                                                                                                                          |
+| ----------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow pins                 | VERIFIED | `CAMPAIGN_ID: opportunity-radar-v1-2026-12-01` and `FROZEN_IMPLEMENTATION_COMMIT: 99ec46261aee9d945c594ba6b01d8e0d21b9336d`, set by `b80eb03` (the last commit of #119) and merged in `96198c9`. They are not placeholders                                                                        |
+| Frozen commit                 | VERIFIED | `99ec462` has `opportunity-campaign-run`, `opportunity-campaign-reproduce --block-network` and `opportunity-outcomes --matured-only`. Its tree differs from `96198c9` only in those two pins. #119 was squash-merged, so it is not in `main`'s history; it is reachable from `refs/pull/119/head` |
+| Manifest and pins agree       | VERIFIED | Private storage holds one manifest for that ID, uploaded 2026-10-30T16:05:03Z, byte-identical (size and MD5) to the owner's local copy. It names `99ec462`, specification `0eddcc4f…`, 365 slots from 2026-12-01 to 2027-11-30, and validates against the frozen specification. No slot is due    |
+| Activation switch             | VERIFIED | `OPPORTUNITY_RADAR_AUTOMATION_ENABLED` is not set, so collection is off                                                                                                                                                                                                                           |
+| Workflow runs                 | VERIFIED | None                                                                                                                                                                                                                                                                                              |
+| Telegram secrets              | VERIFIED | Not set; notifications would report "not configured"                                                                                                                                                                                                                                              |
+| Runner checkout of `99ec462`  | UNKNOWN  | Only the enabled `collect` job checks it out, and it has never run                                                                                                                                                                                                                                |
+| Binance reachability (runner) | UNKNOWN  | `binance-preflight` has never been dispatched                                                                                                                                                                                                                                                     |
+
+**Compatibility.** `99ec462` writes slot schema 1, whose Opportunities store `expiresAt` as
+observedAt + 72 hours (00:30 UTC) instead of the contract's third UTC daily open (00:00 UTC). The
+orchestration on `main` never sends an Opportunity from a schema-1 slot. It counts it
+`incompatible` and fails the run's notification stage after every stage's evidence is persisted.
+Collection, reproduction and outcomes are unaffected, because `99ec462` runs them and reproduces
+its own schema-1 slots. To get notifications, initialize a new campaign under a new ID from a
+reviewed commit that writes schema 2 (step 4), import it, and pin both values in a reviewed pull
+request. Keep the 2026-12-01 manifest as it is: it has no slots, and its ID is never reused.
 
 The GitHub repository is public. Workflow logs and summaries carry only stage names, statuses and
 counts. Candles, tickers, prices, Opportunities, outcomes and credentials are never printed or
@@ -36,8 +63,8 @@ implementation, which needs only Binance and its local evidence store.
 | Variable | `OPPORTUNITY_RADAR_AUTOMATION_ENABLED` | Activation switch; only exactly `true` collects evidence |
 
 `CAMPAIGN_ID` and `FROZEN_IMPLEMENTATION_COMMIT` are not variables: they are pinned in the workflow
-file by a reviewed change, so nobody can redirect collection by editing repository settings. Until
-both are pinned every collection run stops at configuration.
+file by a reviewed change, so nobody can redirect collection by editing repository settings. A
+collection run with either value missing or malformed stops at configuration.
 
 ## Activation sequence
 
@@ -135,9 +162,17 @@ Every enabled run, on a fresh runner:
    a failed attempt is kept and retried by the next scheduled run.
 4. Persists and round-trip verifies the evidence after every stage, including failing ones.
 5. Reproduces the slot offline with network access blocked. The slot is accepted only on `MATCH`.
-6. Sends each accepted, unexpired Opportunity to Telegram at most once. The attempt is persisted
-   before the message leaves, so no later runner resends it. A timeout, server error or unanswered
-   attempt is reported `unresolved` and never resent: check the chat.
+6. After the due slot reproduces, sends each Opportunity in a completed schema-2 slot to Telegram
+   at most once, and only while the evidence on record at that moment shows it valid. It must be
+   before the third UTC daily open after observation (`expiresAt`). No later completed slot may
+   have failed the BTC market gate, and no later recorded daily low may be at or below the
+   invalidation level. A daily candle proves only that the level was touched by its close, never
+   when. A later slot that is due but not on record, or whose BTC or member data could not be
+   judged, holds the send. That hold neither cancels the Opportunity nor claims it is still valid.
+   Holds and cancellations write nothing and never change which Opportunities the study counts or
+   how their outcomes are measured. The attempt is persisted before the message leaves, so no later
+   runner resends it. A timeout, server error or unanswered attempt is reported `unresolved` and
+   never resent: check the chat.
 7. Collects outcomes only for matured horizons, from each endpoint day's 00:30 slot on.
 8. Records the run privately and writes the sanitized summary.
 

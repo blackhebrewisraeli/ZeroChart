@@ -202,10 +202,30 @@ describe('Opportunity Radar transitions and payload', () => {
       entryZone: { low: 108, high: 111 },
       invalidation: 102,
       validDailyOpens: 3,
-      expiresAt: EVALUATION_TIME + 3 * DAY_MS,
+      expiresAt: START + 203 * DAY_MS,
       primaryHorizonDays: 20,
       secondaryHorizonDays: [5, 10, 30],
     });
+  });
+
+  it.each([
+    ['a 00:30 slot', Date.UTC(2026, 10, 30, 0, 30), Date.UTC(2026, 11, 3)],
+    [
+      'the last millisecond of a day',
+      Date.UTC(2026, 10, 30, 23, 59, 59, 999),
+      Date.UTC(2026, 11, 3),
+    ],
+    ['an observation exactly at a daily open', Date.UTC(2026, 10, 30), Date.UTC(2026, 11, 3)],
+  ])('expires %s at the third UTC daily open after it', (_label, observedAt, thirdOpen) => {
+    const asset = snapshot({ ticker: 'ETH-USD', instrument: 'ETHUSDT' });
+    const [opportunity] = evaluateOpportunityDecisions([snapshot(), asset], CONFIG, observedAt, {
+      status: 'COMPLETE',
+      qualifiedTickers: ['BTC-USD'],
+    }).opportunities;
+
+    expect(opportunity?.expiresAt).toBe(thirdOpen);
+    // Not observedAt + 72 hours: at a 00:30 slot that would be 30 minutes too late.
+    expect(opportunity?.expiresAt).toBeLessThanOrEqual(observedAt + 3 * DAY_MS);
   });
 });
 

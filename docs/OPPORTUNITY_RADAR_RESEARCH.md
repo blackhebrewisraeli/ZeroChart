@@ -68,6 +68,26 @@ against both benchmarks, and a positive lower bound of the frozen 90% moving-blo
 BTC excess. Passing authorizes only an owner review of a new, separately specified tiny-capital
 pilot. It never activates trading. Failure or insufficient evidence keeps shadow mode active.
 
+## Data source attribution
+
+ZeroChart has two separate market-data flows. Neither reads the other's data or evidence.
+
+| Flow                              | Data source                                                                                                                      | Implemented                                                                                                                                                                                       | Operationally verified                                                                                                                                                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opportunity Radar v1 (this study) | Binance Spot public REST daily klines (`binance-spot-rest`), fetched directly by the frozen implementation. Not TradingView data | Merged in #119: collection, offline reproduction, outcomes, decision gate, reports, Telegram delivery and a disabled GitHub Actions workflow ([runbook](private-opportunity-radar-automation.md)) | Synthetic end-to-end tests only. No slot has been collected, the workflow has never run, and Binance reachability from GitHub runners and Telegram delivery are unverified (2026-10-30) |
+| TradingView flow                  | The owner's TradingView account: Pine HUD alerts through `tv-webhook`, and TradingView MCP bars imported by `tradingview-import` | Per-chart alert ingestion, and the local, owner-initiated development scan of 50 US equities ([MARKET_SCANNER.md](MARKET_SCANNER.md#tradingview-development-scan-local-owner-initiated))          | As recorded in [MARKET_SCANNER.md](MARKET_SCANNER.md) and [TRADINGVIEW_ONLY_FEASIBILITY.md](TRADINGVIEW_ONLY_FEASIBILITY.md); not re-checked here                                       |
+
+This study is not the TradingView product scanner, and its evidence is not TradingView data.
+
+**Unresolved owner decision.** [TRADINGVIEW_ONLY_FEASIBILITY.md](TRADINGVIEW_ONLY_FEASIBILITY.md)
+(2026-10-29) assessed the owner's requirement that TradingView be the only market-data source, and
+found no TradingView path authorized for a commercial scanner. No later record explicitly
+supersedes that requirement. [`ideas/opportunity-radar.md`](ideas/opportunity-radar.md), marked
+"Approved product direction" on 2026-10-29 and committed after that assessment, scopes this MVP to
+Binance Spot. It doesn't mention the TradingView-only requirement, so it isn't cited as superseding
+it. Activating this campaign therefore also needs the owner's explicit decision on its data
+source. Replacing Binance would be a new study version (the contract allows no substitution).
+
 ## Commands
 
 These are the required command contracts for the implementation phase:

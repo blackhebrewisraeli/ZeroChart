@@ -396,8 +396,15 @@ export interface OpportunitySlotAttempt {
   }>;
 }
 
+/**
+ * Version 2 carries the contract's third-daily-open `expiresAt`; version 1 (up to
+ * 99ec462) stored observedAt + 72 hours. Reproduction refuses a slot of another
+ * version, and delivery never sends one.
+ */
+export const OPPORTUNITY_SLOT_SCHEMA_VERSION = '2';
+
 export interface OpportunitySlotArtifact {
-  schemaVersion: '1';
+  schemaVersion: typeof OPPORTUNITY_SLOT_SCHEMA_VERSION;
   evidenceType: 'opportunity-radar-slot';
   campaignId: string;
   specificationId: string;
@@ -505,7 +512,7 @@ function buildSlotArtifact(
   const slotTime = Date.parse(slot);
   const request = candleRequestFor(slotTime);
   return {
-    schemaVersion: '1',
+    schemaVersion: OPPORTUNITY_SLOT_SCHEMA_VERSION,
     evidenceType: 'opportunity-radar-slot',
     campaignId: manifest.campaignId,
     specificationId: manifest.specificationId,

@@ -193,11 +193,39 @@ live scan still reports equities as `UNSUPPORTED`.
 | Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan` to this machine's loopback addresses; production builds have no such route            |
 | Decide                  | The owner                | Nothing in the panel is an action                                                                                                                                                                         |
 
-```bash
-npm run evaluate -- tradingview-import .zerochart-tradingview/<RETRIEVAL_ID>.json
-npm run evaluate -- scan-reproduce <SCAN_ID>
-npm run dev   # then open http://localhost:8080/?devAuth=1, Research → Markets
-```
+### Refreshing it (owner runbook)
+
+Reloading the page re-reads the last import. It never fetches TradingView bars, and nothing
+re-scans on a schedule. The agent's TradingView MCP session is the owner's, signed in with the
+owner's account; it is not a backend connection the app can call. A new scan is these five steps,
+started by the owner:
+
+1. **Retrieve** (agent session with TradingView's MCP server connected). Start outside the
+   finalization boundary: a session becomes final 9h after the New York close (01:00 New York on a
+   normal day), and a retrieval that spans it is refused at import. Note the start time, then call
+   `get_ohlcv` with `interval` `1D` and `count` 1000 for each of the 50 symbols in
+   `TRADINGVIEW_SYMBOLS`, in batches of about 8 (well under ~100 calls a minute), and
+   `list_alerts` once (read only). Keep every response verbatim. A failed call is recorded as that
+   ticker's `error`; never substitute another symbol or provider. Claude Code saves each ~72 KB
+   response to a tool-results file named by the millisecond; parallel calls can land on the same
+   millisecond and overwrite each other, so check every symbol is present and re-fetch any missing.
+2. **Export.** Write one `TradingViewOhlcvExport` file to git-ignored
+   `.zerochart-tradingview/<YYYYMMDDTHHMMSSZ>.json` (shape below): the retrieval start, the last
+   response time as `completedAt`, each response with its `receivedAt`, and the alert check.
+3. **Import.** `npm run evaluate -- tradingview-import .zerochart-tradingview/<RETRIEVAL_ID>.json`
+   prints the scan ID, coverage, setups and every failure, and writes the snapshot and the view.
+4. **Reproduce offline.** `npm run evaluate -- scan-reproduce <SCAN_ID>` must print `MATCH`.
+5. **Inspect.** `npm run dev`, open <http://localhost:8080/?devAuth=1>, Research → Markets,
+   **TradingView development scan**.
+
+Importing the same export again prints `ALREADY_IMPORTED` / `REUSED` and leaves the view
+byte-identical. An earlier export is a historical scan, not a refresh.
+
+The section heads with its source (`TradingView MCP get_ohlcv`), retrieval window, latest evaluated
+session, requested, evaluated and failed counts, and says that reloading does not fetch bars. It is
+marked **Stale** once two newer sessions are final. Before an import exists it says so; while the
+file loads, and when it cannot be read, it says that too. The Market scan above it names its own
+source (`Binance spot klines`); the two are never merged, and neither is the Markets table.
 
 The export file (`scripts/tradingViewImport.ts`, `TradingViewOhlcvExport`) holds `retrieval.startedAt`
 and `completedAt`, the alert check, and one entry per ticker: `symbol`, `receivedAt` and the response,
@@ -222,4 +250,5 @@ about storing or processing what it returns. The general Terms still restrict no
 commercial use ([TRADINGVIEW_ONLY_FEASIBILITY.md](TRADINGVIEW_ONLY_FEASIBILITY.md)). So this stays
 owner-only and local: the export, snapshots and view file are git-ignored, never committed, never
 sent to Supabase or a deployment, and nothing schedules a re-scan. A product scan still needs
-TradingView's written agreement.
+TradingView's written agreement. A working local demonstration says nothing about commercial
+launch or data-redistribution readiness.

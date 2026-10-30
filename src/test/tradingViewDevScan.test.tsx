@@ -67,18 +67,36 @@ afterEach(() => {
 describe('TradingViewDevScan', () => {
   it('shows the imported scan from the dev-server route', async () => {
     const { fetch } = serve(new Response(JSON.stringify(VIEW)));
+    expect(await screen.findByText('TradingView alerts were not checked.')).toBeInTheDocument();
     expect(
-      await screen.findByRole('region', { name: 'TradingView development scan' }),
-    ).toBeInTheDocument();
+      screen.getByRole('region', { name: 'TradingView development scan' }),
+    ).not.toHaveAttribute('aria-busy', 'true');
     expect(fetch).toHaveBeenCalledWith(TRADINGVIEW_DEV_SCAN_ROUTE, { cache: 'no-store' });
-    expect(screen.getByText('TradingView alerts were not checked.')).toBeInTheDocument();
   });
 
-  it('renders nothing when no scan was imported', async () => {
-    const { fetch, container } = serve(new Response(null, { status: 404 }));
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(container).toBeEmptyDOMElement();
+  it('says it is reading the import while the route has not answered', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {})),
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TradingViewDevScan />
+      </QueryClientProvider>,
+    );
+    const panel = screen.getByRole('region', { name: 'TradingView development scan' });
+    expect(panel).toHaveAttribute('aria-busy', 'true');
+    expect(panel).toHaveTextContent('Reading the local TradingView import…');
+  });
+
+  it('says nothing was imported, and how a scan is made, when the route has no file', async () => {
+    serve(new Response(null, { status: 404 }));
+    const panel = await screen.findByRole('region', { name: 'TradingView development scan' });
+    await vi.waitFor(() =>
+      expect(panel).toHaveTextContent('No TradingView scan has been imported on this machine'),
+    );
+    expect(panel).toHaveTextContent('npm run evaluate -- tradingview-import');
+    expect(panel.querySelector('.scan-row')).toBeNull();
   });
 
   it('reports an unreadable file instead of a partial scan', async () => {

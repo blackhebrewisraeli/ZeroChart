@@ -7,7 +7,15 @@ import {
   type ScanCohort,
   type ScanStatus,
 } from '@/lib/marketScanner';
-import { ageLabel, CLASS_LABEL, dataAsOfLabel, PROVIDER_LABEL, UTC_TIME } from '@/lib/scanReview';
+import {
+  ageLabel,
+  CLASS_LABEL,
+  cohortFreshness,
+  dataAsOfLabel,
+  PROVIDER_LABEL,
+  resultAsOfLabel,
+  UTC_TIME,
+} from '@/lib/scanReview';
 import {
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
   type TradingViewDevSource,
@@ -19,6 +27,30 @@ const STATUS_LABEL: Record<ScanStatus, string> = {
   PARTIAL: 'Incomplete',
   FAILED: 'Failed',
 };
+
+const UTC_CLOCK = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'UTC',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+/** "30 Oct, 17:54–17:55 UTC": when the agent session retrieved the bars. */
+function retrievalLabel({ startedAt, completedAt }: TradingViewDevSource['retrieval']): string {
+  const start = Date.parse(startedAt);
+  const end = Date.parse(completedAt);
+  const sameDay = startedAt.slice(0, 10) === completedAt.slice(0, 10);
+  return `${UTC_TIME.format(start)}–${(sameDay ? UTC_CLOCK : UTC_TIME).format(end)} UTC`;
+}
+
+/** The candle sources this scan scored from, so two scans on one page cannot be mistaken. */
+function sourcesLabel(scan: MarketScan): string {
+  const providers = scan.cohorts.flatMap((cohort) =>
+    cohort.status === 'UNSUPPORTED' || !cohort.provider
+      ? []
+      : [PROVIDER_LABEL[cohort.provider] ?? cohort.provider],
+  );
+  return [...new Set(providers)].join(' + ') || 'No candle source';
+}
 
 function universeLabel(source: string): string {
   if (source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) return 'Requested';
@@ -167,27 +199,46 @@ export function MarketScanSummary({
   const { coverage } = scan;
   const title = source ? 'TradingView development scan' : 'Market scan';
   const firstCohort = scan.cohorts[0];
-  const asOf = firstCohort ? dataAsOfLabel(firstCohort) : null;
+  const latestSession =
+    firstCohort?.dataAsOf.newest == null
+      ? 'None evaluated'
+      : resultAsOfLabel({
+          assetClass: firstCohort.assetClass,
+          dataAsOf: firstCohort.dataAsOf.newest,
+        });
+  const stale = source && firstCohort ? cohortFreshness(firstCohort, Date.now())?.stale : false;
   return (
     <section className={cn('market-scan', source && 'market-scan-devscan')} aria-label={title}>
       <div className="market-scan-head">
         <span className="market-scan-title">
           <Radar size={14} /> {title}
         </span>
+        <span className="market-scan-rule">{sourcesLabel(scan)}</span>
         <span className={cn('market-scan-status', `market-scan-${scan.status.toLowerCase()}`)}>
           {STATUS_LABEL[scan.status]}
         </span>
+        {stale && <span className="market-scan-status market-scan-partial">Stale</span>}
         {source && (
           <span className="market-scan-status market-scan-dev">Historical dev import</span>
         )}
         <span className="market-scan-meta font-mono">
           {scanning ? 'Re-scanning… · ' : ''}
-          {source
-            ? `${asOf ?? 'No evaluated sessions'} · scored ${UTC_TIME.format(completedAt)} UTC`
-            : `Completed ${UTC_TIME.format(completedAt)} UTC`}
+          {source ? 'Imported' : 'Completed'} {UTC_TIME.format(completedAt)} UTC
         </span>
       </div>
       <dl className="market-scan-stats">
+        {source && (
+          <>
+            <div>
+              <dt>Retrieved</dt>
+              <dd>{retrievalLabel(source.retrieval)}</dd>
+            </div>
+            <div>
+              <dt>Latest session</dt>
+              <dd>{latestSession}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>{universeLabel(scan.universe.source)}</dt>
           <dd>{coverage.configured} assets</dd>
@@ -200,7 +251,7 @@ export function MarketScanSummary({
         </div>
         {source ? (
           <div>
-            <dt>Not evaluated</dt>
+            <dt>Failed</dt>
             <dd>{coverage.notEvaluated + coverage.unsupported}</dd>
           </div>
         ) : (
@@ -219,6 +270,14 @@ export function MarketScanSummary({
           </dd>
         </div>
       </dl>
+      {source && (
+        <p className="market-scan-note">
+          Reloading this page re-reads this import; it does not fetch new TradingView bars, and
+          nothing re-scans on a schedule. A new scan needs the owner&rsquo;s agent session to
+          retrieve bars and run the import again (owner runbook in docs/MARKET_SCANNER.md). Its
+          ranks, scores and coverage are never merged into the Market scan or the Markets table.
+        </p>
+      )}
       <section className="market-scan-coverage" aria-label="Coverage by asset class">
         <h3 className="market-scan-label">Coverage by asset class and timeframe</h3>
         <ul className="market-scan-list">

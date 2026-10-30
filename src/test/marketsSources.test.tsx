@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { MarketsSources, type MarketsSource } from '@/components/TradingViewDevScan';
+import { MarketsSection } from '@/components/Workspace';
 import type { Candle } from '@/lib/binance';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import { evaluateScan, type ScanInput } from '@/lib/marketScanner';
@@ -18,6 +19,11 @@ import { bars, EQUITY_NOW, falling, rising, split, wave } from './usEquityFixtur
 
 const DAY = 86_400_000;
 
+// The allocation advisor belongs to the market-data view; a stand-in shows whether it renders.
+vi.mock('@/components/RoboAdvisor', () => ({
+  RoboAdvisor: () => <button type="button">Build Portfolio</button>,
+}));
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(EQUITY_NOW);
@@ -25,6 +31,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 /** Labeled fixture: 199 closed daily crypto candles of a gentle wave, standing in for Binance. */
@@ -324,5 +331,72 @@ describe('Markets source: import states', () => {
     const { open } = serve(json(IMPORT));
     const panel = await open('4');
     expect(within(panel).getByText('Stale', { selector: '.market-scan-status' })).toBeVisible();
+  });
+});
+
+describe('Markets section', () => {
+  function Section() {
+    const [source, setSource] = useState<MarketsSource>('market-data');
+    return (
+      <MarketsSection
+        rows={[]}
+        scores={new Map()}
+        scan={
+          <MarketScanSummary
+            scan={MARKET_SCAN}
+            completedAt={EQUITY_NOW}
+            scanning={false}
+            failed={false}
+          />
+        }
+        assets={[]}
+        marketView="signals"
+        onMarketView={() => {}}
+        assetClass="Crypto"
+        onAssetClass={() => {}}
+        onSelect={() => {}}
+        onInvest={() => {}}
+        source={source}
+        onSource={setSource}
+      />
+    );
+  }
+
+  it('keeps the market-data count, controls and advisor out of the TradingView review', async () => {
+    vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Section />
+      </QueryClientProvider>,
+    );
+    const markets = screen.getByRole('region', { name: 'Markets' });
+    expect(within(markets).getByText('0 ASSETS')).toBeInTheDocument();
+    expect(await within(markets).findByRole('button', { name: 'Build Portfolio' })).toBeVisible();
+    expect(within(markets).getByRole('group', { name: 'Market view' })).toBeInTheDocument();
+
+    await within(markets).findByRole('tab', { name: 'TradingView import 4' });
+    fireEvent.click(within(markets).getByRole('tab', { name: /TradingView import/ }));
+    expect(
+      within(markets).getByRole('region', { name: 'TradingView development scan' }),
+    ).toBeInTheDocument();
+    expect(within(markets).queryByText('0 ASSETS')).not.toBeInTheDocument();
+    expect(within(markets).queryByRole('button', { name: 'Build Portfolio' })).toBeNull();
+    expect(within(markets).queryByRole('group', { name: 'Market view' })).toBeNull();
+    expect(within(markets).queryByRole('region', { name: 'Market scan' })).toBeNull();
+    expect(within(markets).queryByText('No assets match this filter.')).toBeNull();
+  });
+
+  it('has no source picker in a production build, and never reads the import', () => {
+    vi.stubEnv('DEV', false);
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Section />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole('tablist', { name: 'Markets source' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

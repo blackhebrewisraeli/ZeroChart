@@ -429,7 +429,7 @@ function NoSignals({ onPreview }: Readonly<{ onPreview: () => void }>) {
   );
 }
 
-function MarketsSection({
+export function MarketsSection({
   rows,
   scores,
   scan,
@@ -797,10 +797,7 @@ function Terminal() {
                 onSelect={setSelectedAsset}
                 onInvest={() => setView('paper')}
                 source={marketsSource}
-                onSource={(next) => {
-                  setSelectedAsset(null);
-                  setMarketsSource(next);
-                }}
+                onSource={setMarketsSource}
               />
             }
           />

@@ -68,7 +68,7 @@ function publicMessage(error: unknown): string {
   return 'Unexpected error';
 }
 
-async function stage<T>(name: OpportunityStage, run: () => Promise<T>): Promise<T> {
+async function stage<T>(name: OpportunityStage, run: () => T | Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
@@ -437,7 +437,7 @@ export async function main(argv = process.argv): Promise<void> {
     frozen: frozenCheckout(resolve(required('FROZEN_IMPLEMENTATION_DIR'))),
     orchestrationRevision: required('ORCHESTRATION_REVISION'),
     ...(notify
-      ? { transport: await stage('CONFIGURATION', async () => telegramTransportFromEnv()) }
+      ? { transport: await stage('CONFIGURATION', () => telegramTransportFromEnv()) }
       : {}),
   });
   await writeSummary(automationSummaryLines(summary));

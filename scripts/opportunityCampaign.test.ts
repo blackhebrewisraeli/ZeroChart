@@ -123,6 +123,24 @@ describe('Opportunity Radar campaign initialization', () => {
     ).rejects.toMatchObject({ code: 'MANIFEST_CONFLICT' });
   });
 
+  it('creates nothing outside the store through a symlinked campaigns directory', async () => {
+    const root = await store();
+    const outside = await store();
+    await symlink(outside, join(root, 'campaigns'));
+
+    await expect(
+      initializeOpportunityCampaign({
+        campaignId: 'redirected',
+        store: root,
+        startSlot: START,
+        endSlot: END,
+        implementationCommit: COMMIT,
+        now: NOW,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STORAGE_PATH' });
+    expect(await readdir(outside)).toEqual([]);
+  });
+
   it('refuses a campaign directory symlink that escapes the evidence store', async () => {
     const root = await store();
     const outside = await store();

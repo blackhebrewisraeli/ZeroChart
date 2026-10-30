@@ -523,11 +523,11 @@ export async function loadOpportunityOutcomes(
     });
   const records: OpportunityOutcomeRecord[] = [];
   let conflicts = 0;
-  for (const slot of (await list(root)).sort()) {
+  for (const slot of (await list(root)).sort(compareTickers)) {
     const slotDirectory = resolve(root, slot);
     for (const name of (await list(slotDirectory))
       .filter((item) => item.endsWith('.json'))
-      .sort()) {
+      .sort(compareTickers)) {
       records.push(
         JSON.parse(
           (await readIfPresent(resolve(slotDirectory, name)))!,

@@ -51,6 +51,10 @@ const REMOTE = `${STORAGE_OWNER_ID}/${opportunityStorageId(CAMPAIGN)}/`;
 const iso = (time: number) => new Date(time).toISOString();
 const key = (time: number) => iso(time).replaceAll(':', '-');
 
+// Every test round-trips real HTTP to the in-process storage fake on fresh runners; a loaded
+// CI runner takes several times longer than a laptop (the 8-day run is ~1.5 s alone).
+vi.setConfig({ testTimeout: 30_000 });
+
 afterEach(async () => {
   await stopCampaignStorageFakes();
   vi.unstubAllEnvs();
@@ -488,8 +492,7 @@ describe('Checkpoint D: synthetic end-to-end campaign', () => {
         now: () => days.at(-1)!,
       }),
     ).rejects.toBeInstanceOf(OpportunityReportRefusal);
-    // Eight fresh runners, each round-tripping every stored object over HTTP: ~1.5 s alone.
-  }, 30_000);
+  });
 });
 
 describe('frozen implementation environment', () => {

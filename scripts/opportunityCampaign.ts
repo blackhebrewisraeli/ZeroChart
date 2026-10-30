@@ -9,7 +9,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { fetchSymbolCandles, type Candle } from '@/lib/binance';
 import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
 import {
@@ -167,6 +167,28 @@ export function campaignManifestPath(store: string, campaignId: string): string 
   return resolve(store, 'campaigns', campaignId, 'manifest.json');
 }
 
+/**
+ * A directory beneath the canonical store root, checked lexically before it is
+ * created and canonically after, so a symlink can neither receive a new
+ * directory nor redirect later reads. Only the checked path is returned.
+ */
+async function containedDirectory(
+  canonicalRoot: string,
+  path: string,
+  create: boolean,
+): Promise<string> {
+  const outside = () =>
+    new OpportunityCampaignError(
+      'INVALID_STORAGE_PATH',
+      'Campaign directory resolves outside the configured evidence store.',
+    );
+  if (!path.startsWith(`${canonicalRoot}${sep}`)) throw outside();
+  if (create) await mkdir(path, { recursive: true });
+  const canonical = await realpath(path);
+  if (!canonical.startsWith(`${canonicalRoot}${sep}`)) throw outside();
+  return canonical;
+}
+
 async function assertCampaignDirectory(
   store: string,
   campaignId: string,
@@ -175,16 +197,13 @@ async function assertCampaignDirectory(
   const root = resolve(store);
   if (create) await mkdir(root, { recursive: true });
   const canonicalRoot = await realpath(root);
-  const directory = resolve(root, 'campaigns', campaignId);
-  if (create) await mkdir(directory, { recursive: true });
-  const canonicalDirectory = await realpath(directory);
-  if (!canonicalDirectory.startsWith(`${canonicalRoot}${sep}`)) {
-    throw new OpportunityCampaignError(
-      'INVALID_STORAGE_PATH',
-      'Campaign directory resolves outside the configured evidence store.',
-    );
-  }
-  return directory;
+  // The shared parent is contained first: nothing is created through a symlinked campaigns/.
+  const campaigns = await containedDirectory(
+    canonicalRoot,
+    join(canonicalRoot, 'campaigns'),
+    create,
+  );
+  return containedDirectory(canonicalRoot, join(campaigns, campaignId), create);
 }
 
 async function assertNotSymbolicLink(path: string): Promise<void> {

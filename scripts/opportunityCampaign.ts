@@ -9,7 +9,7 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { fetchSymbolCandles, type Candle } from '@/lib/binance';
 import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
 import {
@@ -168,13 +168,15 @@ export function campaignManifestPath(store: string, campaignId: string): string 
 }
 
 /**
- * A directory beneath the canonical store root, checked lexically before it is
- * created and canonically after, so a symlink can neither receive a new
- * directory nor redirect later reads. Only the checked path is returned.
+ * `parent/name` beneath the canonical store root, resolved and checked
+ * lexically before it is created and canonically after, so a symlink can
+ * neither receive a new directory nor redirect later reads. Only the checked
+ * path is returned.
  */
 async function containedDirectory(
   canonicalRoot: string,
-  path: string,
+  parent: string,
+  name: string,
   create: boolean,
 ): Promise<string> {
   const outside = () =>
@@ -182,6 +184,7 @@ async function containedDirectory(
       'INVALID_STORAGE_PATH',
       'Campaign directory resolves outside the configured evidence store.',
     );
+  const path = resolve(parent, name);
   if (!path.startsWith(`${canonicalRoot}${sep}`)) throw outside();
   if (create) await mkdir(path, { recursive: true });
   const canonical = await realpath(path);
@@ -198,12 +201,8 @@ async function assertCampaignDirectory(
   if (create) await mkdir(root, { recursive: true });
   const canonicalRoot = await realpath(root);
   // The shared parent is contained first: nothing is created through a symlinked campaigns/.
-  const campaigns = await containedDirectory(
-    canonicalRoot,
-    join(canonicalRoot, 'campaigns'),
-    create,
-  );
-  return containedDirectory(canonicalRoot, join(campaigns, campaignId), create);
+  const campaigns = await containedDirectory(canonicalRoot, canonicalRoot, 'campaigns', create);
+  return containedDirectory(canonicalRoot, campaigns, campaignId, create);
 }
 
 async function assertNotSymbolicLink(path: string): Promise<void> {

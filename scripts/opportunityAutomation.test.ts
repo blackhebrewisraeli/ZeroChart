@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -92,7 +92,7 @@ function frozenAt(
   options: {
     fetchCandles?: FetchOpportunityCandles;
     outcomeCandles?: FetchOutcomeCandles;
-    overrides?: Record<string, () => CommandResult>;
+    overrides?: Record<string, (args: string[]) => CommandResult | Promise<CommandResult>>;
     commit?: string;
     clean?: boolean;
   } = {},
@@ -107,7 +107,7 @@ function frozenAt(
       const store = args[args.indexOf('--store') + 1]!;
       calls.push(name);
       const override = options.overrides?.[name];
-      if (override) return override();
+      if (override) return override(args);
       if (name === 'opportunity-campaign-run') {
         const run = await runOpportunitySlot({ campaignId, store, fetchCandles, now: () => now });
         return answer(
@@ -121,6 +121,8 @@ function frozenAt(
           store,
           slot: args[args.indexOf('--slot') + 1]!,
           blockNetwork: true,
+          // The CLI records the clean checkout it runs from.
+          reproducerCommit: options.commit ?? COMMIT,
           now: () => now,
         });
         return answer(receipt, receipt.status === 'MATCH' ? 0 : 1);
@@ -201,6 +203,15 @@ const NO_NOTIFICATIONS = {
   marketGateFailed: 0,
   evidenceUnavailable: 0,
   incompatible: 0,
+  originUnverified: 0,
+  evidenceUnverified: 0,
+  unverifiedSlots: {
+    UNSUPPORTED_SCHEMA: 0,
+    NOT_REPRODUCED: 0,
+    REPRODUCTION_MISMATCH: 0,
+    PREDECESSOR_CHANGED: 0,
+    PREDECESSOR_UNVERIFIED: 0,
+  },
   exhausted: 0,
 };
 
@@ -301,6 +312,99 @@ describe('Opportunity Radar automation', () => {
     expect(sent).toEqual([]);
     expect(remoteKeys(fake.objects, '/notifications/')).toEqual([]);
     expect(fake.objects.get(slotKey)!.toString()).toContain('"schemaVersion": "1"');
+  });
+
+  it('keeps a slot that failed reproduction unsent on later fresh runners until a legitimate MATCH', async () => {
+    const fake = await importedCampaign();
+    const { sent, transport: telegram } = transport();
+    await automate(fake, START + 60_000, { transport: telegram });
+
+    // Day 1 holds the Opportunity. Its reproduction runs without the slot it was judged
+    // against, as after a partial restore, and so records a genuine MISMATCH.
+    const day1 = START + DAY + 60_000;
+    const partial = frozenAt(day1, {
+      overrides: {
+        'opportunity-campaign-reproduce': async (args) => {
+          const store = args[args.indexOf('--store') + 1]!;
+          const previous = join(store, 'campaigns', CAMPAIGN, 'slots', key(START), 'slot.json');
+          await rename(previous, `${previous}.hidden`);
+          try {
+            const receipt = await reproduceOpportunitySlot({
+              campaignId: CAMPAIGN,
+              store,
+              slot: iso(START + DAY),
+              blockNetwork: true,
+              reproducerCommit: COMMIT,
+              now: () => day1,
+            });
+            return answer(receipt, 1);
+          } finally {
+            await rename(`${previous}.hidden`, previous);
+          }
+        },
+      },
+    });
+    expect(
+      (await failure(automate(fake, day1, { frozen: partial.frozen, transport: telegram }))).stage,
+    ).toBe('REPRODUCTION');
+    const [mismatchKey] = remoteKeys(fake.objects, `/${key(START + DAY)}/reproductions/`);
+    const mismatch = fake.objects.get(mismatchKey!)!.toString();
+    expect(JSON.parse(mismatch)).toMatchObject({
+      status: 'MISMATCH',
+      reason: 'PREVIOUS_SLOT_MISMATCH',
+    });
+    const evidence = new Map(
+      [...remoteKeys(fake.objects, '/slot.json'), `${REMOTE}manifest.json`].map((item) => [
+        item,
+        fake.objects.get(item)!.toString(),
+      ]),
+    );
+
+    // Day 2 collects and reproduces its own slot on a fresh runner.
+    const day2 = START + 2 * DAY + 60_000;
+    const blocked = automate(fake, day2, { transport: telegram });
+    await blocked.catch(() => undefined);
+    // Before delivery required verification, this run sent the day-1 Opportunity.
+    expect(sent).toEqual([]);
+    const failed = await failure(blocked);
+    expect(failed.stage).toBe('NOTIFICATION');
+    expect(failed.message).toContain('1 held on unverified evidence (REPRODUCTION_MISMATCH 1)');
+    expect(remoteKeys(fake.objects, '/notifications/')).toEqual([]);
+
+    // The owner reproduces day 1 at the frozen commit on a full restore and uploads the receipt.
+    const owner = await mkdtemp(join(tmpdir(), 'zerochart-owner-'));
+    await restoreCampaign(
+      fake.session,
+      opportunityStorageId(CAMPAIGN),
+      join(owner, 'campaigns', CAMPAIGN),
+    );
+    await expect(
+      reproduceOpportunitySlot({
+        campaignId: CAMPAIGN,
+        store: owner,
+        slot: iso(START + DAY),
+        blockNetwork: true,
+        reproducerCommit: COMMIT,
+        now: () => day2 + 60 * 60_000,
+      }),
+    ).resolves.toMatchObject({ status: 'MATCH', reason: null });
+    await expect(
+      importOpportunityCampaign({ campaignId: CAMPAIGN, store: owner, storage: fake.session }),
+    ).resolves.toMatchObject({ created: 1 });
+
+    const day3 = START + 3 * DAY + 60_000;
+    const recovered = [];
+    for (const now of [day3, day3 + 60 * 60_000]) {
+      recovered.push((await automate(fake, now, { transport: telegram })).notifications);
+    }
+    expect(recovered).toEqual([
+      { ...NO_NOTIFICATIONS, delivered: 1 },
+      { ...NO_NOTIFICATIONS, alreadyDelivered: 1 },
+    ]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('expires 2026-11-03 00:00 UTC');
+    for (const [item, bytes] of evidence) expect(fake.objects.get(item)!.toString()).toBe(bytes);
+    expect(fake.objects.get(mismatchKey!)!.toString()).toBe(mismatch);
   });
 
   it('changes no evidence on an identical same-day retry from another fresh runner', async () => {

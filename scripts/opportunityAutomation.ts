@@ -236,7 +236,7 @@ export async function runOpportunityAutomation(
     }
     reproduction = 'MATCH';
 
-    // Accepted evidence only: notifications follow a persisted, reproduced slot.
+    // Delivery itself requires a current MATCH for every slot it reads, today's included.
     if (options.transport) {
       notifications = await stage('NOTIFICATION', () =>
         deliverOpportunityNotifications({
@@ -289,13 +289,19 @@ export async function runOpportunityAutomation(
       `Outcome collection found ${outcomes.conflicts} conflicting and ${outcomes.fetchFailed} unfetched records`,
     );
   }
+  const unverified = notifications
+    ? notifications.originUnverified + notifications.evidenceUnverified
+    : 0;
   if (
     notifications &&
-    (notifications.rejected > 0 || notifications.unknown > 0 || notifications.incompatible > 0)
+    (notifications.rejected > 0 ||
+      notifications.unknown > 0 ||
+      notifications.incompatible > 0 ||
+      unverified > 0)
   ) {
     throw new OpportunityAutomationError(
       'NOTIFICATION',
-      `${notifications.rejected} notifications rejected, ${notifications.unknown} with unknown delivery and ${notifications.incompatible} from an incompatible slot schema`,
+      `${notifications.rejected} notifications rejected, ${notifications.unknown} with unknown delivery, ${notifications.incompatible} from an incompatible slot schema and ${unverified} held on unverified evidence${verificationReasons(notifications)}`,
     );
   }
   return summary;
@@ -317,6 +323,14 @@ export async function importOpportunityCampaign(options: {
   return { created: persisted.created, verified: persisted.verified + restored.verified };
 }
 
+/** Reason codes and slot counts, e.g. " (NOT_REPRODUCED 1)"; empty when every slot verified. */
+function verificationReasons(notifications: NotificationSummary): string {
+  const reasons = Object.entries(notifications.unverifiedSlots)
+    .filter(([, count]) => count > 0)
+    .map(([reason, count]) => `${reason} ${count}`);
+  return reasons.length ? ` (${reasons.join(', ')})` : '';
+}
+
 /** Counts and phase statuses only; the repository is public. */
 export function automationSummaryLines(summary: OpportunityAutomationSummary): string[] {
   const { notifications, outcomes } = summary;
@@ -327,7 +341,7 @@ export function automationSummaryLines(summary: OpportunityAutomationSummary): s
     '- Durable persistence: verified',
     `- Offline reproduction: ${summary.reproduction === 'MATCH' ? 'matched' : 'not applicable'}`,
     notifications
-      ? `- Notifications: ${notifications.delivered} delivered, ${notifications.alreadyDelivered} already delivered, ${notifications.unresolved} unresolved; not sent: ${notifications.expired} expired, ${notifications.invalidated} invalidated, ${notifications.marketGateFailed} after a failed market gate, ${notifications.evidenceUnavailable} held for missing evidence, ${notifications.incompatible} incompatible`
+      ? `- Notifications: ${notifications.delivered} delivered, ${notifications.alreadyDelivered} already delivered, ${notifications.unresolved} unresolved; not sent: ${notifications.expired} expired, ${notifications.invalidated} invalidated, ${notifications.marketGateFailed} after a failed market gate, ${notifications.evidenceUnavailable} held for missing evidence, ${notifications.originUnverified} held for an unverified slot, ${notifications.evidenceUnverified} held for unverified later evidence${verificationReasons(notifications)}, ${notifications.incompatible} incompatible`
       : '- Notifications: not configured',
     `- Outcome records: ${outcomes.created} created, ${outcomes.unchanged + outcomes.recorded} on file, ${outcomes.pending} horizons pending`,
     '- Evidence, assets, prices and Opportunities: omitted because this repository is public',

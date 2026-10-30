@@ -639,6 +639,11 @@ export interface OpportunityReproduction {
   slotSha256: string;
   reproducedAt: string;
   networkBlocked: boolean;
+  /**
+   * The clean Git commit whose code reproduced; null when modified or unknown. Older receipts
+   * lack it. Only the manifest's own implementation commit can authorize a notification.
+   */
+  reproducerCommit?: string | null;
   status: 'MATCH' | 'MISMATCH';
   reason: OpportunityReproductionReason | null;
 }
@@ -692,6 +697,8 @@ export async function reproduceOpportunitySlot(options: {
   /** Defaults to the latest completed slot. */
   slot?: string;
   blockNetwork?: boolean;
+  /** The clean commit running this code, as the CLI found it; recorded, never trusted here. */
+  reproducerCommit?: string | null;
   now?: () => number;
   specificationPath?: string;
 }): Promise<OpportunityReproduction> {
@@ -750,6 +757,7 @@ export async function reproduceOpportunitySlot(options: {
     slotSha256: createHash('sha256').update(bytes).digest('hex'),
     reproducedAt,
     networkBlocked: Boolean(options.blockNetwork),
+    reproducerCommit: options.reproducerCommit ?? null,
     status: reason === null ? 'MATCH' : 'MISMATCH',
     reason,
   };

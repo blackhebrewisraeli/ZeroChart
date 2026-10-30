@@ -30,9 +30,11 @@ observedAt + 72 hours (00:30 UTC) instead of the contract's third UTC daily open
 orchestration on `main` never sends an Opportunity from a schema-1 slot. It counts it
 `incompatible` and fails the run's notification stage after every stage's evidence is persisted.
 Collection, reproduction and outcomes are unaffected, because `99ec462` runs them and reproduces
-its own schema-1 slots. To get notifications, initialize a new campaign under a new ID from a
-reviewed commit that writes schema 2 (step 4), import it, and pin both values in a reviewed pull
-request. Keep the 2026-12-01 manifest as it is: it has no slots, and its ID is never reused.
+its own schema-1 slots. Its reproduction receipts also do not name the commit that wrote them, which
+delivery requires ([Delivery verification](#delivery-verification)). To get notifications,
+initialize a new campaign under a new ID from a reviewed commit that writes schema 2 and records
+`reproducerCommit` (step 4), import it, and pin both values in a reviewed pull request. Keep the
+2026-12-01 manifest as it is: it has no slots, and its ID is never reused.
 
 The GitHub repository is public. Workflow logs and summaries carry only stage names, statuses and
 counts. Candles, tickers, prices, Opportunities, outcomes and credentials are never printed or
@@ -163,7 +165,9 @@ Every enabled run, on a fresh runner:
 4. Persists and round-trip verifies the evidence after every stage, including failing ones.
 5. Reproduces the slot offline with network access blocked. The slot is accepted only on `MATCH`.
 6. After the due slot reproduces, sends each Opportunity in a completed schema-2 slot to Telegram
-   at most once, and only while the evidence on record at that moment shows it valid. It must be
+   at most once, only from verified evidence
+   ([Delivery verification](#delivery-verification)), and only while the evidence on record at
+   that moment shows it valid. It must be
    before the third UTC daily open after observation (`expiresAt`). No later completed slot may
    have failed the BTC market gate, and no later recorded daily low may be at or below the
    invalidation level. A daily candle proves only that the level was touched by its close, never
@@ -175,6 +179,46 @@ Every enabled run, on a fresh runner:
    never resent: check the chat.
 7. Collects outcomes only for matured horizons, from each endpoint day's 00:30 slot on.
 8. Records the run privately and writes the sanitized summary.
+
+### Delivery verification
+
+A failed reproduction stops that day's run, but the Opportunity's slot stays in storage. Delivery
+therefore verifies every slot it reads, on every run and from `opportunity-notify` alike, before it
+writes a send claim or contacts Telegram. A slot is verified when:
+
+- it is the supported slot schema (2);
+- the latest reproduction receipt for it is `MATCH` (at equal times a `MISMATCH` wins), counting
+  only receipts that name this campaign and logical slot, the SHA-256 of the slot's **current**
+  bytes, `networkBlocked: true`, a `reproducerCommit` equal to the manifest's implementation commit,
+  and a time no later than the decision;
+- the calendar-previous slot its transitions were judged against still hashes to the `previous`
+  link stored in it (or is still absent when that link is null), and that slot is verified by
+  receipts in the same way.
+
+The receipt binds the exact bytes, and those bytes carry the slot schema, specification and
+implementation identity and the predecessor's hash. So an old `MATCH` never covers modified
+evidence, and a receipt for another slot, campaign or byte string is ignored. What a receipt can't
+bind, the current predecessor bytes, is re-read at the decision.
+
+Delivery consumes receipts rather than reproducing the slot itself. In the workflow it runs at the
+orchestration revision, while only the frozen checkout is the campaign's implementation. A fresh
+reproduction there would be a second evaluator at another commit: it could pass where the frozen
+code failed, and its receipts would mix into the slot's history. The reproduce command records the
+clean Git commit it ran from (`reproducerCommit`, null for a modified checkout), and only a receipt
+written by the manifest's commit counts. Verification reads evidence only: it never fetches,
+repairs or rewrites a slot, receipt or manifest.
+
+The Opportunity's own slot is checked after expiry: an unverified slot with nothing left to send is
+reported `expired`, not as a failure. A later slot that is on record but unverified is read as no
+evidence at all: it neither permits nor cancels the send. Both cases hold delivery, write nothing,
+and leave study inclusion and outcomes unchanged. Already delivered and unresolved sends are never
+resent, whatever verification later finds.
+
+The summary reports held Opportunities as `originUnverified` (own or predecessor slot) and
+`evidenceUnverified` (later slot), and each failing slot once in `unverifiedSlots` by reason:
+`UNSUPPORTED_SCHEMA`, `NOT_REPRODUCED`, `REPRODUCTION_MISMATCH`, `PREDECESSOR_CHANGED` or
+`PREDECESSOR_UNVERIFIED`. Either count fails the notification stage (and `opportunity-notify` exits 1)
+after every stage's evidence is persisted. The message carries counts and reason codes only.
 
 Failures carry a single `STAGE failure` annotation (configuration, restore, collection,
 persistence, reproduction, notification or outcome) with a fixed message per error class, so no
@@ -210,6 +254,13 @@ conflicts).
 - A missing or mismatched manifest is a hard stop. Restore it from a verified backup; never
   initialize a replacement campaign under the same ID.
 - An `unresolved` notification may or may not have arrived. Check the chat; the study is unaffected.
+- A notification held for unverified evidence stays held until its slot verifies or the Opportunity
+  expires. Never edit evidence or receipts to clear it. Find out why reproduction failed. If the
+  evidence is intact (for example, the predecessor was missing from a partial restore), restore the
+  campaign, run `opportunity-campaign-reproduce CAMPAIGN_ID --slot SLOT --block-network` from a clean
+  checkout of the frozen commit, and upload the new receipt with the `import` command. The next run
+  then sends it if it is still valid. A real `MISMATCH` is an integrity incident: keep automation
+  disabled and preserve the evidence.
 - Back up the private bucket with a trusted account that can read the dedicated UID prefix.
   Preserve object paths and bytes exactly and verify SHA-256 hashes after export.
 - A regional Binance HTTP 451 keeps automation disabled until a supported runner is in place.

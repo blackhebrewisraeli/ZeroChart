@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { CandleProviderDataError, type Candle } from '@/lib/binance';
 import { evaluateScan } from '@/lib/marketScanner';
+import { opportunityPathProvider } from '@/test/opportunityFixtures';
 
 const mocks = vi.hoisted(() => ({
   candles: vi.fn(),
@@ -465,6 +466,74 @@ describe('Opportunity Radar CLI', () => {
     }
   });
 
+  it('notifies from a slot only after a network-blocked MATCH by the clean frozen commit', async () => {
+    mocks.gitStatus.value = '';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 29, 12));
+    const { fetchCandles } = opportunityPathProvider();
+    mocks.symbolCandles.mockImplementation(
+      (symbol: string, request: { limit: number; endTime: number }) =>
+        fetchCandles(symbol, request),
+    );
+    await cli('opportunity-campaign-init', 'c-1', '--start', iso(START), '--end', iso(END));
+    for (const day of [0, 1]) {
+      vi.setSystemTime(START + day * DAY + 60_000);
+      await cli('opportunity-campaign-run', 'c-1');
+    }
+    expect(printed()).toMatchObject({ status: 'COMPLETED', opportunities: 1 });
+    await cli('opportunity-campaign-reproduce', 'c-1', '--slot', iso(START), '--block-network');
+    const reproduce = async (...flags: string[]) => {
+      vi.setSystemTime(Date.now() + 60_000);
+      await cli('opportunity-campaign-reproduce', 'c-1', '--slot', iso(START + DAY), ...flags);
+      return printed();
+    };
+
+    vi.stubEnv('ZEROCHART_TELEGRAM_BOT_TOKEN', '123456:cli-secret-token');
+    vi.stubEnv('ZEROCHART_TELEGRAM_CHAT_ID', '-100777');
+    const telegram = vi.fn<typeof fetch>(
+      async () => new Response(JSON.stringify({ ok: true, result: { message_id: 7 } })),
+    );
+    const notify = async () => {
+      process.exitCode = undefined;
+      vi.setSystemTime(Date.now() + 60_000);
+      vi.stubGlobal('fetch', telegram);
+      try {
+        await cli('opportunity-notify', 'c-1');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      return printed();
+    };
+    const refused = { delivered: 0, originUnverified: 1, unverifiedSlots: { NOT_REPRODUCED: 1 } };
+    try {
+      // Not reproduced, reproduced with the network open, then from a modified checkout.
+      expect(await notify()).toMatchObject(refused);
+      expect(process.exitCode).toBe(1);
+      expect(await reproduce()).toMatchObject({ status: 'MATCH', networkBlocked: false });
+      expect(await notify()).toMatchObject(refused);
+      mocks.gitStatus.value = ' M scripts/opportunityNotification.ts\n';
+      expect(await reproduce('--block-network')).toMatchObject({
+        status: 'MATCH',
+        reproducerCommit: null,
+      });
+      expect(await notify()).toMatchObject(refused);
+      expect(telegram).not.toHaveBeenCalled();
+
+      mocks.gitStatus.value = '';
+      expect(await reproduce('--block-network')).toMatchObject({
+        status: 'MATCH',
+        networkBlocked: true,
+        reproducerCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+      });
+      expect(await notify()).toMatchObject({ delivered: 1, originUnverified: 0 });
+      expect(process.exitCode).toBeUndefined();
+      expect(await notify()).toMatchObject({ delivered: 0, alreadyDelivered: 1 });
+      expect(telegram).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('rejects unknown options, unsafe paths, bad dates and a dirty worktree', async () => {
     await expect(cli('opportunity-campaign-run', 'c-1', '--verbose')).rejects.toThrow(
       'unknown or incomplete option --verbose',
@@ -597,6 +666,15 @@ describe('Opportunity Radar CLI', () => {
         marketGateFailed: 0,
         evidenceUnavailable: 0,
         incompatible: 0,
+        originUnverified: 0,
+        evidenceUnverified: 0,
+        unverifiedSlots: {
+          UNSUPPORTED_SCHEMA: 0,
+          NOT_REPRODUCED: 0,
+          REPRODUCTION_MISMATCH: 0,
+          PREDECESSOR_CHANGED: 0,
+          PREDECESSOR_UNVERIFIED: 0,
+        },
         exhausted: 0,
       });
       expect(telegram).not.toHaveBeenCalled();

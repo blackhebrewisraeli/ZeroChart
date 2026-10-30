@@ -8,6 +8,8 @@ import {
   opportunitySlotDirectory,
   readIfPresent,
   serialize,
+  type LoadedOpportunityCampaign,
+  type OpportunityReproduction,
   type OpportunitySlotArtifact,
 } from './opportunityCampaign';
 import type { NotificationTransport, TransportResult } from './telegramTransport';
@@ -53,11 +55,97 @@ export interface NotificationSummary {
   evidenceUnavailable: number;
   /** From a slot of another schema version; never sent. */
   incompatible: number;
+  /** Its own slot, or the slot its transition was judged against, is unverified: held, never claimed. */
+  originUnverified: number;
+  /** A later slot on record is unverified, so it is no evidence either way: held, not cancelled. */
+  evidenceUnverified: number;
+  /** Each slot that failed verification while deciding a send, once, by reason. */
+  unverifiedSlots: Record<SlotVerificationFailure, number>;
   exhausted: number;
 }
 
 /** Why an undelivered Opportunity is not sent now; each is a NotificationSummary count. */
-export type DeliveryHold = 'expired' | 'invalidated' | 'marketGateFailed' | 'evidenceUnavailable';
+export type DeliveryHold =
+  'expired' | 'invalidated' | 'marketGateFailed' | 'evidenceUnavailable' | 'evidenceUnverified';
+
+/** Checked in this order; the first that applies is reported. */
+export type SlotVerificationFailure =
+  | 'UNSUPPORTED_SCHEMA'
+  | 'NOT_REPRODUCED'
+  | 'REPRODUCTION_MISMATCH'
+  | 'PREDECESSOR_CHANGED'
+  | 'PREDECESSOR_UNVERIFIED';
+
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+
+/**
+ * The latest network-blocked reproduction of exactly these slot bytes that the
+ * manifest's own implementation commit wrote and that was on record at `now`.
+ * Receipts for other bytes, slots, campaigns or code are not about this
+ * evidence. At equal times a MISMATCH wins.
+ */
+async function reproduced(
+  { directory, manifest }: LoadedOpportunityCampaign,
+  slot: string,
+  bytes: string,
+  now: number,
+): Promise<OpportunityReproduction['status'] | null> {
+  const digest = sha256(bytes);
+  const receipts = await readRecords<OpportunityReproduction>(
+    resolve(opportunitySlotDirectory(directory, slot), 'reproductions'),
+    /\.json$/,
+  );
+  return (
+    receipts
+      .filter(
+        (receipt) =>
+          receipt.campaignId === manifest.campaignId &&
+          receipt.slot === slot &&
+          receipt.slotSha256 === digest &&
+          receipt.networkBlocked === true &&
+          receipt.reproducerCommit === manifest.implementationCommit &&
+          Date.parse(receipt.reproducedAt) <= now,
+      )
+      .sort(
+        (a, b) =>
+          a.reproducedAt.localeCompare(b.reproducedAt) ||
+          Number(a.status === 'MISMATCH') - Number(b.status === 'MISMATCH'),
+      )
+      .at(-1)?.status ?? null
+  );
+}
+
+/**
+ * Whether a completed slot may be read as delivery evidence: its current bytes
+ * are a supported schema and reproduced MATCH offline (see `reproduced`), and
+ * the calendar-previous slot its transitions were judged against still has the
+ * bytes it links to, themselves reproduced MATCH. The frozen implementation
+ * writes the receipts; reproducing here would be a second evaluator at another
+ * commit. Nothing is fetched or written.
+ */
+async function slotVerificationFailure(
+  campaign: LoadedOpportunityCampaign,
+  slot: string,
+  bytes: string,
+  now: number,
+): Promise<SlotVerificationFailure | null> {
+  const artifact = JSON.parse(bytes) as OpportunitySlotArtifact;
+  if (artifact.schemaVersion !== OPPORTUNITY_SLOT_SCHEMA_VERSION) return 'UNSUPPORTED_SCHEMA';
+  const status = await reproduced(campaign, slot, bytes, now);
+  if (status === null) return 'NOT_REPRODUCED';
+  if (status === 'MISMATCH') return 'REPRODUCTION_MISMATCH';
+  const previousSlot = new Date(Date.parse(slot) - DAY_MS).toISOString();
+  const previous = await readIfPresent(
+    resolve(opportunitySlotDirectory(campaign.directory, previousSlot), 'slot.json'),
+  );
+  if ((previous === null ? null : sha256(previous)) !== (artifact.previous?.sha256 ?? null)) {
+    return 'PREDECESSOR_CHANGED';
+  }
+  if (previous !== null && (await reproduced(campaign, previousSlot, previous, now)) !== 'MATCH') {
+    return 'PREDECESSOR_UNVERIFIED';
+  }
+  return null;
+}
 
 /** The gate could not be judged on that slot, which is no evidence either way. */
 const GATE_NOT_JUDGED: ReadonlySet<OpportunityMarketGateReason> = new Set([
@@ -71,18 +159,24 @@ const GATE_NOT_JUDGED: ReadonlySet<OpportunityMarketGateReason> = new Set([
  * when that slot had not completed by then. A slot holds only candles that
  * closed before it, so no later candle is read. A daily low at or below the
  * invalidation level proves a touch by that candle's close, never when within
- * the day. Cancelling needs positive evidence; a gap only holds delivery.
+ * the day. Cancelling needs positive evidence; a gap only holds delivery, and
+ * an UNVERIFIED slot is read as neither.
  */
 export function deliveryHold(
   opportunity: Opportunity,
-  laterSlots: ReadonlyArray<OpportunitySlotArtifact | null>,
+  laterSlots: ReadonlyArray<OpportunitySlotArtifact | 'UNVERIFIED' | null>,
   now: number,
 ): DeliveryHold | null {
   if (now >= opportunity.expiresAt) return 'expired';
   // The anchor is the last candle that closed before the observation's UTC day.
   const afterAnchor = Math.floor(opportunity.evaluationTime / DAY_MS) * DAY_MS;
   let unavailable = false;
+  let unverified = false;
   for (const slot of laterSlots) {
+    if (slot === 'UNVERIFIED') {
+      unverified = true;
+      continue;
+    }
     if (slot === null) {
       unavailable = true;
       continue;
@@ -103,6 +197,7 @@ export function deliveryHold(
       return 'invalidated';
     }
   }
+  if (unverified) return 'evidenceUnverified';
   return unavailable ? 'evidenceUnavailable' : null;
 }
 
@@ -148,9 +243,12 @@ async function readRecords<T>(directory: string, pattern: RegExp): Promise<T[]> 
 }
 
 /**
- * Sends each persisted Opportunity at most once, while `deliveryHold` finds it
- * still valid. The completed slot files are the immutable outbox; delivery
- * state lives only under notifications/, so no transport outcome or hold can
+ * Sends each persisted Opportunity at most once, only from a verified slot
+ * (`slotVerificationFailure`) and while `deliveryHold` finds it still valid on
+ * verified later slots. Verification comes before any claim or transport call,
+ * so a refused slot is never sent, whichever run or command reaches it. The
+ * completed slot files are the immutable outbox; delivery state lives only
+ * under notifications/, so no transport outcome, hold or verification can
  * change study evidence or which Opportunities the study counts. A send whose
  * outcome is unknown is never repeated automatically.
  */
@@ -162,11 +260,12 @@ export async function deliverOpportunityNotifications(options: {
   specificationPath?: string;
 }): Promise<NotificationSummary> {
   const clock = options.now ?? Date.now;
-  const { directory, manifest, runtime } = await loadOpportunityCampaign(
+  const campaign = await loadOpportunityCampaign(
     options.store,
     options.campaignId,
     options.specificationPath,
   );
+  const { directory, manifest, runtime } = campaign;
   const now = clock();
   const summary: NotificationSummary = {
     delivered: 0,
@@ -179,9 +278,24 @@ export async function deliverOpportunityNotifications(options: {
     marketGateFailed: 0,
     evidenceUnavailable: 0,
     incompatible: 0,
+    originUnverified: 0,
+    evidenceUnverified: 0,
+    unverifiedSlots: {
+      UNSUPPORTED_SCHEMA: 0,
+      NOT_REPRODUCED: 0,
+      REPRODUCTION_MISMATCH: 0,
+      PREDECESSOR_CHANGED: 0,
+      PREDECESSOR_UNVERIFIED: 0,
+    },
     exhausted: 0,
   };
-  const recorded: Array<{ time: number; artifact: OpportunitySlotArtifact | null }> = [];
+  interface Recorded {
+    slot: string;
+    time: number;
+    bytes: string;
+    artifact: OpportunitySlotArtifact;
+  }
+  const recorded: Array<Recorded | { slot: string; time: number; artifact: null }> = [];
   for (const entry of manifest.slots) {
     const time = Date.parse(entry.slot);
     if (time > now) break;
@@ -192,11 +306,25 @@ export async function deliverOpportunityNotifications(options: {
     // A slot whose collection finished after `now` was not yet evidence at `now`.
     const finishedAt = artifact?.attempts.at(-1)?.finishedAt;
     const onRecord = finishedAt !== undefined && Date.parse(finishedAt) <= now;
-    recorded.push({ time, artifact: onRecord ? artifact : null });
+    recorded.push(
+      bytes !== null && artifact !== null && onRecord
+        ? { slot: entry.slot, time, bytes, artifact }
+        : { slot: entry.slot, time, artifact: null },
+    );
   }
-  for (const { time, artifact } of recorded) {
+  // Each slot is verified at most once per run, and only when a send depends on it.
+  const verifications = new Map<string, SlotVerificationFailure | null>();
+  const verified = async (item: Recorded) => {
+    if (!verifications.has(item.slot)) {
+      const failure = await slotVerificationFailure(campaign, item.slot, item.bytes, now);
+      if (failure !== null) summary.unverifiedSlots[failure] += 1;
+      verifications.set(item.slot, failure);
+    }
+    return verifications.get(item.slot) === null;
+  };
+  for (const origin of recorded) {
+    const { time, artifact } = origin;
     if (artifact === null) continue;
-    const laterSlots = recorded.filter((item) => item.time > time).map((item) => item.artifact);
     for (const opportunity of artifact.result.opportunities) {
       const folder = resolve(
         directory,
@@ -219,6 +347,20 @@ export async function deliverOpportunityNotifications(options: {
       if (artifact.schemaVersion !== OPPORTUNITY_SLOT_SCHEMA_VERSION) {
         summary.incompatible += 1;
         continue;
+      }
+      // Expiry first: an unverified slot stops being reported once nothing could be sent.
+      if (now >= opportunity.expiresAt) {
+        summary.expired += 1;
+        continue;
+      }
+      if (!(await verified(origin))) {
+        summary.originUnverified += 1;
+        continue;
+      }
+      const laterSlots: Array<OpportunitySlotArtifact | 'UNVERIFIED' | null> = [];
+      for (const item of recorded.filter((entry) => entry.time > time)) {
+        if (item.artifact === null) laterSlots.push(null);
+        else laterSlots.push((await verified(item)) ? item.artifact : 'UNVERIFIED');
       }
       const hold = deliveryHold(opportunity, laterSlots, now);
       if (hold !== null) {
@@ -243,7 +385,7 @@ export async function deliverOpportunityNotifications(options: {
             channel: options.transport.channel,
             attempt,
             startedAt: iso(clock()),
-            messageSha256: createHash('sha256').update(text).digest('hex'),
+            messageSha256: sha256(text),
           } satisfies NotificationAttempt),
           { flag: 'wx', mode: 0o600 },
         );

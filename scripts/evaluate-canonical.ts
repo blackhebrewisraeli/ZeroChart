@@ -368,6 +368,15 @@ async function worktreeDirty(): Promise<boolean> {
   return stdout.trim() !== '';
 }
 
+/** The checkout's commit, or null when it is modified or not a Git checkout. */
+async function cleanCommit(): Promise<string | null> {
+  try {
+    return (await worktreeDirty()) ? null : await repositoryCommit();
+  } catch {
+    return null;
+  }
+}
+
 function requiredValue(command: string, value?: string): string {
   if (!value) throw new Error(`${command} requires a value`);
   return value;
@@ -602,6 +611,8 @@ const commandHandlers: Record<string, CommandHandler> = {
       store: storePath(args, '.zerochart-campaigns'),
       ...(slot === undefined ? {} : { slot: new Date(slot).toISOString() }),
       blockNetwork: args.includes('--block-network'),
+      // Delivery accepts only a receipt that the manifest's own unmodified commit wrote.
+      reproducerCommit: await cleanCommit(),
     });
     printJson(receipt);
     if (receipt.status === 'MISMATCH') process.exitCode = 1;
@@ -665,7 +676,14 @@ const commandHandlers: Record<string, CommandHandler> = {
       transport: telegramTransportFromEnv(),
     });
     printJson(summary);
-    if (summary.rejected > 0 || summary.unknown > 0) process.exitCode = 1;
+    if (
+      summary.rejected > 0 ||
+      summary.unknown > 0 ||
+      summary.originUnverified > 0 ||
+      summary.evidenceUnverified > 0
+    ) {
+      process.exitCode = 1;
+    }
   },
   'opportunity-notify-test': async (value, args) => {
     assertOptions(

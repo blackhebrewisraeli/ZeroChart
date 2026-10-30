@@ -1035,6 +1035,9 @@ body {
 .market-scan-devscan {
   border-style: dashed;
 }
+.market-scan-devscan .market-scan-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .market-scan-dev {
   color: var(--muted-foreground);
 }
@@ -1406,7 +1409,8 @@ body {
     margin-left: 0;
     flex-basis: 100%;
   }
-  .market-scan-stats {
+  .market-scan-stats,
+  .market-scan-devscan .market-scan-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .market-scan-grid {

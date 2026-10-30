@@ -66,6 +66,10 @@ describe('MarketScanSummary', () => {
       { ticker: 'EURUSD=X', instrument: null },
     ]);
     expect(panel.querySelector('.market-scan-head')).toHaveTextContent('Complete');
+    // Named by its source, so it cannot be read as the TradingView development scan.
+    expect(panel.querySelector('.market-scan-head .market-scan-rule')).toHaveTextContent(
+      /^Binance spot klines$/,
+    );
     expect(within(panel).getByText('2 of 2 supported')).toBeInTheDocument();
     expect(within(panel).getByText('2 (1 equity, 1 forex)')).toBeInTheDocument();
     expect(
@@ -232,7 +236,21 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     expect(within(panel).getByText('Historical dev import')).toBeInTheDocument();
     expect(within(panel).getByText('Requested')).toBeInTheDocument();
     expect(within(panel).getByText('3 assets')).toBeInTheDocument();
-    expect(within(panel).getByText('Not evaluated').nextSibling).toHaveTextContent('1');
+    expect(within(panel).getByText('Failed').nextSibling).toHaveTextContent('1');
+    expect(within(panel).getByText('Retrieved').nextSibling).toHaveTextContent(
+      '28 Oct, 16:58–17:00 UTC',
+    );
+    expect(within(panel).getByText('Latest session').nextSibling).toHaveTextContent(
+      '27 Oct session (New York)',
+    );
+    expect(
+      within(panel).getByText('TradingView MCP get_ohlcv', { selector: '.market-scan-rule' }),
+    ).toBeInTheDocument();
+    expect(panel).toHaveTextContent(
+      'Reloading this page re-reads this import; it does not fetch new TradingView bars',
+    );
+    expect(panel).toHaveTextContent('never merged into the Market scan or the Markets table');
+    expect(within(panel).queryByText('Stale')).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByRole('tab', { name: /All ranked/ }));
     const rows = [...panel.querySelectorAll<HTMLElement>('.scan-row')];
     const evaluated = scan.results.filter((result) => result.status === 'EVALUATED');
@@ -480,6 +498,7 @@ describe('Scan review: views, explanation and comparison', () => {
     vi.setSystemTime(Date.UTC(2026, 10, 6, 12));
     const { panel, view } = renderReview(fourEquities(), source);
     expect(within(panel).getByText('Historical dev import')).toBeInTheDocument();
+    expect(within(panel).getByText('Stale')).toHaveClass('market-scan-status');
     const asOf = panel.querySelector('.scan-asof')!;
     expect(asOf).toHaveTextContent('sessions to 27 Oct close (New York)');
     expect(asOf).toHaveTextContent(
